@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/icon.png" width="128" alt="Study AI 아이콘">
+  <img src="docs/icon.png" width="128" alt="Ezrite 아이콘">
 </p>
 
-<h1 align="center">Study AI</h1>
+<h1 align="center">Ezrite</h1>
 
 <p align="center">
   강의를 받아 적고, 외국어 강의는 한국어로 옮기고,<br>
@@ -10,17 +10,17 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dakcoe/study-AI/releases/latest"><b>다운로드</b></a> ·
+  <a href="https://github.com/dakcoe/ezrite/releases/latest"><b>다운로드</b></a> ·
   <a href="#설치방법">설치방법</a> ·
   <a href="#기능">기능</a> ·
   <a href="#개인정보">개인정보</a> ·
   <a href="#환경">환경</a> ·
-  <a href="https://github.com/dakcoe/study-AI/issues/new/choose">문제 신고</a>
+  <a href="https://github.com/dakcoe/ezrite/issues/new/choose">문제 신고</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/dakcoe/study-AI/releases/latest"><img src="https://img.shields.io/github/v/release/dakcoe/study-AI?label=release&color=2458f2" alt="최신 버전"></a>
-  <a href="https://github.com/dakcoe/study-AI/releases"><img src="https://img.shields.io/github/downloads/dakcoe/study-AI/total?color=2458f2" alt="내려받은 수"></a>
+  <a href="https://github.com/dakcoe/ezrite/releases/latest"><img src="https://img.shields.io/github/v/release/dakcoe/ezrite?label=release&color=2458f2" alt="최신 버전"></a>
+  <a href="https://github.com/dakcoe/ezrite/releases"><img src="https://img.shields.io/github/downloads/dakcoe/ezrite/total?color=2458f2" alt="내려받은 수"></a>
   <a href="#환경"><img src="https://img.shields.io/badge/macOS-13%2B%20·%20Apple%20칩%20·%20Intel-black" alt="macOS 13 이상, Apple 칩과 Intel"></a>
   <a href="#설치방법"><img src="https://img.shields.io/badge/시작-무료%20Groq%20키-0d0e12" alt="무료 Groq 키로 시작"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT 라이선스"></a>
@@ -30,15 +30,9 @@
   <img src="docs/hero.gif" width="860" alt="설명 버튼을 누르자 AI 가 강의 슬라이드를 ①②③ 으로 짚고, 카드에서 장면별로 설명하는 장면">
 </p>
 
-
-
-https://github.com/user-attachments/assets/1ee9a1b2-1b4a-42f6-a720-d8a50868cc47
-
-
-
 온라인 강의든 강의실 수업이든, 메뉴바에서 한 번 눌러 받아 적기 시작하세요. 영어·일본어 강의는 줄마다 한국어 번역이 붙고,
 슬라이드가 이해되지 않을 땐 버튼 하나로 AI 가 지금 화면과 방금 들은 말을 함께 보고 짚어 가며 설명합니다.
-무료 Groq 키 하나면 되고(Groq 가입은 무료), Study AI 자체에는 계정도 구독도 없습니다.
+무료 Groq 키 하나면 되고(Groq 가입은 무료), Ezrite 자체에는 계정도 구독도 없습니다.
 
 > [!NOTE]
 > 지금은 Mac 에서 쓸 수 있습니다. **Windows 판은 따로 만들고 있습니다.**
@@ -85,13 +79,13 @@ https://github.com/user-attachments/assets/1ee9a1b2-1b4a-42f6-a720-d8a50868cc47
 
 ## 설치방법
 
-1. [최신 버전](https://github.com/dakcoe/study-AI/releases/latest)에서 DMG 를 내려받아 열고, `Study AI` 를 `Applications` 폴더로 끌어 넣습니다.
+1. [최신 버전](https://github.com/dakcoe/ezrite/releases/latest)에서 DMG 를 내려받아 열고, `Ezrite` 를 `Applications` 폴더로 끌어 넣습니다.
 2. 처음 열 때 "확인되지 않은 개발자" 창이 뜨면 DMG 안의 `설치 안내.txt` 를 따라 주세요.
 3. 앱이 안내하는 대로 [무료 Groq 키](https://console.groq.com/keys)를 넣고, 마이크·화면 녹화 권한을 허용합니다.
 
 ## 개인정보
 
-- API 키와 기록은 **내 Mac 에만** 저장됩니다. Study AI 계정도, 사용 기록 수집도 없습니다.
+- API 키와 기록은 **내 Mac 에만** 저장됩니다. Ezrite 계정도, 사용 기록 수집도 없습니다.
 - 받아쓰기·번역에는 소리와 글자가, 설명 버튼을 누를 때는 그 순간의 화면이 고른 AI 서비스로 전송됩니다. 누르기 전에 개인 창은 가려 주세요.
 - 화면 녹화 권한은 다른 앱의 **소리를 받는 데만** 씁니다. 화면을 저장하지 않습니다.
 
