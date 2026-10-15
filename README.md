@@ -14,7 +14,8 @@
   <a href="#설치방법">설치방법</a> ·
   <a href="#기능">기능</a> ·
   <a href="#개인정보">개인정보</a> ·
-  <a href="#환경">환경</a>
+  <a href="#환경">환경</a> ·
+  <a href="https://github.com/dakcoe/study-AI/issues/new/choose">문제 신고</a>
 </p>
 
 <p align="center">

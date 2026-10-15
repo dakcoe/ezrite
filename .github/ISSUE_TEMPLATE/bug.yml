@@ -1,0 +1,26 @@
+name: 문제 신고
+description: 설치가 안 되거나, 받아쓰기·번역·설명이 이상할 때
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: 무슨 일이 있었나요?
+      description: 무엇을 하다가, 어떤 화면이 떴는지 적어 주세요. 캡처를 붙이면 가장 빨리 고칠 수 있습니다.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Study AI 버전
+      description: 설정 맨 아래 "버전" 칸에 있습니다. 예) 0.9.1
+  - type: input
+    id: mac
+    attributes:
+      label: macOS 버전과 칩
+      description: 왼쪽 위 사과 메뉴 → 이 Mac에 관하여. 예) macOS 15.2, Apple M1 / Intel
+  - type: dropdown
+    id: area
+    attributes:
+      label: 어디서 생겼나요?
+      options: [설치·실행, 받아쓰기, 번역, 설명해줘·질문, 지난 기록, 설정·키, 기타]
