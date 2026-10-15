@@ -22,6 +22,7 @@
 무료 Groq 키 하나면 됩니다. Claude·Gemini·GPT 키는 넣고 싶을 때만 넣으면 됩니다.
 키와 기록은 내 Mac 에만 저장됩니다.
 
-## 요구 사항
+## 필요한 환경
 
-macOS 14 이상 · Apple 칩과 Intel 모두 지원
+- macOS 13 (Ventura) 이상 · Apple 칩과 Intel 모두 지원 (Intel 은 대략 2017년 이후 모델)
+- 지금은 Mac 전용입니다. Windows 판은 따로 만들 예정입니다.
