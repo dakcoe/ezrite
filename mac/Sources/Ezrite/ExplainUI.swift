@@ -51,6 +51,11 @@ final class Explainer: ObservableObject {
                     onNotice("\(provider.label) 설명 실패 → Groq 로 대신했습니다")
                 }
             }
+            // Groq: qwen 한 번으로. 한도에 걸리거나 실패하면 예전처럼 두 모델에 나눠 묻는다
+            if let data = try? await groq.explainUnified(jpeg: jpeg, lines: lines, transcript: transcript),
+               !Explain.marks(from: data, lines: lines).isEmpty || !Explain.visuals(from: data).summary.isEmpty {
+                return present(card: card, lines: lines, shot: shot, marks: data, visuals: .success(data))
+            }
             async let marksData = groq.explainMarks(jpeg: jpeg, lines: lines, transcript: transcript)
             async let visualsData = groq.explainVisuals(lines: lines, transcript: transcript)
             let picked = try? await marksData        // 표시가 실패해도 설명 카드는 보여준다
@@ -138,7 +143,9 @@ final class Explainer: ObservableObject {
                     AppDelegate.shared?.state.notice = "\(ctx.provider.label) 답변 실패 → Groq 로 대신했습니다"
                 }
             }
-            if data == nil { data = try await groq.answer(prompt) }
+            if data == nil {
+                data = try await groq.answer(prompt, jpeg: Self.jpeg(shot.image, maxWidth: 1280), lines: lines, transcript: ctx.transcript)
+            }
             guard let data, let text = Explain.answer(from: data) else {
                 return card.answer(["error": "답을 읽지 못했습니다. 다시 물어봐 주세요."])
             }

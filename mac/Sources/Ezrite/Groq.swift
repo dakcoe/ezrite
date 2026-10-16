@@ -11,6 +11,8 @@ actor GroqClient {
     static let retries = 3
 
     private var cooldown: [String: Date] = [:]
+    /// 마지막으로 성공한 채팅 요청의 토큰 (chat 바로 뒤에 읽는다 — 그 사이에 await 가 없어 다른 요청이 끼지 않는다)
+    private var lastTokens = 0.0
 
     struct Failure: LocalizedError {
         let errorDescription: String?
@@ -272,6 +274,7 @@ extension GroqClient {
             if let model = body["model"] as? String,
                let tokens = ((obj?["usage"] as? [String: Any])?["total_tokens"] as? NSNumber)?.doubleValue {
                 Usage.spent?(model, .tokens, tokens)
+                lastTokens = tokens
             }
             let msg = ((obj?["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String
             return msg ?? ""
@@ -280,8 +283,13 @@ extension GroqClient {
         case 500...599: throw Transient(message: "Groq 서버 일시 장애 (\(code))")
         default:
             let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            let msg = (obj?["error"] as? [String: Any])?["message"] as? String
-            throw Failure("Groq 오류 \(code): \(msg ?? "")")
+            let err = obj?["error"] as? [String: Any]
+            // JSON 을 시켰는데 모델이 수식 역슬래시를 그대로 써서 Groq 이 거절한 경우: 거절된 원문을 고쳐 쓴다 (다시 묻지 않는다)
+            if body["response_format"] != nil, let raw = err?["failed_generation"] as? String,
+               let fixed = Explain.lenientJSON(raw) {
+                return String(decoding: fixed, as: UTF8.self)
+            }
+            throw Failure("Groq 오류 \(code): \(err?["message"] as? String ?? "")")
         }
     }
 }
@@ -363,6 +371,10 @@ extension GroqClient {
         """
     static let audience = "You help a university student follow a lecture. The subject can be anything " +
         "(humanities, social science, science, engineering, arts)."
+    /// Groq 모델에만 붙인다: qwen 은 줄 번호("5번 줄")를 그대로 말하고, 답 글에 LaTeX 를 써서 카드에 기호가 그대로 보인다
+    static let groqRules = "\nLine ids are only for you to point at lines — never write ids or \"line N\" in any text the student reads. " +
+        "In text the student reads, write math in plain Unicode (δ, Σ, ², ᵀ, √, →); never LaTeX or $ (KaTeX only in a card \"formula\"). " +
+        "Break long text into short paragraphs of 2-3 sentences separated by \\n\\n; put derivation steps on their own lines."
 
     static func marksPrompt(lines: [Explain.Line], transcript: [String]) -> String {
         "\(audience)\n\(context(lines: lines, transcript: transcript))\n\n\(marksTask)\nReturn JSON only: {\(marksShape)}"
@@ -380,11 +392,58 @@ extension GroqClient {
             scenesGuide
     }
 
-    /// 질문의 답 (글만 보고 답한다 — 화면 줄 번호로 짚는다)
+    /// 설명: qwen 이 화면 사진과 글자를 보고 표시·요약·그림을 한 번에 만든다 (다른 서비스의 unifiedPrompt 와 같다).
+    /// 한도에 걸리면 RateLimited 를 그대로 던진다 — 부르는 쪽이 예전 두 요청 방식으로 넘어간다
+    func explainUnified(jpeg: Data, lines: [Explain.Line], transcript: [String]) async throws -> Data {
+        guard let key = APIKey.groq() else { throw Failure("Groq API 키가 없습니다. 설정에서 키를 입력하세요.") }
+        let text = try await chat(Self.visionBody(Self.unifiedPrompt(lines: lines, transcript: transcript), jpeg: jpeg), key: key)
+        Usage.used?(.explain, lastTokens)
+        return Data(Explain.dropLineRefs(await fixScript(text, source: Self.source(lines, transcript)), lines: lines).utf8)
+    }
+
+    /// 질문의 답: qwen 이 지금 화면 사진까지 보고 답한다. qwen 이 한도에 걸리면 120b 가 글자만 보고 답한다
+    func answer(_ prompt: String, jpeg: Data, lines: [Explain.Line], transcript: [String]) async throws -> Data {
+        guard let key = APIKey.groq() else { throw Failure("Groq API 키가 없습니다. 설정에서 키를 입력하세요.") }
+        do {
+            let text = try await chat(Self.visionBody(prompt, jpeg: jpeg), key: key)
+            Usage.used?(.ask, lastTokens)
+            return Data(Explain.dropLineRefs(await fixScript(text, source: Self.source(lines, transcript)), lines: lines).utf8)
+        } catch let first as RateLimited {
+            do { return Data(Explain.dropLineRefs(String(decoding: try await answer(prompt), as: UTF8.self), lines: lines).utf8) }
+            catch let second as RateLimited {
+                throw RateLimited(retryAfter: [first.retryAfter, second.retryAfter].compactMap { $0 }.min())
+            }
+        }
+    }
+
+    static func visionBody(_ prompt: String, jpeg: Data) -> [String: Any] {
+        ["model": visionModel,
+         "messages": [["role": "user", "content": [
+             ["type": "text", "text": prompt + groqRules],
+             ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64," + jpeg.base64EncodedString()]],
+         ]]],
+         "temperature": 0.3, "response_format": ["type": "json_object"], "reasoning_effort": "none"]
+    }
+
+    /// 섞임 검사에서 빼 줄 글자: 화면 글자와 강의 말에 원래 있던 글자
+    static func source(_ lines: [Explain.Line], _ transcript: [String]) -> String {
+        (lines.map(\.text) + transcript).joined(separator: " ")
+    }
+
+    /// 섞여 나온 다른 언어 조각만 20b 에게 옮기게 해서 끼워 넣는다. 못 고치면 받은 그대로 둔다
+    func fixScript(_ text: String, source: String) async -> String {
+        let runs = Script.foreignRuns(text, source: source)
+        guard !runs.isEmpty, let key = APIKey.groq() else { return text }
+        let reply = try? await chat(["model": Self.chatModels[1], "temperature": 0, "reasoning_effort": "low",
+                                     "messages": [["role": "user", "content": Script.fixPrompt(text, runs: runs)]]], key: key)
+        return reply.flatMap { Script.apply(text, reply: $0, runs: runs) } ?? text
+    }
+
+    /// 질문의 답 (글만 보고 답한다 — 화면 줄 번호로 짚는다). qwen 이 막혔을 때 쓴다
     func answer(_ prompt: String) async throws -> Data {
         guard let key = APIKey.groq() else { throw Failure("Groq API 키가 없습니다. 설정에서 키를 입력하세요.") }
         return Data(try await chat([
-            "model": Self.reasoningModel, "messages": [["role": "user", "content": prompt]],
+            "model": Self.reasoningModel, "messages": [["role": "user", "content": prompt + Self.groqRules]],
             "temperature": 0.3, "response_format": ["type": "json_object"], "reasoning_effort": "medium",
         ], key: key).utf8)
     }
@@ -447,12 +506,13 @@ extension GroqClient {
     /// 설명 카드: 요약과 그림 0~2개. 그림 형식은 어느 과목에나 맞는 일반 형식만 쓴다
     func explainVisuals(lines: [Explain.Line], transcript: [String]) async throws -> Data {
         guard let key = APIKey.groq() else { throw Failure("Groq API 키가 없습니다. 설정에서 키를 입력하세요.") }
-        let prompt = Self.visualsPrompt(lines: lines, transcript: transcript)
+        let prompt = Self.visualsPrompt(lines: lines, transcript: transcript) + Self.groqRules
+        let clean = { (d: Data) in Data(Explain.dropLineRefs(String(decoding: d, as: UTF8.self), lines: lines).utf8) }
         do {
-            return try await visuals(prompt: prompt, model: Self.reasoningModel, key: key)
+            return clean(try await visuals(prompt: prompt, model: Self.reasoningModel, key: key))
         } catch let first as RateLimited {
             // 120b 가 막히면 한도가 따로인 qwen 으로 (20b 는 형식을 자주 틀려서 쓰지 않는다)
-            do { return try await visuals(prompt: prompt, model: Self.visionModel, key: key) }
+            do { return clean(try await visuals(prompt: prompt, model: Self.visionModel, key: key)) }
             catch let second as RateLimited {
                 throw RateLimited(retryAfter: [first.retryAfter, second.retryAfter].compactMap { $0 }.min())
             }

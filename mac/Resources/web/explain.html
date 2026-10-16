@@ -51,7 +51,6 @@
   .marks li { display: flex; gap: 10px; align-items: flex-start; }
   .badge { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff;
     font-weight: 700; font-size: 12px; display: grid; place-items: center; margin-top: 1px; }
-  .marks .src { color: var(--muted); font-size: 12px; }
   .route { margin: 0 0 16px; }
   .route .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
   .chip { background: #2f7bf6; color: #fff; border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 600; }
@@ -117,17 +116,42 @@
                                    actorFontSize: 16, messageFontSize: 16, noteFontSize: 15, mirrorActors: true, bottomMarginAdj: 10 } });
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls;
                                    if (text != null) e.textContent = text; return e; };
-  // AI 가 쓴 **굵게** 를 굵은 글씨로. 글은 텍스트 노드로만 넣는다 (innerHTML 아님)
+  // 글 속 수식 \(…\) \[…\] $$…$$ $…$ 을 KaTeX 로 그린다. 프롬프트로 막아도 모델이 LaTeX 를 쓸 때가 있다.
+  // 못 그리면 원래 글 그대로. 글은 텍스트 노드로만 넣는다 (innerHTML 아님)
+  // 마지막 갈래: 기호 없이 쓴 LaTeX 덩어리 (Z^{(l)}=W^{(l)}a^{(l-1)}). 공백·한글 없는 덩어리에 ^{ _{ \명령 이 있을 때만
+  const MATH = /\\\((.+?)\\\)|\\\[(.+?)\\\]|\$\$(.+?)\$\$|\$([^$\n]*[\\^_{}][^$\n]*?)\$|([^\s가-힣$]*(?:[\^_]\{|\\[a-zA-Z]{2,})[^\s가-힣$]*)/gs;
+  const withMath = (e, text) => {
+    let last = 0;
+    for (const m of text.matchAll(MATH)) {
+      e.append(document.createTextNode(text.slice(last, m.index)));
+      const tex = m[1] ?? m[2] ?? m[3] ?? m[4] ?? m[5], span = el("span", "math");
+      try { katex.render(tex, span, { displayMode: false, throwOnError: true }); } catch { span.textContent = m[0]; }
+      e.append(span);
+      last = m.index + m[0].length;
+    }
+    e.append(document.createTextNode(text.slice(last)));
+    return e;
+  };
+  // AI 가 쓴 **굵게** 를 굵은 글씨로
   const rich = (tag, cls, text) => { const e = el(tag, cls);
                                      text.split(/\*\*(.+?)\*\*/s).forEach((part, i) =>
-                                       e.append(i % 2 ? el("strong", null, part) : document.createTextNode(part)));
+                                       i % 2 ? e.append(withMath(el("strong"), part)) : withMath(e, part));
                                      return e; };
   // AI 가 JSON 에 "\times", "\frac" 를 역슬래시 하나로 쓰면 해석하면서 \t(탭) \f \b \r \n 제어 문자가 된다.
   // 수식에는 제어 문자가 올 일이 없으니 원래 명령으로 되돌린다
   const fixTex = t => t.replace(/\t/g, "\\t").replace(/\f/g, "\\f").replace(/\x08/g, "\\b")
                        .replace(/\r/g, "\\r").replace(/\n/g, "\\n");
-  // 글에 "\n" 이 글자 그대로 들어오면 줄바꿈으로
-  const fixText = t => String(t).replace(/\\n/g, "\n");
+  // 글에 "\n" 이 글자 그대로 들어오면 줄바꿈으로, "\u03b4" 처럼 한 번 더 감싼 글자는 원래 글자(δ)로
+  const fixText = t => String(t).replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+                                .replace(/\\n/g, "\n");
+  // 긴 글이 줄바꿈 없이 오면 세 문장마다 문단을 나눈다 (모델이 문단 지시를 안 지킬 때)
+  const paragraphs = t => {
+    if (t.includes("\n") || t.length < 180) return t;
+    const s = t.split(/(?<=[.?!])\s+(?=\S)/);
+    const out = [];
+    for (let i = 0; i < s.length; i += 3) out.push(s.slice(i, i + 3).join(" "));
+    return out.join("\n\n");
+  };
 
   // 앱이 카드 높이를 내용에 맞추도록 그린 뒤 높이를 알린다
   // 창 크기가 아니라 내용 높이(설명 + 대화 + 질문 칸)를 잰다. 그래야 내용이 짧을 때 창이 줄어든다
@@ -167,7 +191,7 @@
       const ul = el("ul", "marks");
       d.marks.forEach((m, i) => {
         const li = el("li"); li.append(el("span", "badge", String(i + 1)));
-        const t = el("div"); t.append(el("div", null, m.note || ""), el("div", "src", m.text));
+        const t = el("div"); t.append(withMath(el("div"), fixText(m.note || "")));
         li.append(t); ul.append(li);
       });
       root.append(ul);
@@ -194,11 +218,11 @@
     const box = el("section", "visual");
     if (v.title) box.append(el("h3", null, v.title));
     if (v.type === "steps") {
-      const ol = el("ol", "steps"); v.items.forEach(it => ol.append(el("li", null, it))); box.append(ol);
+      const ol = el("ol", "steps"); v.items.forEach(it => ol.append(withMath(el("li"), fixText(it)))); box.append(ol);
     } else if (v.type === "table") {
       const t = el("table"), hr = el("tr");
       v.headers.forEach(h => hr.append(el("th", null, h))); t.append(hr);
-      v.rows.forEach(r => { const tr = el("tr"); r.forEach(c => tr.append(el("td", null, String(c)))); t.append(tr); });
+      v.rows.forEach(r => { const tr = el("tr"); r.forEach(c => tr.append(withMath(el("td"), fixText(c)))); t.append(tr); });
       box.append(t);
     } else if (v.type === "card") {
       if (v.formula) {
@@ -210,7 +234,7 @@
       }
       if (v.body) box.append(rich("p", "body", fixText(v.body)));
       if (v.terms && v.terms.length) {
-        const dl = el("dl"); v.terms.forEach(([a, b]) => dl.append(el("dt", null, a), el("dd", null, b || "")));
+        const dl = el("dl"); v.terms.forEach(([a, b]) => dl.append(withMath(el("dt"), fixText(a)), withMath(el("dd"), fixText(b || ""))));
         box.append(dl);
       }
     } else if (v.type === "mermaid") {
@@ -245,12 +269,12 @@
     const qa = pendingQA; if (!qa) return;
     qa.querySelector(".loading")?.remove();
     if (d.error) qa.append(el("div", "error", d.error));
-    if (d.answer) qa.append(rich("p", "a", fixText(d.answer)));
+    if (d.answer) qa.append(rich("p", "a", paragraphs(fixText(d.answer))));
     if (d.marks && d.marks.length) {
       const ul = el("ul", "marks");
       d.marks.forEach((m, i) => {
         const li = el("li"); li.append(el("span", "badge", String(i + 1)));
-        const t = el("div"); t.append(el("div", null, m.note || ""), el("div", "src", m.text));
+        const t = el("div"); t.append(withMath(el("div"), fixText(m.note || "")));
         li.append(t); ul.append(li);
       });
       qa.append(ul);
@@ -316,7 +340,7 @@
       say.classList.add("fade");
       const text = fixText(scenes[cur].say), n = String(cur + 1);
       swap = setTimeout(() => {
-        say.replaceChildren(el("span", "n", n), document.createTextNode(text));
+        say.replaceChildren(el("span", "n", n)); withMath(say, text);
         say.classList.remove("fade");
       }, 250);
       dotEls.forEach((b, k) => b.classList.toggle("on", k === cur));

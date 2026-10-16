@@ -50,3 +50,37 @@ struct ExplainBudgetTests {
         #expect(b.fraction(["vision", "reason"], .tokens, at: now) > 0.5)   // 합치면 실제보다 넉넉해 보인다
     }
 }
+
+/// 남은 한도로 설명·질문을 몇 번 더 할 수 있는지 (한 번에 쓰는 토큰의 평균으로 나눈다)
+struct UsesLeftTests {
+    @Test func 남은_토큰을_한_번_평균으로_나눈다() {
+        var b = Budget()
+        let now = Date()
+        b.note("qwen", .tokens, 52_000, at: now)                  // 148,000 남음
+        #expect(b.usesLeft(.explain, model: "qwen", at: now) == 40)    // 처음 평균 3,700
+        #expect(b.usesLeft(.ask, model: "qwen", at: now) == 42)        // 처음 평균 3,500
+    }
+
+    @Test func 쓸_때마다_평균을_실제_양_쪽으로_고친다() {
+        var b = Budget()
+        b.average(.explain, 5_700)                                 // 3,700 × 0.7 + 5,700 × 0.3
+        #expect(b.perUse(.explain) == 4_300)
+        #expect(b.perUse(.ask) == 3_500)                           // 다른 쪽은 그대로
+    }
+
+    @Test func 시간이_지나면_한도가_차올라_횟수가_는다() {
+        var b = Budget()
+        let then = Date(timeIntervalSince1970: 1_000_000)
+        b.note("qwen", .tokens, 200_000, at: then)                 // 다 씀
+        #expect(b.usesLeft(.explain, model: "qwen", at: then) == 0)
+        // 24시간에 20만이 돌아오니 1시간이면 약 8,333 → 설명 2번
+        #expect(b.usesLeft(.explain, model: "qwen", at: then.addingTimeInterval(3600)) == 2)
+    }
+
+    @Test func 예전_저장_파일도_읽힌다() throws {
+        // 평균 칸이 없던 1.0.3 파일
+        let old = Data(#"{"rows":{"qwen|tokens":[1000,1792135734]}}"#.utf8)
+        let b = try JSONDecoder().decode(Budget.self, from: old)
+        #expect(b.perUse(.explain) == 3_700)
+    }
+}

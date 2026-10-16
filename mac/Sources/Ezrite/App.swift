@@ -221,6 +221,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.state.budget.save()
             }
         }
+        Usage.used = { [weak self] use, tokens in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.state.budget.average(use, tokens)
+                self.state.budget.save()
+            }
+        }
         Task { await GroqClient().probeLimits() }
         // 녹음 중에 설정을 바꾸면 같은 기록 안에서 바로 반영한다.
         // @Published 는 값이 바뀌기 직전에 알리므로 main 큐로 한 번 미뤄서 바뀐 값을 읽는다

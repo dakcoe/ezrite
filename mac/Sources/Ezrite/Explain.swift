@@ -251,6 +251,51 @@ enum Explain {
 
     // MARK: 응답 검사
 
+    /// Groq 모델이 내부 줄 번호를 쓰면 ("25번 줄에", "(28번)") 그 줄의 글자로 바꾸거나 지운다. 없는 번호는 둔다.
+    /// JSON 글 그대로에 써도 깨지지 않게 넣는 글자에서 역슬래시는 빼고 따옴표는 ” 로 바꾼다
+    static func dropLineRefs(_ s: String, lines: [Line]) -> String {
+        let text = Dictionary(lines.map { ($0.id, $0.text) }, uniquingKeysWith: { a, _ in a })
+        let safe = { (t: String) in t.replacingOccurrences(of: "\\", with: "").replacingOccurrences(of: "\"", with: "”") }
+        func sub(_ pattern: String, _ s: String, _ make: (String) -> String) -> String {
+            let re = try! NSRegularExpression(pattern: pattern)
+            var out = s
+            for m in re.matches(in: s, range: NSRange(s.startIndex..., in: s)).reversed() {
+                guard let whole = Range(m.range, in: out), let num = Range(m.range(at: 1), in: out),
+                      let id = Int(out[num]), let line = text[id] else { continue }
+                out.replaceSubrange(whole, with: make(line))
+            }
+            return out
+        }
+        let quote = { (t: String) in "‘\(safe(t))’" }
+        var named = s
+        for pattern in [#"(?:화면|스크린)\s*(\d+)번(?:\s*(?:줄|라인))?"#, #"(\d+)번\s*(?:줄|라인)"#, #"(?i)\bline\s+(\d+)"#] {
+            named = sub(pattern, named, quote)
+        }
+        return sub(#"\s*\((\d+)번\)"#, named) { _ in "" }
+    }
+
+    /// 모델이 JSON 글 안에 수식 역슬래시를 그대로 써서(\delta, \frac) 깨진 JSON 을 고쳐 읽는다.
+    /// 올바른 이스케이프(\" \\ \/ \uXXXX, 뒤에 글자가 이어지지 않는 \n \t 등)는 두고, 나머지 역슬래시는 글자로 만든다
+    static func lenientJSON(_ text: String) -> Data? {
+        guard let start = text.firstIndex(of: "{"), let end = text.lastIndex(of: "}"), start < end else { return nil }
+        let s = Array(text[start...end])
+        var out = "", i = 0
+        let isHex = { (c: Character) in c.isHexDigit }
+        while i < s.count {
+            let c = s[i]
+            guard c == "\\", i + 1 < s.count else { out.append(c); i += 1; continue }
+            let n = s[i + 1]
+            let after = i + 2 < s.count ? s[i + 2] : " "
+            let valid = n == "\\" || n == "\"" || n == "/"
+                || (n == "u" && i + 5 < s.count && s[(i + 2)...(i + 5)].allSatisfy(isHex))
+                || ("bfnrt".contains(n) && !(after.isASCII && after.isLetter))
+            if valid { out.append(c); out.append(n); i += 2 } else { out.append("\\\\"); i += 1 }
+        }
+        let data = Data(out.utf8)
+        return (try? JSONSerialization.jsonObject(with: data)) is [String: Any] ? data : nil
+    }
+
+
     /// AI 가 고른 줄 번호 → 표시. 화면에 없는 번호와 중복은 버리고 3개까지만
     static func marks(from data: Data, lines: [Line]) -> [Mark] {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

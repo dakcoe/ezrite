@@ -30,6 +30,8 @@ struct Usage: Equatable {
     nonisolated(unsafe) static var report: ((String, Usage) -> Void)?
     /// 응답에 실린 쓴 양 (모델 이름, 종류, 양 — 토큰 수 또는 음성 초)
     nonisolated(unsafe) static var spent: ((String, Budget.Kind, Double) -> Void)?
+    /// 설명·질문 한 번에 쓴 토큰 (남은 횟수 계산용 평균에 넣는다)
+    nonisolated(unsafe) static var used: ((Budget.Use, Double) -> Void)?
 }
 
 extension Usage {
@@ -55,6 +57,29 @@ struct Budget: Codable {
     static let window: TimeInterval = 24 * 3600
 
     private var rows: [String: [Double]] = [:]          // "모델|종류" → [찬 양, 그때 시각]
+    /// 설명·질문 한 번에 쓴 토큰의 평균. 1.0.3 까지의 파일엔 없다 (옵셔널이라 없어도 읽힌다)
+    private var avg: [String: Double]?
+
+    /// 남은 횟수를 셀 일. Groq 에선 둘 다 qwen 한도를 쓴다
+    enum Use: String { case explain, ask }
+    /// 처음 평균: 쉬운·어려운 화면에서 잰 값의 가운데 (설명 3,000~4,400, 질문 3,000~4,000)
+    private static let firstGuess: [Use: Double] = [.explain: 3_700, .ask: 3_500]
+
+    func perUse(_ use: Use) -> Double { avg?[use.rawValue] ?? Self.firstGuess[use]! }
+
+    /// 실제로 쓴 양 쪽으로 평균을 고친다 (최근 것에 30%)
+    mutating func average(_ use: Use, _ tokens: Double) {
+        guard tokens > 0 else { return }
+        var a = avg ?? [:]
+        a[use.rawValue] = perUse(use) * 0.7 + tokens * 0.3
+        avg = a
+    }
+
+    /// 남은 한도로 몇 번 더 할 수 있나. 한도는 24시간에 걸쳐 차오르니 시간이 지나면 는다
+    func usesLeft(_ use: Use, model: String, at now: Date = Date()) -> Int {
+        let left = Self.cap(.tokens) - min(Self.cap(.tokens), used(model, .tokens, at: now))
+        return Int(left / perUse(use))
+    }
 
     mutating func note(_ model: String, _ kind: Kind, _ amount: Double, at now: Date = Date()) {
         guard amount > 0 else { return }

@@ -101,8 +101,8 @@ struct UsageFooter: View {
     static let gauges: [Gauge] = [
         ("waveform", "받아쓰기", GroqClient.models, .audio, nil),
         ("character.bubble", "번역", GroqClient.chatModels, .tokens, .translate),
-        // Groq 설명은 화면 읽기(vision)와 설명 쓰기(reasoning) 두 모델을 함께 쓴다
-        ("sparkles", "화면 설명", [GroqClient.visionModel, GroqClient.reasoningModel], .tokens, .explain),
+        // Groq 설명·질문은 qwen 한 모델로 한다 (120b 는 qwen 이 막혔을 때만)
+        ("sparkles", "화면 설명", [GroqClient.visionModel], .tokens, .explain),
     ]
 
     /// 그 기능을 Groq 가 아닌 서비스로 돌리면 그 서비스. 유료 크레딧이라 하루 한도 막대 대신 이름만 보인다
@@ -130,7 +130,7 @@ struct UsageFooter: View {
     final class HoverText: ObservableObject {
         @Published var target: String?
     }
-    static let gaugeWidth: CGFloat = 60
+    static let gaugeWidth: CGFloat = 46          // 남은 횟수 글까지 팝업 폭(340)에 들어가게
     static let gaugeSpacing: CGFloat = 10
 
     private var caption: String? {
@@ -144,14 +144,28 @@ struct UsageFooter: View {
         let amountName = g.kind == .audio ? "음성 시간" : "토큰"
         let calls = p.requests.map { "호출 \(pct($0)) · " } ?? ""
         let merged = g.models.count > 1 ? (g.feature == .explain ? ", 두 모델 중 적게 남은 쪽" : ", 모델 \(g.models.count)개 합산") : ""
-        return "\(g.label) 남은 한도 \(pct(p.total ?? p.amount)) (\(calls)\(amountName) \(pct(p.amount))\(merged))"
+        let uses = g.feature == .explain ? " · 설명 약 \(left(.explain))번, 질문 약 \(left(.ask))번" : ""
+        return "\(g.label) 남은 한도 \(pct(p.total ?? p.amount)) (\(calls)\(amountName) \(pct(p.amount))\(merged))\(uses)"
     }
 
+    /// 남은 한도로 설명·질문을 몇 번 더 할 수 있나 (qwen 한도 ÷ 한 번 평균)
+    private func left(_ use: Budget.Use) -> Int { state.budget.usesLeft(use, model: GroqClient.visionModel) }
+
     var body: some View {
+        // 한도는 24시간에 걸쳐 차오른다. 1분마다 다시 그려 막대와 횟수가 따라 오르게 한다
+        TimelineView(.periodic(from: .now, by: 60)) { _ in row }
+    }
+
+    private var row: some View {
         HStack(spacing: 10) {
             // 게이지는 그대로 두고 위에 글만 겹친다. 게이지를 빼면 마우스 추적 영역도 사라져 글이 안 지워진다
             HStack(spacing: Self.gaugeSpacing) {
                 ForEach(Self.gauges, id: \.label) { g in gauge(g) }
+                if state.explainProvider == .groq {
+                    Text("설명 \(left(.explain)) · 질문 \(left(.ask))")
+                        .font(.system(size: 9).monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
+                        .fixedSize()
+                }
                 Spacer(minLength: 0)
             }
             .opacity(caption == nil ? 1 : 0)
@@ -192,7 +206,7 @@ struct UsageFooter: View {
             Image(systemName: g.icon).font(.system(size: 9)).foregroundStyle(.secondary)
             if let other = paid(g) {
                 Text(other.label).font(.system(size: 9.5, weight: .medium)).foregroundStyle(.secondary)
-                    .frame(width: 44, alignment: .leading)
+                    .lineLimit(1).fixedSize().frame(width: 30, alignment: .leading)
             } else {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -200,7 +214,7 @@ struct UsageFooter: View {
                     Capsule().fill(Self.color(fraction)).frame(width: geo.size.width * CGFloat(fraction ?? 0))
                 }
             }
-            .frame(width: 44, height: 4)
+            .frame(width: 30, height: 4)
             }
         }
         .frame(width: Self.gaugeWidth, alignment: .leading)
