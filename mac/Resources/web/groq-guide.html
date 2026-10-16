@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<!-- 처음 안내 창의 "무료 Groq 키 넣기" 애니메이션. 실제 Groq 콘솔(console.groq.com/keys) 화면 구성을 따라 그렸다.
+     키 값은 가린다. 저절로 넘어가지 않는다 — 아래 점이나 ‹ › 로 단계를 고르면 그 단계 움직임을 한 번 보여준다 -->
+<style>
+  :root { --orange: #f55036; --ink: #1d1d1f; --muted: #6b6b70; --line: #e6e6e8; --page: #fafafa; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; font: 12px/1.4 -apple-system, "Apple SD Gothic Neo", sans-serif; color: var(--ink); }
+  .stage { position: relative; width: 460px; height: 288px; border-radius: 10px; overflow: hidden;
+           background: #fff; border: 1px solid var(--line); box-shadow: 0 6px 24px #0002; }
+  .browser { height: 26px; background: #ececee; display: flex; align-items: center; gap: 6px; padding: 0 10px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #d0d0d4; }
+  .url { margin-left: 8px; flex: 1; height: 16px; border-radius: 8px; background: #fff; font-size: 10px; color: var(--muted);
+         display: flex; align-items: center; padding: 0 8px; }
+  .scene { position: absolute; inset: 26px 0 30px 0; opacity: 0; transition: opacity .35s; }
+  .scene.on { opacity: 1; }
+  .caption { position: absolute; left: 0; right: 0; bottom: 0; height: 30px; background: #111; color: #fff;
+             display: flex; align-items: center; padding: 0 12px; font-size: 12px; font-weight: 600; }
+  .caption b { color: #ffb4a6; margin-right: 6px; }
+  .nav2 { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .arrow { width: 20px; height: 20px; border-radius: 50%; border: 0; background: #ffffff22; color: #fff; font-size: 13px;
+           line-height: 20px; padding: 0; cursor: pointer; }
+  .arrow:disabled { opacity: .3; cursor: default; }
+  /* 다음: 눈에 띄게 채운 단추. 마지막 단계에서는 숨긴다 */
+  .arrow.next { width: auto; height: 22px; padding: 0 10px; border-radius: 11px; background: #1f6ae6;
+                font-size: 11.5px; font-weight: 700; line-height: 22px; }
+  .arrow.next:disabled { visibility: hidden; }
+  .dots { display: flex; gap: 5px; }
+  .dots button { width: 8px; height: 8px; border-radius: 50%; border: 0; padding: 0; background: #ffffff55; cursor: pointer; }
+  .dots button.on { background: #fff; width: 18px; border-radius: 4px; }
+
+  /* Groq 콘솔 머리 */
+  .top { height: 30px; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid var(--line); background: var(--page); }
+  .logo { font-weight: 800; font-size: 15px; letter-spacing: -.5px; }
+  .crumb { margin-left: 12px; color: var(--muted); font-size: 10px; }
+  .nav { margin-left: auto; display: flex; gap: 12px; font-size: 10px; color: var(--muted); }
+  .nav .active { color: var(--orange); font-weight: 600; }
+  .avatar { width: 16px; height: 16px; border-radius: 50%; background: #8b5cf6; margin-left: 10px; }
+  .page { padding: 12px 26px; }
+  .h { font-size: 14px; font-weight: 700; }
+  .sub { font-size: 9.5px; color: var(--muted); margin-top: 2px; }
+  .create { position: absolute; right: 26px; top: 40px; border: 1px solid #f0a596; border-radius: 6px; padding: 5px 9px;
+            font-size: 10px; background: #fff; transition: transform .15s, background .15s; }
+  .create.press { transform: scale(.94); background: #fff1ee; }
+  table { margin-top: 12px; width: 100%; border-collapse: collapse; font-size: 9.5px; }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: 8.5px; padding: 4px 0; }
+  td { padding: 6px 0; border-top: 1px solid var(--line); }
+  .mono { font-family: Menlo, monospace; color: var(--muted); }
+
+  /* 대화상자 */
+  .shade { position: absolute; inset: 0; background: #0006; }
+  .dialog { position: absolute; left: 70px; right: 70px; top: 26px; background: #fff; border-radius: 8px; padding: 12px 14px;
+            box-shadow: 0 10px 30px #0004; }
+  .dialog .t { font-weight: 700; font-size: 12px; margin-bottom: 8px; }
+  .label { font-size: 9.5px; font-weight: 600; margin: 6px 0 3px; }
+  .field { height: 22px; border: 1px solid #c9c9ce; border-radius: 5px; padding: 0 7px; display: flex; align-items: center;
+           font-size: 10px; }
+  .field.focus { border-color: #888; box-shadow: 0 0 0 2px #0001; }
+  .hint { color: var(--muted); font-size: 8.5px; margin-top: 2px; }
+  .select { height: 22px; border: 1px solid var(--line); border-radius: 5px; padding: 0 7px; display: flex; align-items: center;
+            justify-content: space-between; font-size: 10px; }
+  .btnrow { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
+  .btn { border: 1px solid #f0a596; border-radius: 5px; padding: 4px 9px; font-size: 10px; background: #fff;
+         transition: transform .15s, background .15s; }
+  .btn.plain { border-color: var(--line); }
+  .btn.press { transform: scale(.92); background: #fff1ee; }
+  .keybox { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+  .key { flex: 1; height: 22px; border: 1px solid #888; border-radius: 5px; padding: 0 7px; display: flex; align-items: center;
+         font-family: Menlo, monospace; font-size: 9.5px; background: #dbe7ff; }
+  .copied { color: #16a34a; font-size: 9.5px; font-weight: 600; margin-left: 4px; opacity: 0; transition: opacity .2s; }
+  .copied.on { opacity: 1; }
+  .caret::after { content: "|"; animation: blink 1s steps(1) infinite; margin-left: 1px; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Ezrite 안내 창 */
+  .app { position: absolute; inset: 14px 30px; background: #f4f4f6; border-radius: 10px; border: 1px solid var(--line); padding: 14px; }
+  .app .row { display: flex; gap: 6px; align-items: center; margin-top: 10px; }
+  .appbtn { border: 1px solid #c9c9ce; border-radius: 5px; padding: 3px 8px; font-size: 10px; background: #fff; transition: transform .15s; }
+  .appbtn.blue { background: #2f7bf6; color: #fff; border-color: #2f7bf6; }
+  .appbtn.press { transform: scale(.92); }
+  .ok { color: #16a34a; font-size: 10.5px; font-weight: 600; margin-top: 8px; opacity: 0; transition: opacity .3s; }
+  .ok.on { opacity: 1; }
+  .badge { width: 20px; height: 20px; border-radius: 50%; background: #2f7bf6; color: #fff; font-weight: 700; font-size: 11px;
+           display: inline-grid; place-items: center; transition: background .3s; }
+  .badge.done { background: #16a34a; }
+
+  .login { position: absolute; left: 120px; right: 120px; top: 28px; background: #fff; border: 1px solid var(--line);
+           border-radius: 10px; padding: 14px; text-align: center; box-shadow: 0 6px 20px #0001; }
+  .login .logo { font-size: 20px; }
+  .lbtn { margin-top: 7px; border: 1px solid var(--line); border-radius: 6px; padding: 5px; font-size: 10px; }
+
+  /* 커서 */
+  .cursor { position: absolute; width: 16px; height: 16px; left: 0; top: 0; z-index: 9; pointer-events: none;
+            transition: transform .7s cubic-bezier(.4,.1,.2,1); }
+  .cursor svg { filter: drop-shadow(0 1px 1px #0006); }
+  .ripple { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%;
+            border: 2px solid var(--orange); opacity: 0; z-index: 8; pointer-events: none; }
+  .ripple.go { animation: rip .5s ease-out; }
+  @keyframes rip { from { transform: scale(.3); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <div class="browser"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    <div class="url" id="url">console.groq.com</div></div>
+
+  <!-- ① 로그인 -->
+  <div class="scene" id="s1">
+    <div class="login">
+      <div class="logo">groq</div>
+      <div class="sub" style="margin:4px 0 6px">GroqCloud 로그인</div>
+      <div class="lbtn">Continue with Google</div>
+      <div class="lbtn">Continue with GitHub</div>
+      <div class="lbtn">Continue with Email</div>
+    </div>
+  </div>
+
+  <!-- ② API Keys 화면 -->
+  <div class="scene" id="s2">
+    <div class="top"><span class="logo">groq</span><span class="crumb">Personal / Default Project</span>
+      <div class="nav"><span>Playground</span><span class="active">API Keys</span><span>Dashboard</span><span>Docs</span></div>
+      <span class="avatar"></span></div>
+    <div class="page">
+      <div class="h">API Keys</div>
+      <div class="sub">Manage your project API keys.</div>
+      <table><tr><th>NAME</th><th>SECRET KEY</th><th>CREATED</th></tr>
+        <tr id="newrow" style="display:none"><td>ezrite</td><td class="mono">gsk_...••••</td><td>today</td></tr></table>
+    </div>
+    <div class="create" id="create">+ Create API Key</div>
+
+    <!-- ③ 만들기 대화상자 -->
+    <div id="d1" style="display:none">
+      <div class="shade"></div>
+      <div class="dialog">
+        <div class="t">Create API Key</div>
+        <div class="label">Display Name</div>
+        <div class="field" id="name"><span id="typed"></span></div>
+        <div class="hint">A display name for the key.</div>
+        <div class="label">Expiration</div>
+        <div class="select"><span>No expiration</span><span>⌄</span></div>
+        <div class="btnrow"><div class="btn" id="submit">Submit</div></div>
+      </div>
+    </div>
+
+    <!-- ④ 만들어진 키 -->
+    <div id="d2" style="display:none">
+      <div class="shade"></div>
+      <div class="dialog" style="top:56px">
+        <div class="t">Create API Key</div>
+        <div style="font-size:10px">Your new API key has been created. <b>Copy it now, as we will not display it again.</b></div>
+        <div class="keybox"><div class="key">gsk_••••••••••••••••••••••••</div>
+          <div class="btn" id="copy">⧉ Copy</div></div>
+        <div class="btnrow"><span class="copied" id="copied">복사됨</span><div class="btn plain" id="done">Done</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ⑤ Ezrite 에 붙여넣기 -->
+  <div class="scene" id="s5">
+    <div class="app">
+      <div style="display:flex;gap:8px;align-items:center"><span class="badge" id="badge">1</span>
+        <b style="font-size:12.5px">무료 Groq 키 넣기</b></div>
+      <div class="row">
+        <div class="appbtn">무료 키 발급받기 ↗</div>
+        <div class="field" id="paste" style="flex:1;background:#fff"><span id="pasted" style="color:#999">gsk_… 붙여넣기</span></div>
+        <div class="appbtn blue" id="save">저장</div>
+      </div>
+      <div class="ok" id="ok">연결됨 · 모델 12개 ✓</div>
+    </div>
+  </div>
+
+  <div class="caption"><span id="cap"></span>
+    <div class="nav2"><button class="arrow" id="prev" aria-label="이전 단계">‹</button>
+      <div class="dots" id="dots"></div>
+      <button class="arrow next" id="next" aria-label="다음 단계">다음 ›</button></div></div>
+  <div class="ripple" id="ripple"></div>
+  <div class="cursor" id="cursor"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M1 1 L1 13 L4.5 9.8 L7 15 L9 14 L6.6 9 L11 9 Z" fill="#fff" stroke="#000" stroke-width="1"/></svg></div>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const stage = $("stage");
+  // 요소 가운데로 커서를 옮긴다
+  function moveTo(el, dx = 0, dy = 0) {
+    const s = stage.getBoundingClientRect(), r = el.getBoundingClientRect();
+    $("cursor").style.transform = `translate(${r.left - s.left + r.width / 2 + dx}px, ${r.top - s.top + r.height / 2 + dy}px)`;
+  }
+  async function click(el) {
+    moveTo(el); await sleep(750);
+    const s = stage.getBoundingClientRect(), r = el.getBoundingClientRect();
+    const rp = $("ripple");
+    rp.style.left = (r.left - s.left + r.width / 2) + "px"; rp.style.top = (r.top - s.top + r.height / 2) + "px";
+    rp.classList.remove("go"); void rp.offsetWidth; rp.classList.add("go");
+    el.classList.add("press"); await sleep(160); el.classList.remove("press");
+  }
+  function scene(id, url, cap) {
+    ["s1", "s2", "s5"].forEach(s => $(s).classList.toggle("on", s === id));
+    $("url").textContent = url;
+    $("cap").innerHTML = cap;
+  }
+  async function type(el, text, ms = 75) {
+    el.textContent = ""; el.parentElement.classList.add("focus", "caret");
+    for (const ch of text) { el.textContent += ch; await sleep(ms); }
+    el.parentElement.classList.remove("caret");
+  }
+  function reset() {
+    $("d1").style.display = "none"; $("d2").style.display = "none"; $("newrow").style.display = "none";
+    $("typed").textContent = ""; $("name").classList.remove("focus", "caret");
+    $("copied").classList.remove("on"); $("ok").classList.remove("on"); $("badge").classList.remove("done");
+    $("badge").textContent = "1"; $("pasted").textContent = "gsk_… 붙여넣기"; $("pasted").style.color = "#999";
+    $("cursor").style.transform = "translate(400px, 200px)";
+  }
+
+  // 단계마다 처음 모습에서 시작해 움직임을 한 번 보여준다. 다른 단계를 고르면 진행 중인 움직임은 멈춘다
+  let run = 0;
+  const steps = [
+    async () => { scene("s1", "console.groq.com", "<b>①</b> console.groq.com 에 가입·로그인 (무료)"); },
+    async (ok) => {
+      scene("s2", "console.groq.com/keys", "<b>②</b> 위쪽 API Keys → Create API Key");
+      await sleep(400); if (!ok()) return; await click($("create"));
+    },
+    async (ok) => {
+      scene("s2", "console.groq.com/keys", "<b>③</b> 이름은 아무거나 → Submit");
+      $("d1").style.display = "block";
+      await sleep(300); if (!ok()) return; moveTo($("name")); await sleep(700); if (!ok()) return;
+      await type($("typed"), "ezrite"); if (!ok()) return; await sleep(300); await click($("submit"));
+    },
+    async (ok) => {
+      scene("s2", "console.groq.com/keys", "<b>④</b> Copy — 이 창을 닫으면 키를 다시 볼 수 없어요");
+      $("d2").style.display = "block"; $("newrow").style.display = "";
+      await sleep(400); if (!ok()) return; await click($("copy")); if (ok()) $("copied").classList.add("on");
+    },
+    async (ok) => {
+      scene("s5", "Ezrite", "<b>⑤</b> Ezrite 에 붙여넣고 저장");
+      await sleep(400); if (!ok()) return; await click($("paste")); if (!ok()) return;
+      $("pasted").textContent = "gsk_••••••••••••••••"; $("pasted").style.color = "#1d1d1f";
+      await sleep(400); if (!ok()) return; await click($("save")); if (!ok()) return;
+      $("ok").classList.add("on"); $("badge").classList.add("done"); $("badge").textContent = "✓";
+    },
+  ];
+  let current = 0;
+  const dots = steps.map((_, i) => {
+    const b = document.createElement("button");
+    b.setAttribute("aria-label", (i + 1) + "단계");
+    b.onclick = () => show(i);
+    $("dots").append(b);
+    return b;
+  });
+  function show(i) {
+    current = Math.max(0, Math.min(steps.length - 1, i));
+    dots.forEach((d, k) => d.classList.toggle("on", k === current));
+    $("prev").disabled = current === 0; $("next").disabled = current === steps.length - 1;
+    const id = ++run;
+    reset();
+    steps[current](() => id === run);
+  }
+  $("prev").onclick = () => show(current - 1);
+  $("next").onclick = () => show(current + 1);
+  show(Number(location.hash.slice(1)) || 0);    // #2 처럼 단계를 지정해 열 수 있다 (스크린샷 확인용)
+</script>
+</body>
+</html>

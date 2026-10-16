@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<!-- 사용 가이드: 넘기는 슬라이드. 장마다 위에 앱 화면 모양 그림, 아래 짧은 설명. 색은 앱과 같게. 기능이 바뀌면 같이 고친다 -->
+<title>Ezrite 사용 가이드</title>
+<style>
+  /* 앱과 같은 색: 시스템 회색·흰색 바탕 + 앱의 파란 강조색. 다크 모드도 따라간다 (그림자는 레저 SF-02 여러 겹 그림자) */
+  :root { --paper:#f5f5f7; --ink:#1d1d1f; --muted:#5f5f66; --signal:#2f7bf6; --line:#e3e3e8;
+          --bg:#ffffff; --fg:#1d1d1f; --soft:#f2f2f5; --panel:#eceef1; --stage:linear-gradient(160deg,#f7f8fb,#e3e7ee); --hint:#8a3208;
+          --blue:#2f7bf6; --orange:#ff6b2c; --red:#ff3b30; --green:#34c759;
+          --mono: ui-monospace, "SF Mono", Menlo, monospace;
+          --shadow: 0 1px 1px rgba(0,0,0,.03), 0 2px 4px rgba(0,0,0,.04), 0 8px 16px rgba(0,0,0,.05), 0 24px 48px rgba(0,0,0,.07); }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper:#1c1c1e; --ink:#f5f5f7; --muted:#a1a1a6; --signal:#4b8dff; --line:#38383a;
+            --bg:#2c2c2e; --fg:#f5f5f7; --soft:#3a3a3c; --panel:#2a2a2d; --stage:#48484c; --hint:#ffb08a;
+            --shadow: 0 2px 4px rgba(0,0,0,.3), 0 12px 28px rgba(0,0,0,.35); }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink);
+               font: 15px/1.65 -apple-system, "Apple SD Gothic Neo", sans-serif; }
+  body { display: flex; flex-direction: column; }
+  .deck { flex: 1; position: relative; overflow: hidden; }
+  .slide { position: absolute; inset: 0; display: flex; flex-direction: column; opacity: 0; transform: translateX(24px);
+           transition: opacity .3s, transform .3s; pointer-events: none; }
+  .slide.on { opacity: 1; transform: none; pointer-events: auto; }
+  .art { height: 300px; margin: 20px 24px 0; border-radius: 16px; background: var(--stage); position: relative; overflow: hidden;
+         box-shadow: var(--shadow); color: var(--fg); }
+  .text { padding: 20px 30px 0; }
+  .step { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; letter-spacing: .08em;
+          color: var(--muted); text-transform: uppercase; }
+  .step::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--signal); }
+  h2 { margin: 6px 0 8px; font-size: 22px; font-weight: 600; color: var(--ink); letter-spacing: -.01em; }
+  p { margin: 0 0 8px; }
+  .sub { color: var(--muted); font-size: 14px; }
+  .k { display: inline-block; border: 1px solid var(--line); background: var(--bg); border-radius: 6px; padding: 0 6px;
+       font-size: 13px; line-height: 21px; color: var(--ink); }
+  footer { display: flex; align-items: center; gap: 14px; padding: 14px 24px; }
+  .dots { display: flex; gap: 6px; margin-right: auto; }
+  .dots button { width: 8px; height: 8px; border-radius: 50%; border: 0; padding: 0; background: var(--line); cursor: pointer;
+                 transition: width .25s, background .25s; }
+  .dots button.on { width: 22px; border-radius: 4px; background: var(--signal); }
+  footer .back { border: 0; background: none; color: var(--muted); font: inherit; font-size: 14px; cursor: pointer; padding: 8px 6px; }
+  footer .back:disabled { visibility: hidden; }
+  footer .next { border: 0; background: var(--signal); color: #fff; font: inherit; font-size: 14px; font-weight: 600;
+                 padding: 9px 18px; border-radius: 9px; cursor: pointer; }
+
+  /* 그림 부품: 앱 화면을 줄여 그린 모양 */
+  .menubar { position: absolute; top: 0; left: 0; right: 0; height: 22px; background: #2f5aa8; display: flex; align-items: center;
+             justify-content: flex-end; gap: 14px; padding: 0 14px; color: #fff; font-size: 11px; }
+  .mic { width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center; font-size: 11px; }
+  .mic.hi { background: #ffffff44; outline: 2px solid #fff; }
+  /* 실제 메뉴바 아이콘(검은 선 그림)을 흰색으로 */
+  .mic img { width: 14px; height: 14px; filter: invert(1); }
+  .menubar .dot { width: 12px; height: 12px; border-radius: 3px; background: #ffffff66; }
+  /* 글 속 버튼 아이콘: Lucide 아이콘(ISC, 오픈소스고지.txt)을 글자색으로 칠한다 (다크 모드도 따라감) */
+  .ic { display: inline-block; width: 1.05em; height: 1.05em; vertical-align: -0.16em; background: currentColor;
+        -webkit-mask: var(--i) center / contain no-repeat; mask: var(--i) center / contain no-repeat; }
+  .art .shot { position: absolute; left: 50%; top: 15px; transform: translateX(-50%); max-width: none;
+}
+  /* 창 사진: 밝은 바탕과 구분되게 둥근 모서리 + 그림자 (filter 그림자는 WebKit 에서 네모로 잘린다) */
+  .art .shot.win { border-radius: 10px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.12), 0 4px 10px rgba(0,0,0,.08), 0 16px 36px rgba(0,0,0,.12); }
+  .art .shot.fill { inset: 0; left: 0; top: 0; transform: none; width: 100%; height: 100%; object-fit: cover; }
+  .batt { width: 20px; height: 9px; border: 1.5px solid #fff; border-radius: 3px; position: relative; }
+  .batt::after { content: ""; position: absolute; inset: 1px 5px 1px 1px; background: #fff; border-radius: 1px; }
+  .hint { position: absolute; font-size: 10.5px; color: var(--hint); font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+  <!-- 1 시작 -->
+  <section class="slide">
+    <div class="art">
+      <div class="menubar"><span class="mic hi" id="menuicon"><img alt="Ezrite 메뉴바 아이콘" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACQAAAAkCAYAAADhAJiYAAAE9UlEQVR4nLWYa4hVVRTHf+fcOzZTaaMWluhQUpRl0URJD8Lqgx96QWZBlD3MopKI6EVSEPRAsb5FJIQR5Yco6kNlVBDG0EPD7AFFKVoWZQ+s0LGcxz2x4r+GNbtzzr1TtGBzz36t9d9rr9e+Ge2pAYyG/inAQuAc4ERgZphrAd8DnwIbgDf0XcXrH5S1mcskZDKwBLgZmKf534GtwLfAoMYOBmYDxwBTNPYR8ASwDvgTyIFCrWOyTU7XAj+LwVfACqAf6K7Z3y1N3g9s114DvrhCRkdgDgFeFDNT+8UlazNdQ1OtUaJ143epDmO81obDtAXlCw4HPhGDFcnGpvrtrjvXWqcu4CHxHAB624FyJr3SiBnf+YkmqvY01KqYR2CLBeo9oKdCq3+TC3xNG84LJyvbUAawbi4TL6OLJGNd1XofWK6FNwUwZRQ1Ya5/obR5XMWaSM7zTsm6IgXl9jAd2Kv4kaqZEkFXAp8HF/a2OThAGags8N4kDz4ohJmxyQfEsL/CZrIw9rjW2gGeBJYBNwJPAcOae7Dm+nzsDK29Vf1mvFtD+n7NyRr6vVdMzNaOKFl3JPCO1iytAeUyPgZ2RA0ZnSYGyxKVppv7gCF54QEa6wpxyO1jigLib8DUVJioqbFbJPuEOOkGdnQCwMkB3q11biMOILr8pBDhC6WcyMPJ1x+rdcvj4EnAfmCn+mmeKfR7luLTgE43ovFR5Tw0ZnNva9+ZCa+U5w7J7o+ALGP/pOvIagBNB/aFZOoaegS4KxnbI16TawBlkvmjkvIYoKa8ox0V+nXQxszoGuAyfe8PwjohB9UdAe0J5UIds0J7hnUVz+owu9WM6XMKkPs6PGChfYMR0DZdx9SaU8Tc1RKgq1QDjaodqoB5qmqfSFlF38DMcPvNQ8TM5HouNFJZlfeHDDi9xpFwlVFwahI+fpTsbksEZIHM6JKSK8t0AhJjj64eNVgWc7ykieQpa4H67/pgrjrYBq5WHGmFuLEA+FIxajCJurm05wBGNe8hwO3zeOAL4OSwr6UDXgf8oLyYOSCjh2UDSxNAh6l6nCaBI5p7XgFyr3hY5N4FLALeDO4+Ir69slO038DMBeYDaySzkWuD/b4ObARWSrgb5ZA2D2utl6wWO17Rmh41W/eyHgBephY6iNuXUyElDClBG7Wi8WbSjrn/S8CBGjcNoBNv1ZXOFDDPZ5YD79B3t+b6JHSbeGaB15CeUWazq3W49KrHbON6qX6W+rPF2LL86fpepTkDFw+Vh1y2NuTH1RJmmkdXuFMJuKeuRvdBZ5rr9zPgG31vlqCFCZAI7HKtMVtCpY3lP6dVmp+fKKOU0hcGKjPdI2bI26x/X9Ckx5SVmtulSvB29S8I/B+VPY2rFOsoKzn9gBhbFJ6TlK/fKXR4f6O881z114uXXY/R2UHLZfVXLeXaNEulghfmXSrunwY+0LNmjV4ruQy9EPBpcvlfgGcUj3Yr77W9sipQXp5ukqAtyvJz5VF9CoA3BO1tCH9GmNc+VvIosAJtQk9rp1iq3CYvKSradj2lshJhfao8X9XVzvu3gChx8X6lm19lQ0vCq8Upfk/4ajqhTAExMv/as3UAO6nCe/zN70/ocWsmZN2iQlVhpLRkaSUlCMncuIj8XwBlAnSP3N8Y25gn4Bc0ZuCspLEHpWf2/4VcxR/WGLS3t7RnQsb6F3FJQO4MjAckAAAAAElFTkSuQmCC"></span><span class="dot"></span><span class="dot"></span>
+        <span>Wi-Fi</span><span class="batt"></span><span>10월 15일 오후 3:00</span></div>
+      <span class="hint" id="menuhint" style="top:24px;">↑ 여기</span>
+      <img class="shot win" id="menupop" src="shots/popup.png" alt="메뉴바 팝업" style="top:44px; height:236px; transform:none;">
+    </div>
+    <div class="text"><div class="step">STEP 01 / 07 · 시작</div><h2>메뉴바 아이콘을 누르세요</h2>
+      <p>화면 맨 위 메뉴바의 마이크 아이콘을 누르면 팝업이 열리고, 다시 누르면 닫힙니다.</p>
+      <p class="sub">팝업 위쪽 빈 곳을 잡고 끌면 원하는 자리로 옮길 수 있어요. 받아 적은 글은 저절로 저장됩니다.</p></div>
+  </section>
+
+  <!-- 2 소리 출처 -->
+  <section class="slide">
+    <div class="art">
+      <img class="shot win" src="shots/choose.png" alt="녹음 시작 말풍선" style="height:270px;">
+    </div>
+    <div class="text"><div class="step">STEP 02 / 07 · 무엇을 받아 적을까</div><h2><span class="k"><i class="ic" style="--i:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiA+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiIC8+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMSIgLz48L3N2Zz4=)"></i></span> 를 누르고 소리 출처를 고르세요</h2>
+      <p><b>유튜브·온라인 강의</b>는 <span class="k">시스템 전체 소리</span> 나 <span class="k">크롬</span>, <span class="k">줌</span> 같은 앱을, <b>강의실 수업</b>은 <span class="k">마이크</span> 를 고르세요.</p>
+      <p class="sub"><b>내 목소리도 함께</b>를 켜면 컴퓨터 소리와 내 마이크를 섞어서, 온라인 수업에서 내가 발표·질문한 말도 같이 받아 적어요. 앱을 고르면 그 앱 소리만 받아 다른 소리가 섞이지 않아요. 컴퓨터 소리를 받으려면 화면 녹화 권한이 필요해요(소리만 쓰고 화면은 저장하지 않아요).</p></div>
+  </section>
+
+  <!-- 3 녹음 중 -->
+  <section class="slide">
+    <div class="art">
+      <img class="shot win" src="shots/live.png" alt="받아 적는 중인 팝업" style="height:270px;">
+    </div>
+    <div class="text"><div class="step">STEP 03 / 07 · 녹음과 번역</div><h2>받아 적고, 외국어는 바로 번역해요</h2>
+      <p><span class="k"><i class="ic" style="--i:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSIjMDAwIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiA+PHJlY3QgeD0iMTQiIHk9IjQiIHdpZHRoPSI0IiBoZWlnaHQ9IjE2IiByeD0iMSIgLz48cmVjdCB4PSI2IiB5PSI0IiB3aWR0aD0iNCIgaGVpZ2h0PSIxNiIgcng9IjEiIC8+PC9zdmc+)"></i></span> 일시정지 · <span class="k"><i class="ic" style="--i:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSIjMDAwIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiA+PHJlY3Qgd2lkdGg9IjE4IiBoZWlnaHQ9IjE4IiB4PSIzIiB5PSIzIiByeD0iMiIgLz48L3N2Zz4=)"></i></span> 끝내기. 영어·일본어는 줄 아래에 한국어 번역이 붙어요(설정 → 자동 번역).</p>
+      <p class="sub">아래쪽 <span class="k"><i class="ic" style="--i:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiA+PHBhdGggZD0iTTIxIDlWNmEyIDIgMCAwIDAtMi0ySDRhMiAyIDAgMCAwLTIgMnYxMGMwIDEuMS45IDIgMiAyaDQiIC8+PHJlY3Qgd2lkdGg9IjEwIiBoZWlnaHQ9IjciIHg9IjEyIiB5PSIxMyIgcng9IjIiIC8+PC9zdmc+)"></i></span> 를 누르면 최근 한 줄과 번역만 보이는 작은 창이 됩니다. 녹음 중에 출처·언어를 바꿔도 같은 기록에 이어져요.</p></div>
+  </section>
+
+  <!-- 4 설명 -->
+  <section class="slide">
+    <div class="art">
+      <img class="shot fill" src="shots/explain.png" alt="슬라이드 위 표시와 설명 카드">
+    </div>
+    <div class="text"><div class="step">STEP 04 / 07 · 설명해줘</div><h2>모르는 장면에서 <span class="k"><i class="ic" style="--i:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiA+PHBhdGggZD0iTTkuOTM3IDE1LjVBMiAyIDAgMCAwIDguNSAxNC4wNjNsLTYuMTM1LTEuNTgyYS41LjUgMCAwIDEgMC0uOTYyTDguNSA5LjkzNkEyIDIgMCAwIDAgOS45MzcgOC41bDEuNTgyLTYuMTM1YS41LjUgMCAwIDEgLjk2MyAwTDE0LjA2MyA4LjVBMiAyIDAgMCAwIDE1LjUgOS45MzdsNi4xMzUgMS41ODFhLjUuNSAwIDAgMSAwIC45NjRMMTUuNSAxNC4wNjNhMiAyIDAgMCAwLTEuNDM3IDEuNDM3bC0xLjU4MiA2LjEzNWEuNS41IDAgMCAxLS45NjMgMHoiIC8+PHBhdGggZD0iTTIwIDN2NCIgLz48cGF0aCBkPSJNMjIgNWgtNCIgLz48cGF0aCBkPSJNNCAxN3YyIiAvPjxwYXRoIGQ9Ik01IDE4SDMiIC8+PC9zdmc+)"></i></span> 를 누르세요</h2>
+      <p>지금 화면과 최근 음성을 AI 가 보고, 설명하는 곳을 <b>①②</b>로 짚고 오른쪽 카드에서 <b>짧은 영상처럼</b> 장면별로 설명해요.</p>
+      <p class="sub">그림(단계·표·공식·관계도)이 함께 그려지고, 슬라이드를 스크롤하면 표시가 따라가요. <span class="k"><i class="ic" style="--i:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiA+PHBhdGggZD0iTTkuOTM3IDE1LjVBMiAyIDAgMCAwIDguNSAxNC4wNjNsLTYuMTM1LTEuNTgyYS41LjUgMCAwIDEgMC0uOTYyTDguNSA5LjkzNkEyIDIgMCAwIDAgOS45MzcgOC41bDEuNTgyLTYuMTM1YS41LjUgMCAwIDEgLjk2MyAwTDE0LjA2MyA4LjVBMiAyIDAgMCAwIDE1LjUgOS45MzdsNi4xMzUgMS41ODFhLjUuNSAwIDAgMSAwIC45NjRMMTUuNSAxNC4wNjNhMiAyIDAgMCAwLTEuNDM3IDEuNDM3bC0xLjU4MiA2LjEzNWEuNS41IDAgMCAxLS45NjMgMHoiIC8+PHBhdGggZD0iTTIwIDN2NCIgLz48cGF0aCBkPSJNMjIgNWgtNCIgLz48cGF0aCBkPSJNNCAxN3YyIiAvPjxwYXRoIGQ9Ik01IDE4SDMiIC8+PC9zdmc+)"></i></span> 를 누르면 화면이 AI 서비스로 전송되니 개인 창은 가려 주세요.</p></div>
+  </section>
+
+  <!-- 5 질문 -->
+  <section class="slide">
+    <div class="art">
+      <img class="shot win" src="shots/ask.png" alt="설명 카드의 질문과 답" style="height:280px; top:10px;">
+    </div>
+    <div class="text"><div class="step">STEP 05 / 07 · 이어서 질문</div><h2>설명 카드 아래 칸에 바로 물어보세요</h2>
+      <p>그 순간 화면을 다시 보고, 앞의 설명과 대화를 이어서 답해요. 답이 가리키는 곳도 화면에 다시 짚어 줘요.</p>
+      <p class="sub">설정 → <b>AI 지침</b>에 "2학년 수준으로, 수식은 한 단계씩"처럼 원하는 설명 방식을 적어 두면 늘 반영돼요.</p></div>
+  </section>
+
+  <!-- 6 지난 기록 -->
+  <section class="slide">
+    <div class="art">
+      <img class="shot win" src="shots/history.png" alt="지난 기록 화면" style="height:270px;">
+    </div>
+    <div class="text"><div class="step">STEP 06 / 07 · 지난 기록</div><h2>기록은 저절로 쌓이고, 다시 들을 수 있어요</h2>
+      <p>아래 <span class="k">지난 기록</span> 탭에서 열어 이름을 붙이고, 줄 왼쪽 <span class="k"><i class="ic" style="--i:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiA+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiIC8+PHBvbHlnb24gcG9pbnRzPSIxMCA4IDE2IDEyIDEwIDE2IDEwIDgiIC8+PC9zdmc+)"></i></span> 로 <b>그 줄의 말만</b> 다시 들어요.</p>
+      <p class="sub"><span class="k"><i class="ic" style="--i:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiA+PHBhdGggZD0iTTIxIDEyYTkgOSAwIDEgMS05LTljMi41MiAwIDQuOTMgMSA2Ljc0IDIuNzRMMjEgOCIgLz48cGF0aCBkPSJNMjEgM3Y1aC01IiAvPjwvc3ZnPg==)"></i></span> 저장된 소리로 다시 받아 적기 · <span class="k"><i class="ic" style="--i:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiA+PHBhdGggZD0iTTQgMTJ2OGEyIDIgMCAwIDAgMiAyaDEyYTIgMiAwIDAgMCAyLTJ2LTgiIC8+PHBvbHlsaW5lIHBvaW50cz0iMTYgNiAxMiAyIDggNiIgLz48bGluZSB4MT0iMTIiIHgyPSIxMiIgeTE9IjIiIHkyPSIxNSIgLz48L3N2Zz4=)"></i></span> 다른 폴더로 내보내기 · <span class="k"><i class="ic" style="--i:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiA+PHBhdGggZD0iTTMgNmgxOCIgLz48cGF0aCBkPSJNMTkgNnYxNGMwIDEtMSAyLTIgMkg3Yy0xIDAtMi0xLTItMlY2IiAvPjxwYXRoIGQ9Ik04IDZWNGMwLTEgMS0yIDItMmg0YzEgMCAyIDEgMiAydjIiIC8+PGxpbmUgeDE9IjEwIiB4Mj0iMTAiIHkxPSIxMSIgeTI9IjE3IiAvPjxsaW5lIHgxPSIxNCIgeDI9IjE0IiB5MT0iMTEiIHkyPSIxNyIgLz48L3N2Zz4=)"></i></span> 휴지통으로. 저장 위치는 설정에서 iCloud 등으로 바꿀 수 있어요.</p></div>
+  </section>
+
+  <!-- 7 설정·한도 -->
+  <section class="slide">
+    <div class="art">
+      <img class="shot" src="shots/keys.png" alt="설정의 AI 서비스 키" style="width:400px; top:40px;">
+    </div>
+    <div class="text"><div class="step">STEP 07 / 07 · 설정과 한도</div><h2>무료 Groq 하나면 충분해요</h2>
+      <p>받아쓰기는 무료 Groq 키로 돼요. Claude·Gemini·GPT 키를 넣으면 번역과 <span class="k"><i class="ic" style="--i:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiA+PHBhdGggZD0iTTkuOTM3IDE1LjVBMiAyIDAgMCAwIDguNSAxNC4wNjNsLTYuMTM1LTEuNTgyYS41LjUgMCAwIDEgMC0uOTYyTDguNSA5LjkzNkEyIDIgMCAwIDAgOS45MzcgOC41bDEuNTgyLTYuMTM1YS41LjUgMCAwIDEgLjk2MyAwTDE0LjA2MyA4LjVBMiAyIDAgMCAwIDE1LjUgOS45MzdsNi4xMzUgMS41ODFhLjUuNSAwIDAgMSAwIC45NjRMMTUuNSAxNC4wNjNhMiAyIDAgMCAwLTEuNDM3IDEuNDM3bC0xLjU4MiA2LjEzNWEuNS41IDAgMCAxLS45NjMgMHoiIC8+PHBhdGggZD0iTTIwIDN2NCIgLz48cGF0aCBkPSJNMjIgNWgtNCIgLz48cGF0aCBkPSJNNCAxN3YyIiAvPjxwYXRoIGQ9Ik01IDE4SDMiIC8+PC9zdmc+)"></i></span> 설명에 골라 쓸 수 있어요. 팝업 아래쪽 막대는 오늘 남은 무료 한도예요.</p>
+      <p class="sub">받아 적기가 안 되면: 시스템 설정 → 개인정보 보호 및 보안 → <b>화면 및 시스템 오디오 녹음</b>·<b>마이크</b>에서 Ezrite 를 켜고 앱을 다시 켜세요. Groq 일시 장애로 빠진 부분은 <span class="k"><i class="ic" style="--i:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiA+PHBhdGggZD0iTTIxIDEyYTkgOSAwIDEgMS05LTljMi41MiAwIDQuOTMgMSA2Ljc0IDIuNzRMMjEgOCIgLz48cGF0aCBkPSJNMjEgM3Y1aC01IiAvPjwvc3ZnPg==)"></i></span> 로 살릴 수 있어요.</p></div>
+  </section>
+</div>
+
+<footer>
+  <div class="dots" id="dots"></div>
+  <button class="back" id="prev">← 이전</button>
+  <button class="next" id="next">계속 →</button>
+</footer>
+
+<script>
+  const slides = [...document.querySelectorAll(".slide")];
+  const dots = slides.map((_, i) => {
+    const b = document.createElement("button");
+    b.setAttribute("aria-label", (i + 1) + "장");
+    b.onclick = () => show(i);
+    document.getElementById("dots").append(b);
+    return b;
+  });
+  let cur = 0;
+  function show(i) {
+    cur = Math.max(0, Math.min(slides.length - 1, i));
+    slides.forEach((s, k) => s.classList.toggle("on", k === cur));
+    dots.forEach((d, k) => d.classList.toggle("on", k === cur));
+    document.getElementById("prev").disabled = cur === 0;
+    // 마지막 장에서는 [다 봤어요] — 누르면 처음으로
+    document.getElementById("next").textContent = cur === slides.length - 1 ? "처음으로 ↺" : "계속 →";
+  }
+  document.getElementById("prev").onclick = () => show(cur - 1);
+  document.getElementById("next").onclick = () => show(cur === slides.length - 1 ? 0 : cur + 1);
+  document.addEventListener("keydown", e => {
+    if (e.key === "ArrowRight") show(cur + 1);
+    if (e.key === "ArrowLeft") show(cur - 1);
+  });
+  // 1장: "↑ 여기"와 팝업을 메뉴바 아이콘 바로 아래에 맞춘다
+  function alignMenu() {
+    const icon = document.getElementById("menuicon"), art = icon.closest(".art");
+    const a = art.getBoundingClientRect(), r = icon.getBoundingClientRect(), cx = r.left - a.left + r.width / 2;
+    const hint = document.getElementById("menuhint"), pop = document.getElementById("menupop");
+    hint.style.left = (cx - hint.offsetWidth / 2) + "px";
+    pop.style.left = Math.max(10, Math.min(a.width - pop.offsetWidth - 10, cx - pop.offsetWidth / 2)) + "px";
+  }
+  addEventListener("resize", alignMenu);
+  document.getElementById("menupop").addEventListener("load", alignMenu);
+  show(Number(location.hash.slice(1)) || 0);
+  alignMenu();     // #3 처럼 장을 지정해 열 수 있다 (스크린샷 확인용)
+</script>
+</body>
+</html>

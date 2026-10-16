@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>ko_KR</string>
+	<key>CFBundleDisplayName</key>
+	<string>Ezrite</string>
+	<key>CFBundleExecutable</key>
+	<string>Ezrite</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.dakcoe.ezrite</string>
+	<key>CFBundleName</key>
+	<string>Ezrite</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.1</string>
+	<key>CFBundleVersion</key>
+	<string>6</string>
+	<key>EzriteUpdateRepo</key>
+	<string>dakcoe/ezrite</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>기록을 휴지통으로 옮길 때 Finder 에게 맡깁니다. iCloud 폴더의 기록은 Finder 를 통해서만 지울 수 있습니다.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>강의를 받아 적으려면 마이크가 필요합니다.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>다른 앱에서 나오는 강의 소리를 받아 적으려면 화면 녹화 권한이 필요합니다.</string>
+</dict>
+</plist>

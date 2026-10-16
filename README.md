@@ -104,3 +104,17 @@ https://github.com/user-attachments/assets/b86042f0-8575-4644-ba03-9b57968179bc
 - macOS 13 (Ventura) 이상
 - Apple 칩과 Intel 모두 지원 (Intel 은 대략 2017년 이후 모델)
 - 무료 [Groq](https://console.groq.com/keys) 키
+
+## 직접 빌드하기
+
+소스는 [`mac/`](mac) 폴더에 있습니다. Xcode 없이 Command Line Tools 만으로 빌드합니다.
+
+```sh
+cd mac
+./test.sh                                  # 테스트
+EZRITE_SIGN_ID="내 인증서 이름" ./build.sh   # 빌드 → 서명 → /Applications 에 설치
+```
+
+- 서명에는 키체인의 코드 서명 인증서가 필요합니다. 키체인 접근 → 인증서 지원 → 인증서 생성에서 "코드 서명" 용 자체 서명 인증서를 만들어 그 이름을 넘기세요.
+- 같은 인증서로 서명해야 다시 빌드해도 마이크·화면 녹화 권한이 유지됩니다.
+- 구조와 개발 메모는 [`mac/DEVELOPMENT.md`](mac/DEVELOPMENT.md) 에 있습니다.

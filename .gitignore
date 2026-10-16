@@ -1,0 +1,7 @@
+# 빌드 결과
+build/
+.build/
+
+# 개인 도구 설정
+.impeccable/
+.DS_Store
