@@ -57,7 +57,13 @@ actor GroqClient {
         throw lastError
     }
 
-    struct RateLimited: Error { let retryAfter: Double? }
+    struct RateLimited: LocalizedError {
+        let retryAfter: Double?             // 응답 헤더 retry-after (초)
+        var errorDescription: String? {
+            let wait = retryAfter.map { s in s >= 60 ? "\(Int((s / 60).rounded(.up)))분 뒤" : "\(Int(s.rounded(.up)))초 뒤" } ?? "잠시 뒤"
+            return "Groq 무료 한도에 걸렸습니다. \(wait) 다시 눌러 주세요."
+        }
+    }
 
     private func sendWithRetry(wav: Data, model: String, key: String,
                                language: String, prompt: String) async throws -> [RawSeg] {
@@ -270,7 +276,7 @@ extension GroqClient {
             let msg = ((obj?["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String
             return msg ?? ""
         case 401: throw Failure("API 키가 올바르지 않습니다. 설정에서 다시 확인하세요.")
-        case 429: throw RateLimited(retryAfter: nil)
+        case 429: throw RateLimited(retryAfter: (resp as? HTTPURLResponse)?.value(forHTTPHeaderField: "retry-after").flatMap(Double.init))
         case 500...599: throw Transient(message: "Groq 서버 일시 장애 (\(code))")
         default:
             let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -442,14 +448,32 @@ extension GroqClient {
     func explainVisuals(lines: [Explain.Line], transcript: [String]) async throws -> Data {
         guard let key = APIKey.groq() else { throw Failure("Groq API 키가 없습니다. 설정에서 키를 입력하세요.") }
         let prompt = Self.visualsPrompt(lines: lines, transcript: transcript)
-        // 엄격한 형식으로 한 번 더 묻고, 그래도 형식이 어긋나면 느슨한 JSON 으로 받아 고쳐 쓴다
-        // (gpt-oss 가 가끔 객체 대신 목록을 내서 Groq 이 400 "does not match the expected schema" 로 거절한다)
+        do {
+            return try await visuals(prompt: prompt, model: Self.reasoningModel, key: key)
+        } catch let first as RateLimited {
+            // 120b 가 막히면 한도가 따로인 qwen 으로 (20b 는 형식을 자주 틀려서 쓰지 않는다)
+            do { return try await visuals(prompt: prompt, model: Self.visionModel, key: key) }
+            catch let second as RateLimited {
+                throw RateLimited(retryAfter: [first.retryAfter, second.retryAfter].compactMap { $0 }.min())
+            }
+        }
+    }
+
+    /// 엄격한 형식으로 한 번 더 묻고, 그래도 형식이 어긋나면 느슨한 JSON 으로 받아 고쳐 쓴다
+    /// (gpt-oss 가 가끔 객체 대신 목록을 내서 Groq 이 400 "does not match the expected schema" 로 거절한다)
+    private func visuals(prompt: String, model: String, key: String) async throws -> Data {
+        func body(_ p: String) -> [String: Any] {
+            var b = Self.visualsBody(prompt: p)
+            b["model"] = model
+            if model == Self.visionModel { b["reasoning_effort"] = "none" }   // qwen 은 low·medium 을 받지 않는다
+            return b
+        }
         for attempt in 0..<2 {
-            do { return Data(try await chat(Self.visualsBody(prompt: prompt), key: key).utf8) }
+            do { return Data(try await chat(body(prompt), key: key).utf8) }
             catch let e as Failure where (e.errorDescription ?? "").contains("expected schema") && attempt == 0 { continue }
             catch let e as Failure where (e.errorDescription ?? "").contains("expected schema") { break }
         }
-        var loose = Self.visualsBody(prompt: prompt + "\nReturn ONE JSON object (not an array) with the keys described above.")
+        var loose = body(prompt + "\nReturn ONE JSON object (not an array) with the keys described above.")
         loose["response_format"] = ["type": "json_object"]
         return Self.asVisualsObject(Data(try await chat(loose, key: key).utf8))
     }

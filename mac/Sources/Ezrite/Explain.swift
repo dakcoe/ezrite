@@ -127,11 +127,12 @@ enum Explain {
     }
 
     /// 화면 글자와 위치. AI 는 좌표를 직접 못 짚어서, 여기서 찾은 줄 번호만 고르게 한다
-    static func readText(_ image: CGImage) throws -> [Line] {
+    /// correct: 맞춤법 보정. 표시 자리만 다시 찾을 때는 꺼서 빠르게 한다 (복잡한 화면에서 약 40% 빠름)
+    static func readText(_ image: CGImage, correct: Bool = true) throws -> [Line] {
         let req = VNRecognizeTextRequest()
         req.recognitionLevel = .accurate
         req.automaticallyDetectsLanguage = true
-        req.usesLanguageCorrection = true
+        req.usesLanguageCorrection = correct
         try VNImageRequestHandler(cgImage: image).perform([req])
         return (req.results ?? []).enumerated().compactMap { i, o in
             guard let t = o.topCandidates(1).first?.string, !t.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
@@ -204,17 +205,29 @@ enum Explain {
     /// 글자 인식이 조금 달라도(띄어쓰기, 한두 글자) 같은 줄로 보는 기준
     static let sameText = 0.8
 
-    /// 짚었던 줄들을 새 화면 글자에서 다시 찾는다. 같은 글자가 여럿이면 원래 자리에 가까운 쪽.
-    /// 하나라도 못 찾으면 nil (슬라이드가 넘어간 것으로 본다)
+    /// 짚었던 줄들을 새 화면 글자에서 다시 찾는다. 글자가 더 같은 쪽, 똑같으면 원래 자리에 가까운 쪽.
+    /// 화면 밖으로 나간 줄은 빼고 찾은 줄만 돌려준다. 하나도 못 찾으면 nil (슬라이드가 넘어간 것으로 본다)
     static func relocate(_ targets: [Line], in lines: [Line]) -> [Line]? {
-        var out: [Line] = []
-        for t in targets {
+        let out = targets.compactMap { t -> Line? in
             let key = Hallucination.normalize(t.text)
-            let candidates = lines.filter { similarity(key, Hallucination.normalize($0.text)) >= sameText }
-            guard let best = candidates.min(by: { distance($0.box, t.box) < distance($1.box, t.box) }) else { return nil }
-            out.append(Line(id: t.id, text: t.text, box: best.box))
+            let candidates = lines.filter { sameLine(key, Hallucination.normalize($0.text)) }
+            let score = { (l: Line) in (similarity(key, Hallucination.normalize(l.text)), -distance(l.box, t.box)) }
+            guard let best = candidates.max(by: { score($0) < score($1) }) else { return nil }
+            return Line(id: t.id, text: t.text, box: best.box)
         }
-        return out
+        return out.isEmpty ? nil : out
+    }
+
+    /// 같은 줄인가 (a, b 는 normalize 한 글자). 확대·창 폭이 바뀌면 줄이 다른 곳에서 끊기고 수식 인식이 흔들린다
+    static func sameLine(_ a: String, _ b: String) -> Bool {
+        if similarity(a, b) >= sameText { return true }
+        // 줄이 다른 곳에서 끊김: 짧은 쪽 길이만큼 앞부분이 같다
+        let n = min(a.count, b.count)
+        if n >= 8, similarity(String(a.prefix(n)), String(b.prefix(n))) >= sameText { return true }
+        // 수식 인식이 흔들림: 앞의 한글 낱말(4글자 이상, 예: "출력층오차")이 똑같다
+        let label = { (s: String) in String(s.prefix { ("가"..."힣").contains($0) }) }
+        let la = label(a)
+        return la.count >= 4 && la == label(b)
     }
 
     private static func distance(_ a: CGRect, _ b: CGRect) -> CGFloat {

@@ -170,33 +170,40 @@ final class Explainer: ObservableObject {
         card.render(payload)
     }
 
-    /// 1초마다 표시 자리만 작게 찍어 처음 모습과 비교한다. 달라졌으면 그 화면 글자를 다시 읽어서
-    /// 짚었던 글자가 모두 있으면 표시를 새 자리로 옮기고(스크롤, 창 이동), 없으면 표시만 지운다(슬라이드 넘김).
-    /// 카드는 남긴다. 모두 맥 안에서 하고 AI 로는 보내지 않는다
+    /// 0.4초마다 표시 자리만 작게 찍어 지난번 모습과 비교한다. 달라졌으면 그 화면 글자를 다시 읽어서
+    /// 짚었던 글자가 모두 있으면 표시를 새 자리로 옮기고(스크롤, 창 이동), 없으면 표시만 숨긴다(슬라이드 넘김, 다른 창).
+    /// 숨긴 동안에도 0.6초마다 살펴서 그 글자가 다시 보이면 되살린다. 카드를 닫을 때까지 계속한다.
+    /// 모두 맥 안에서 하고 AI 로는 보내지 않는다
     private func watchMarks(shot: ScreenGrab.Shot) {
         watch?.cancel()
         watch = Task { @MainActor [weak self] in
             guard let first = self?.model else { return }
             var baseline = first.allLines.map { Explain.thumbnail(shot.image, box: $0.box) }
+            var hidden = false
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                guard let self, let model = self.model, self.overlay != nil, !Task.isCancelled else { return }
+                try? await Task.sleep(nanoseconds: hidden ? 600_000_000 : 400_000_000)
+                guard let self, let model = self.model, let overlay = self.overlay, !Task.isCancelled else { return }
                 let targets = model.allLines
                 guard let now = try? await ScreenGrab.capture(on: shot.screen, full: false) else { continue }
                 let thumbs = targets.map { Explain.thumbnail(now.image, box: $0.box) }
                 guard zip(baseline, thumbs).contains(where: { Explain.changed($0, $1) }) else { continue }
+                baseline = thumbs                       // 화면이 그대로면 다음엔 글자를 다시 읽지 않는다
 
-                let lines = (try? await Task.detached { try Explain.readText(now.image) }.value) ?? []
-                guard let found = Explain.relocate(targets, in: lines), !Task.isCancelled else {
-                    return self.hideMarks()
+                let lines = (try? await Task.detached { try Explain.readText(now.image, correct: false) }.value) ?? []
+                guard !Task.isCancelled else { return }
+                guard let found = Explain.relocate(targets, in: lines) else {
+                    if !hidden { overlay.orderOut(nil); hidden = true }
+                    continue
                 }
                 model.move(to: Dictionary(found.map { ($0.id, $0.box) }, uniquingKeysWith: { a, _ in a }))
+                model.missing = Set(targets.map(\.id)).subtracting(found.map(\.id))
                 baseline = model.allLines.map { Explain.thumbnail(now.image, box: $0.box) }
+                if hidden { overlay.orderFrontRegardless(); hidden = false }
             }
         }
     }
 
-    /// 화면 표시만 지운다 (슬라이드가 넘어감). 카드의 장면 재생은 계속된다
+    /// 화면 표시를 지운다 (새 설명·답, 카드 닫기). 카드의 장면 재생은 계속된다
     private func hideMarks() {
         watch?.cancel()
         watch = nil
@@ -233,6 +240,8 @@ final class OverlayModel: ObservableObject {
     @Published var path: Explain.Path?
     @Published var scenes: [Explain.Scene]
     @Published var scene: Int?
+    /// 화면 밖으로 나가 지금 못 찾은 줄 (그 표시만 숨긴다)
+    @Published var missing: Set<Int> = []
 
     init(marks: [Explain.Mark], path: Explain.Path?, scenes: [Explain.Scene]) {
         self.marks = marks
@@ -295,13 +304,14 @@ private struct MarksView: View {
         GeometryReader { geo in
             if let i = model.scene, model.scenes.indices.contains(i) {
                 let sc = model.scenes[i]
-                let r = Self.layout(sc.focus + [sc.arrow?.from, sc.arrow?.to].compactMap { $0 }, size: geo.size)
+                let r = Self.layout(sc.focus + [sc.arrow?.from, sc.arrow?.to].compactMap { $0 }, size: geo.size, hide: model.missing)
                 sceneView(sc, number: i + 1, rects: r)
             } else {
-                let r = Self.layout(model.marks.map(\.line) + (model.path?.steps ?? []), size: geo.size)
-                if let path = model.path { routeView(path, rects: r) }
+                let r = Self.layout(model.marks.map(\.line) + (model.path?.steps ?? []), size: geo.size, hide: model.missing)
+                // 경로는 한 칸이라도 화면 밖이면 통째로 숨긴다 (끊긴 화살표는 헷갈린다)
+                if let path = model.path, path.steps.allSatisfy({ r[$0.id] != nil }) { routeView(path, rects: r) }
                 ForEach(Array(model.marks.enumerated()), id: \.offset) { i, m in
-                    focusBox(r[m.line.id] ?? .zero, label: "\(i + 1)")
+                    if let box = r[m.line.id] { focusBox(box, label: "\(i + 1)") }
                 }
             }
         }
@@ -320,7 +330,7 @@ private struct MarksView: View {
                 .shadow(color: Self.route.opacity(0.5), radius: 4)
         }
         ForEach(Array(sc.focus.enumerated()), id: \.offset) { _, l in
-            focusBox(rects[l.id] ?? .zero, label: "\(number)")
+            if let box = rects[l.id] { focusBox(box, label: "\(number)") }
         }
     }
 
@@ -366,8 +376,8 @@ private struct MarksView: View {
     }
 
     /// 함께 그릴 줄들의 상자 (줄 번호 → 화면 좌표). 글자보다 조금 넓게 감싸되 이웃 상자와 겹치지 않게 (Explain.padded)
-    static func layout(_ lines: [Explain.Line], size: CGSize) -> [Int: CGRect] {
-        var seen = Set<Int>(), unique: [Explain.Line] = []
+    static func layout(_ lines: [Explain.Line], size: CGSize, hide: Set<Int> = []) -> [Int: CGRect] {
+        var seen = hide, unique: [Explain.Line] = []
         for l in lines where seen.insert(l.id).inserted { unique.append(l) }
         let raw = unique.map { CGRect(x: $0.box.minX * size.width, y: $0.box.minY * size.height,
                                       width: $0.box.width * size.width, height: $0.box.height * size.height) }
