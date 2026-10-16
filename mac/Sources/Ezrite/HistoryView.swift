@@ -1,5 +1,4 @@
 import AppKit
-import Combine
 import SwiftUI
 
 /// 지난 기록 탭: 세션 목록 → 누르면 그 세션의 전체 원문·번역.
@@ -22,7 +21,6 @@ struct HistoryPage: View {
             if let u = model.opened { model.open(u) }
         }
         .onChange(of: state.liveSession) { _ in model.reloadSessions() }
-        .onReceive(AppDelegate.shared?.retx.$running.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()) { model.retxRunning = $0 }
         // 기록 화면이 닫힌 뒤에도 보이게 목록 쪽에 단다
         .alert("기록을 지우지 못했습니다", isPresented: Binding(get: { model.deleteError != nil },
                                                           set: { if !$0 { model.deleteError = nil } })) {

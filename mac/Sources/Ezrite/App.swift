@@ -209,6 +209,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         retx = MainActor.assumeIsolated { Retranscriber() }
+        // 한 번만 잇는다. 뷰 body 안에서 구독하면 그릴 때마다 다시 구독·대입해 화면이 멈춘다
+        retx.$running.assign(to: &popover.$retxRunning)
         statusBar = StatusBar(state: state, updater: updater)
         updater.start()
         Usage.report = { [weak self] model, u in DispatchQueue.main.async { self?.state.usage[model] = u } }
