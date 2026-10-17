@@ -1,6 +1,10 @@
 # 빌드 결과
-build/
+mac/build/
 .build/
+# Windows 빌드 결과 (app/build/ 는 설치 스크립트·고지라 올린다)
+windows/app/dist/
+windows/app/node_modules/
+windows/helper/target/
 
 # 개인 도구 설정
 .impeccable/
