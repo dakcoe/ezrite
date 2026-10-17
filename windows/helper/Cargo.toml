@@ -1,6 +1,6 @@
 [package]
 name = "ezrite-audio"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 description = "Ezrite Windows판 소리 받기 보조 프로그램"
 publish = false

@@ -24,7 +24,7 @@
   .slide { position: absolute; inset: 0; display: flex; flex-direction: column; opacity: 0; transform: translateX(24px);
            transition: opacity .3s, transform .3s; pointer-events: none; }
   .slide.on { opacity: 1; transform: none; pointer-events: auto; }
-  .art { height: 300px; margin: 20px 24px 0; border-radius: 16px; background: var(--stage); position: relative; overflow: hidden;
+  .art { height: 500px; margin: 20px 24px 0; border-radius: 16px; background: var(--stage); position: relative; overflow: hidden;
          box-shadow: var(--shadow); color: var(--fg); }
   .text { padding: 20px 30px 0; }
   .step { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; letter-spacing: .08em;
@@ -63,6 +63,12 @@
   .art .shot.fill { inset: 0; left: 0; top: 0; transform: none; width: 100%; height: 100%; object-fit: cover; }
   .batt { width: 20px; height: 9px; border: 1.5px solid #fff; border-radius: 3px; position: relative; }
   .batt::after { content: ""; position: absolute; inset: 1px 5px 1px 1px; background: #fff; border-radius: 1px; }
+  /* 그림을 누르면 창 가득 크게 본다 */
+  .art .shot { cursor: zoom-in; }
+  .zoom { position: fixed; inset: 0; z-index: 9; display: none; place-items: center; padding: 18px; cursor: zoom-out;
+          background: rgba(0,0,0,.72); }
+  .zoom.on { display: grid; }
+  .zoom img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.4); }
   .hint { position: absolute; font-size: 10.5px; color: var(--hint); font-weight: 700; }
 </style>
 </head>
@@ -75,7 +81,7 @@
       <div class="menubar"><span class="mic hi" id="menuicon"><img alt="Ezrite 메뉴바 아이콘" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACQAAAAkCAYAAADhAJiYAAAE9UlEQVR4nLWYa4hVVRTHf+fcOzZTaaMWluhQUpRl0URJD8Lqgx96QWZBlD3MopKI6EVSEPRAsb5FJIQR5Yco6kNlVBDG0EPD7AFFKVoWZQ+s0LGcxz2x4r+GNbtzzr1TtGBzz36t9d9rr9e+Ge2pAYyG/inAQuAc4ERgZphrAd8DnwIbgDf0XcXrH5S1mcskZDKwBLgZmKf534GtwLfAoMYOBmYDxwBTNPYR8ASwDvgTyIFCrWOyTU7XAj+LwVfACqAf6K7Z3y1N3g9s114DvrhCRkdgDgFeFDNT+8UlazNdQ1OtUaJ143epDmO81obDtAXlCw4HPhGDFcnGpvrtrjvXWqcu4CHxHAB624FyJr3SiBnf+YkmqvY01KqYR2CLBeo9oKdCq3+TC3xNG84LJyvbUAawbi4TL6OLJGNd1XofWK6FNwUwZRQ1Ya5/obR5XMWaSM7zTsm6IgXl9jAd2Kv4kaqZEkFXAp8HF/a2OThAGags8N4kDz4ohJmxyQfEsL/CZrIw9rjW2gGeBJYBNwJPAcOae7Dm+nzsDK29Vf1mvFtD+n7NyRr6vVdMzNaOKFl3JPCO1iytAeUyPgZ2RA0ZnSYGyxKVppv7gCF54QEa6wpxyO1jigLib8DUVJioqbFbJPuEOOkGdnQCwMkB3q11biMOILr8pBDhC6WcyMPJ1x+rdcvj4EnAfmCn+mmeKfR7luLTgE43ovFR5Tw0ZnNva9+ZCa+U5w7J7o+ALGP/pOvIagBNB/aFZOoaegS4KxnbI16TawBlkvmjkvIYoKa8ox0V+nXQxszoGuAyfe8PwjohB9UdAe0J5UIds0J7hnUVz+owu9WM6XMKkPs6PGChfYMR0DZdx9SaU8Tc1RKgq1QDjaodqoB5qmqfSFlF38DMcPvNQ8TM5HouNFJZlfeHDDi9xpFwlVFwahI+fpTsbksEZIHM6JKSK8t0AhJjj64eNVgWc7ykieQpa4H67/pgrjrYBq5WHGmFuLEA+FIxajCJurm05wBGNe8hwO3zeOAL4OSwr6UDXgf8oLyYOSCjh2UDSxNAh6l6nCaBI5p7XgFyr3hY5N4FLALeDO4+Ir69slO038DMBeYDaySzkWuD/b4ObARWSrgb5ZA2D2utl6wWO17Rmh41W/eyHgBephY6iNuXUyElDClBG7Wi8WbSjrn/S8CBGjcNoBNv1ZXOFDDPZ5YD79B3t+b6JHSbeGaB15CeUWazq3W49KrHbON6qX6W+rPF2LL86fpepTkDFw+Vh1y2NuTH1RJmmkdXuFMJuKeuRvdBZ5rr9zPgG31vlqCFCZAI7HKtMVtCpY3lP6dVmp+fKKOU0hcGKjPdI2bI26x/X9Ckx5SVmtulSvB29S8I/B+VPY2rFOsoKzn9gBhbFJ6TlK/fKXR4f6O881z114uXXY/R2UHLZfVXLeXaNEulghfmXSrunwY+0LNmjV4ruQy9EPBpcvlfgGcUj3Yr77W9sipQXp5ukqAtyvJz5VF9CoA3BO1tCH9GmNc+VvIosAJtQk9rp1iq3CYvKSradj2lshJhfao8X9XVzvu3gChx8X6lm19lQ0vCq8Upfk/4ajqhTAExMv/as3UAO6nCe/zN70/ocWsmZN2iQlVhpLRkaSUlCMncuIj8XwBlAnSP3N8Y25gn4Bc0ZuCspLEHpWf2/4VcxR/WGLS3t7RnQsb6F3FJQO4MjAckAAAAAElFTkSuQmCC"></span><span class="dot"></span><span class="dot"></span>
         <span>Wi-Fi</span><span class="batt"></span><span>10월 15일 오후 3:00</span></div>
       <span class="hint" id="menuhint" style="top:24px;">↑ 여기</span>
-      <img class="shot win" id="menupop" src="shots/popup.png" alt="메뉴바 팝업" style="top:44px; height:236px; transform:none;">
+      <img class="shot win" id="menupop" src="shots/popup.png" alt="메뉴바 팝업" style="top:44px; height:380px; transform:none;">
     </div>
     <div class="text"><div class="step">STEP 01 / 07 · 시작</div><h2>메뉴바 아이콘을 누르세요</h2>
       <p>화면 맨 위 메뉴바의 마이크 아이콘을 누르면 팝업이 열리고, 다시 누르면 닫힙니다.</p>
@@ -85,7 +91,7 @@
   <!-- 2 소리 출처 -->
   <section class="slide">
     <div class="art">
-      <img class="shot win" src="shots/choose.png" alt="녹음 시작 말풍선" style="height:270px;">
+      <img class="shot win" src="shots/choose.png" alt="녹음 시작 말풍선" style="height:410px;">
     </div>
     <div class="text"><div class="step">STEP 02 / 07 · 무엇을 받아 적을까</div><h2><span class="k"><i class="ic" style="--i:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiA+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiIC8+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMSIgLz48L3N2Zz4=)"></i></span> 를 누르고 소리 출처를 고르세요</h2>
       <p><b>유튜브·온라인 강의</b>는 <span class="k">시스템 전체 소리</span> 나 <span class="k">크롬</span>, <span class="k">줌</span> 같은 앱을, <b>강의실 수업</b>은 <span class="k">마이크</span> 를 고르세요.</p>
@@ -95,7 +101,7 @@
   <!-- 3 녹음 중 -->
   <section class="slide">
     <div class="art">
-      <img class="shot win" src="shots/live.png" alt="받아 적는 중인 팝업" style="height:270px;">
+      <img class="shot win" src="shots/live.png" alt="받아 적는 중인 팝업" style="height:410px;">
     </div>
     <div class="text"><div class="step">STEP 03 / 07 · 녹음과 번역</div><h2>받아 적고, 외국어는 바로 번역해요</h2>
       <p><span class="k"><i class="ic" style="--i:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSIjMDAwIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiA+PHJlY3QgeD0iMTQiIHk9IjQiIHdpZHRoPSI0IiBoZWlnaHQ9IjE2IiByeD0iMSIgLz48cmVjdCB4PSI2IiB5PSI0IiB3aWR0aD0iNCIgaGVpZ2h0PSIxNiIgcng9IjEiIC8+PC9zdmc+)"></i></span> 일시정지 · <span class="k"><i class="ic" style="--i:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSIjMDAwIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiA+PHJlY3Qgd2lkdGg9IjE4IiBoZWlnaHQ9IjE4IiB4PSIzIiB5PSIzIiByeD0iMiIgLz48L3N2Zz4=)"></i></span> 끝내기. 영어·일본어는 줄 아래에 한국어 번역이 붙어요(설정 → 자동 번역).</p>
@@ -115,7 +121,7 @@
   <!-- 5 질문 -->
   <section class="slide">
     <div class="art">
-      <img class="shot win" src="shots/ask.png" alt="설명 카드의 질문과 답" style="height:280px; top:10px;">
+      <img class="shot win" src="shots/ask.png" alt="설명 카드의 질문과 답" style="height:480px; top:10px;">
     </div>
     <div class="text"><div class="step">STEP 05 / 07 · 이어서 질문</div><h2>설명 카드 아래 칸에 바로 물어보세요</h2>
       <p>그 순간 화면을 다시 보고, 앞의 설명과 대화를 이어서 답해요. 답이 가리키는 곳도 화면에 다시 짚어 줘요.</p>
@@ -125,7 +131,7 @@
   <!-- 6 지난 기록 -->
   <section class="slide">
     <div class="art">
-      <img class="shot win" src="shots/history.png" alt="지난 기록 화면" style="height:270px;">
+      <img class="shot win" src="shots/history.png" alt="지난 기록 화면" style="height:410px;">
     </div>
     <div class="text"><div class="step">STEP 06 / 07 · 지난 기록</div><h2>기록은 저절로 쌓이고, 다시 들을 수 있어요</h2>
       <p>아래 <span class="k">지난 기록</span> 탭에서 열어 이름을 붙이고, 줄 왼쪽 <span class="k"><i class="ic" style="--i:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiA+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiIC8+PHBvbHlnb24gcG9pbnRzPSIxMCA4IDE2IDEyIDEwIDE2IDEwIDgiIC8+PC9zdmc+)"></i></span> 로 <b>그 줄의 말만</b> 다시 들어요.</p>
@@ -135,7 +141,7 @@
   <!-- 7 설정·한도 -->
   <section class="slide">
     <div class="art">
-      <img class="shot" src="shots/keys.png" alt="설정의 AI 서비스 키" style="width:400px; top:40px;">
+      <img class="shot" src="shots/keys.png" alt="설정의 AI 서비스 키" style="width:560px; top:30px;">
     </div>
     <div class="text"><div class="step">STEP 07 / 07 · 설정과 한도</div><h2>무료 Groq 하나면 충분해요</h2>
       <p>받아쓰기는 무료 Groq 키로 돼요. Claude·Gemini·GPT 키를 넣으면 번역과 <span class="k"><i class="ic" style="--i:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiA+PHBhdGggZD0iTTkuOTM3IDE1LjVBMiAyIDAgMCAwIDguNSAxNC4wNjNsLTYuMTM1LTEuNTgyYS41LjUgMCAwIDEgMC0uOTYyTDguNSA5LjkzNkEyIDIgMCAwIDAgOS45MzcgOC41bDEuNTgyLTYuMTM1YS41LjUgMCAwIDEgLjk2MyAwTDE0LjA2MyA4LjVBMiAyIDAgMCAwIDE1LjUgOS45MzdsNi4xMzUgMS41ODFhLjUuNSAwIDAgMSAwIC45NjRMMTUuNSAxNC4wNjNhMiAyIDAgMCAwLTEuNDM3IDEuNDM3bC0xLjU4MiA2LjEzNWEuNS41IDAgMCAxLS45NjMgMHoiIC8+PHBhdGggZD0iTTIwIDN2NCIgLz48cGF0aCBkPSJNMjIgNWgtNCIgLz48cGF0aCBkPSJNNCAxN3YyIiAvPjxwYXRoIGQ9Ik01IDE4SDMiIC8+PC9zdmc+)"></i></span> 설명에 골라 쓸 수 있어요. 팝업 아래쪽 막대는 오늘 남은 무료 한도예요.</p>
@@ -149,7 +155,16 @@
   <button class="next" id="next">계속 →</button>
 </footer>
 
+<div class="zoom" id="zoom"><img alt=""></div>
 <script>
+  const zoom = document.getElementById("zoom");
+  document.querySelectorAll(".art .shot").forEach((img) => img.addEventListener("click", () => {
+    zoom.querySelector("img").src = img.src;
+    zoom.querySelector("img").alt = img.alt;
+    zoom.classList.add("on");
+  }));
+  zoom.onclick = () => zoom.classList.remove("on");
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") zoom.classList.remove("on"); }, true);
   const slides = [...document.querySelectorAll(".slide")];
   const dots = slides.map((_, i) => {
     const b = document.createElement("button");

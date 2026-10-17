@@ -206,6 +206,7 @@ function startPlayer(d, root, boxes) {
   const say = el("div", "say");
   const ctrl = el("div", "ctrl");
   const prev = el("button", null, "‹"), play = el("button", null, "⏸"), next = el("button", null, "›");
+  prev.title = "이전 장면"; next.title = "다음 장면"; play.title = "일시정지";
   const dots = el("div", "sdots");
   const all = el("button", "all", "전체 보기");
   const bar = el("div", "bar"), fill = el("i");
@@ -243,7 +244,7 @@ function startPlayer(d, root, boxes) {
     }, 250);
     dotEls.forEach((b, k) => b.classList.toggle("on", k === cur));
     prev.disabled = cur === 0; next.disabled = false;
-    play.textContent = playing ? "⏸" : "▶";
+    play.textContent = playing ? "⏸" : "▶"; play.title = playing ? "일시정지" : "재생";
     layout(cur);
     post("scene", cur);
     requestAnimationFrame(reportHeight);
@@ -260,7 +261,7 @@ function startPlayer(d, root, boxes) {
     playing = false;
     say.replaceChildren(document.createTextNode("전체 보기 — 짚은 곳과 그림을 모두 보여줍니다"));
     dotEls.forEach(b => b.classList.remove("on"));
-    play.textContent = "▶"; next.disabled = true; prev.disabled = false;
+    play.textContent = "▶"; play.title = "재생"; next.disabled = true; prev.disabled = false;
     boxes.forEach(b => { b.classList.remove("hidden", "dim"); b.querySelectorAll(".hidden").forEach(x => x.classList.remove("hidden")); });
     extras.forEach(e => e.classList.remove("hidden"));
     fill.style.width = "100%";

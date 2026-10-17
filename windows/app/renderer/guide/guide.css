@@ -19,7 +19,7 @@ body { display: flex; flex-direction: column; }
 .slide { position: absolute; inset: 0; display: flex; flex-direction: column; opacity: 0; transform: translateX(24px);
          transition: opacity .3s, transform .3s; pointer-events: none; }
 .slide.on { opacity: 1; transform: none; pointer-events: auto; }
-.art { height: 300px; flex: none; margin: 20px 24px 0; border-radius: 16px; background: var(--stage); position: relative; overflow: hidden;
+.art { height: 500px; flex: none; margin: 20px 24px 0; border-radius: 16px; background: var(--stage); position: relative; overflow: hidden;
        box-shadow: var(--shadow); }
 .text { padding: 20px 30px 0; }
 .step { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; letter-spacing: .08em;
@@ -43,27 +43,36 @@ footer .next { border: 0; background: var(--signal); color: #fff; font: inherit;
 button:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
 
 /* 앱 화면 사진 */
-.art .shot { position: absolute; left: 50%; top: 15px; transform: translateX(-50%); height: 270px; }
+.art .shot { position: absolute; left: 50%; top: 22px; transform: translateX(-50%); height: 410px; cursor: zoom-in; }
+.art .shot.pop { height: 380px; top: 36px; }
 .art .shot.win { border-radius: 8px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.12), 0 4px 10px rgba(0,0,0,.08), 0 16px 36px rgba(0,0,0,.12); }
-.art .shot.tall { height: 280px; top: 10px; object-fit: cover; object-position: top; }
-.art .shot.fill { inset: 0; left: 0; top: 0; transform: none; width: 100%; height: 100%; object-fit: cover; border-radius: 0; }
+.art .shot.tall { height: 480px; width: 424px; top: 10px; object-fit: cover; object-position: top; } /* 카드는 제 크기로, 아래만 자른다 */
+.art .shot.fill { inset: 0; left: 0; top: 0; transform: none; width: 100%; height: 100%; object-fit: contain; background: #fff; border-radius: 0; } /* 2:1 그림을 자르지 않는다 */
 
 /* 1장: Windows 11 작업 표시줄(어두운 바탕) · ^ 숨겨진 아이콘 목록 · 팝업. 실제 화면을 찍지 않고 그린 그림 */
-#trayPop { left: 24px; top: 14px; height: 216px; transform: none; }
-.taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 40px; background: #202020; display: flex; align-items: center;
-           gap: 8px; padding: 0 12px 0 120px; color: #fff; font-size: 10px; }
-.tb-app { width: 22px; height: 22px; border-radius: 5px; background: #ffffff33; }
+#trayPop { left: 28px; top: 18px; height: 380px; transform: none; }
+.taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 58px; background: #202020; display: flex; align-items: center;
+           gap: 12px; padding: 0 18px 0 170px; color: #fff; font-size: 14px; }
+.tb-app { width: 32px; height: 32px; border-radius: 5px; background: #ffffff33; }
 .tb-gap { flex: 1; }
-.tb-tray { width: 24px; height: 26px; border-radius: 5px; display: grid; place-items: center; font-size: 13px; }
+.tb-tray { width: 34px; height: 38px; border-radius: 6px; display: grid; place-items: center; font-size: 18px; }
 .tb-tray.hi { background: #ffffff2a; outline: 2px solid #fff; }
-.tb-sys { width: 14px; height: 14px; border-radius: 3px; background: #ffffff55; }
+.tb-sys { width: 20px; height: 20px; border-radius: 3px; background: #ffffff55; }
 .tb-clock { text-align: right; line-height: 1.3; opacity: .9; margin-left: 4px; }
-.flyout { position: absolute; bottom: 52px; display: grid; grid-template-columns: repeat(3, 32px); gap: 4px; padding: 8px;
+.flyout { position: absolute; bottom: 74px; display: grid; grid-template-columns: repeat(3, 46px); gap: 6px; padding: 10px;
           background: #2c2c2c; border-radius: 8px; box-shadow: 0 0 0 1px #ffffff1a, 0 8px 24px rgba(0,0,0,.35); }
-.fo-slot { width: 32px; height: 32px; border-radius: 5px; display: grid; place-items: center; }
-.fo-slot:not(.hi)::after { content: ""; width: 14px; height: 14px; border-radius: 3px; background: #ffffff40; }
+.fo-slot { width: 46px; height: 46px; border-radius: 5px; display: grid; place-items: center; }
+.fo-slot:not(.hi)::after { content: ""; width: 20px; height: 20px; border-radius: 3px; background: #ffffff40; }
 .fo-slot.hi { background: #ffffff2a; outline: 2px solid #fff; }
-.fo-slot img { width: 16px; height: 16px; }
+.fo-slot img { width: 24px; height: 24px; }
 /* 순서 번호: 1 ^ → 2 목록의 Ezrite → 3 팝업 */
-.badge { position: absolute; width: 20px; height: 20px; border-radius: 50%; background: var(--signal); color: #fff;
-         font: 700 11px/20px "Segoe UI", sans-serif; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.badge { position: absolute; width: 26px; height: 26px; border-radius: 50%; background: var(--signal); color: #fff;
+         font: 700 14px/26px "Segoe UI", sans-serif; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+
+/* 그림 크게 보기: 창 가득, 어두운 바탕 (밝은·어두운 테마 모두). 누르거나 Esc 로 닫는다 */
+.art img.shot:focus-visible { outline: 3px solid var(--signal); outline-offset: 3px; }
+.zoom { position: fixed; inset: 0; z-index: 50; overflow: hidden; background: rgba(12, 12, 14, .92); cursor: zoom-out; }
+.zoom[hidden] { display: none; }
+/* 위 40·옆과 아래 16 을 남긴 상자에 꼭 맞춘다: 세로로 긴 그림은 높이, 가로로 긴 그림은 폭에 맞고 나머지는 여백 */
+.zoom img { position: absolute; inset: 40px 16px 16px; width: calc(100% - 32px); height: calc(100% - 56px); object-fit: contain; }
+.zoom:focus { outline: none; }

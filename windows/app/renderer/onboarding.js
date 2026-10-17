@@ -58,7 +58,7 @@
           h('button', { class: 'btn', disabled: micOk, onclick: () => window.ezrite.openMicSettings() }, micOk ? '마이크 ✓' : '마이크 설정 열기'),
           h('button', { class: 'btn', disabled: true }, '프로그램 소리 ✓'))),
       step(3, false, '첫 녹음',
-        '작업 표시줄 오른쪽 ^ (숨겨진 아이콘 표시) 를 눌러 나오는 목록에서 Ezrite 아이콘을 누르고 ● 버튼으로 받아 적기를 시작하세요. 아이콘을 작업 표시줄로 끌어 꺼내 두면 다음부터 바로 보입니다. ⚙ 에서 소리 출처(특정 프로그램·마이크)와 인식 언어를 고를 수 있습니다.',
+        '작업 표시줄 오른쪽 ^ (숨겨진 아이콘 표시) 를 눌러 나오는 목록에서 Ezrite 아이콘을 누르고 ● 버튼으로 받아 적기를 시작하세요. 아이콘을 작업 표시줄로 끌어 꺼내 두면 다음부터 바로 보입니다. ⚙ 에서 소리 출처(특정 프로그램·마이크)와 인식 언어를 고를 수 있습니다. ✨ 를 누르면 그 순간 화면이 AI 서비스로 전송됩니다.',
         h('button', { class: 'btn primary start', disabled: !hasKey, onclick: () => window.ezrite.onboardingDone() }, '시작하기')));
     // 제목 띠 + 안내 내용 높이에 창을 맞춘다
     requestAnimationFrame(() => {

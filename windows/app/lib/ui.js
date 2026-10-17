@@ -89,6 +89,14 @@ function supportsProcessLoopback(platform, release) {
   return Number.isInteger(build) && build >= LOOPBACK_MIN_BUILD;
 }
 
+// 사용 가이드 창 (맥과 같은 760×860). 화면이 낮으면 작업 영역 높이에 맞춘다 (창 제목 막대 몫 40 을 뺀 내용 높이). 폭은 그대로
+const GUIDE_SIZE = Object.freeze({ width: 760, height: 860 });
+function guideSize(workArea) {
+  const h = Number(workArea?.height);
+  if (!(h > 0)) return { ...GUIDE_SIZE };
+  return { width: GUIDE_SIZE.width, height: Math.min(GUIDE_SIZE.height, Math.round(h - 40)) };
+}
+
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(lo, hi));
 
 /**
@@ -217,4 +225,4 @@ function sourceArgs(dev, sourceId, sources) {
 }
 
 module.exports = {
-  supportsProcessLoopback, LOOPBACK_MIN_BUILD, LOOPBACK_UNSUPPORTED, sourceArgs, THEME_OPTIONS, themeSource, themeColors, titleBarOverlay, notPlayingMessage, mixArgs, helperCandidates, PREVIEWS, parseDevEnv, supportsMaterial, popupPosition, buildSources, captureArgsFor, keepSelected };
+  GUIDE_SIZE, guideSize, supportsProcessLoopback, LOOPBACK_MIN_BUILD, LOOPBACK_UNSUPPORTED, sourceArgs, THEME_OPTIONS, themeSource, themeColors, titleBarOverlay, notPlayingMessage, mixArgs, helperCandidates, PREVIEWS, parseDevEnv, supportsMaterial, popupPosition, buildSources, captureArgsFor, keepSelected };

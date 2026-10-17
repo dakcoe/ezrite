@@ -1,6 +1,6 @@
 {
   "name": "ezrite-windows",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "Ezrite Windows판 (Electron 앱 + Rust 소리 받기 보조 프로그램)",
   "scripts": {

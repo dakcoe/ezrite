@@ -74,7 +74,7 @@ struct HistoryPage: View {
                         .font(.system(size: 10.5)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 4)
-                SmallButton(icon: "square.and.arrow.up", help: "다른 폴더로 내보내기 (글·소리 복사)") {
+                SmallButton(icon: "square.and.arrow.up", help: "내보내기") {
                     guard let folder = chooseFolder(prompt: "여기로 내보내기") else { return }
                     do {
                         _ = try Notes.export(url, to: folder)
@@ -92,9 +92,9 @@ struct HistoryPage: View {
                 SmallButton(icon: "folder", help: "Finder 에서 보기") {
                     NSWorkspace.shared.activateFileViewerSelecting([url])
                 }
-                SmallButton(icon: "arrow.clockwise", help: "저장된 소리로 다시 받아 적기") { model.confirmRetx = true }
+                SmallButton(icon: "arrow.clockwise", help: "다시 받아쓰기") { model.confirmRetx = true }
                     .disabled(live || Notes.audioURL(url) == nil || model.retxRunning != nil)
-                SmallButton(icon: "trash", help: "기록 지우기") { model.confirmDelete = true }
+                SmallButton(icon: "trash", help: "삭제") { model.confirmDelete = true }
                     .disabled(busy)
             }
             .padding(.horizontal, 10)
@@ -340,7 +340,7 @@ private struct EntryRow: View {
                     }
                     .buttonStyle(.plain)
                     .padding(.top, 1)
-                    .help("이 줄만 듣기")
+                    .help("듣기")
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(entry.original).font(.system(size: 13.5))

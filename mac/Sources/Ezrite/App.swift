@@ -361,7 +361,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 사용 가이드 (Resources/web/guide.html)
     func showGuide() {
         if guide == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 720),
+            // 그림 속 글자가 읽히게 넉넉히 (13인치 화면에도 들어가는 높이)
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 860),
                              styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
             w.title = "Ezrite 사용 가이드"
             w.isReleasedWhenClosed = false

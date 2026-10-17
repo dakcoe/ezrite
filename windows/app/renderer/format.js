@@ -53,11 +53,21 @@
   }
 
   /** 아래 줄 게이지에 마우스를 올렸을 때 글 (맥 UsageFooter.caption, 호출 횟수만) */
-  function usageCaption(label, fraction, models) {
-    if (fraction == null) return `${label} 남은 한도 — 아직 모름 (한 번 쓰면 보입니다)`;
-    const pct = `${Math.round(fraction * 100)}%`;
-    return `${label} 남은 한도 ${pct} (호출 ${pct}${models > 1 ? `, 모델 ${models}개 합산` : ''})`;
+  function usageCaption(label, fraction) {
+    if (fraction == null) return `${label} 한도 아직 모름`;
+    return `${label} 한도 ${Math.round(fraction * 100)}% 남음`;
   }
 
-  return { sessionDate, clock, playClock, waveHeights, sourceLine, atBottom, usageCaption };
+  /** 유료 서비스로 돌린 게이지 */
+  function paidCaption(label, service) {
+    return `${label}: ${service} 사용 (유료, 한도 표시 없음)`;
+  }
+
+  /** 글 폭이 칸보다 크면 글자를 줄일 비율 (85% 까지만. 그래도 넘치면 … 로 자른다) */
+  function captionScale(textWidth, boxWidth) {
+    if (!(textWidth > boxWidth) || !(boxWidth > 0)) return 1;
+    return Math.max(0.85, (boxWidth - 1) / textWidth); // 1px 여유: 반올림으로 넘치지 않게
+  }
+
+  return { sessionDate, clock, playClock, waveHeights, sourceLine, atBottom, usageCaption, paidCaption, captionScale };
 });

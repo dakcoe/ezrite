@@ -52,7 +52,7 @@ struct MenuPopover: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("설정 — 지난 기록은 열린 창의 탭에서 볼 수 있습니다")
+                .help("설정")
             }
             .background(WindowDragArea())               // 위쪽 줄 빈 곳을 잡고 끌어 옮긴다
             Divider().opacity(0.4)
@@ -136,16 +136,19 @@ struct UsageFooter: View {
     private var caption: String? {
         guard let t = hover.target else { return nil }
         if t == "quit" { return "Ezrite 종료" }
-        if t == "compact" { return "작은 창 — 최근 한 줄과 번역만" }
+        if t == "compact" { return "작은 창으로" }
         guard let g = Self.gauges.first(where: { $0.label == t }) else { return nil }
-        if let other = paid(g) { return "\(g.label): \(other.label) 사용 중 — 유료 크레딧이라 하루 한도 표시 없음" }
         let p = parts(g)
-        let pct = { (f: Double) in "\(Int((f * 100).rounded()))%" }
-        let amountName = g.kind == .audio ? "음성 시간" : "토큰"
-        let calls = p.requests.map { "호출 \(pct($0)) · " } ?? ""
-        let merged = g.models.count > 1 ? (g.feature == .explain ? ", 두 모델 중 적게 남은 쪽" : ", 모델 \(g.models.count)개 합산") : ""
-        let uses = g.feature == .explain ? " · 설명 약 \(left(.explain))번, 질문 약 \(left(.ask))번" : ""
-        return "\(g.label) 남은 한도 \(pct(p.total ?? p.amount)) (\(calls)\(amountName) \(pct(p.amount))\(merged))\(uses)"
+        let uses = g.feature == .explain ? (left(.explain), left(.ask)) : nil
+        return Self.captionText(g.label, left: p.total ?? p.amount, paid: paid(g)?.label, uses: uses)
+    }
+
+    /// 한도 줄에 겹쳐 보이는 글. 게이지 자리(약 240pt)에 "…" 없이 들어가게 짧게 쓴다 (호출·토큰 세부는 뺐다)
+    static func captionText(_ label: String, left: Double, paid: String?, uses: (explain: Int, ask: Int)? = nil) -> String {
+        if let paid { return "\(label): \(paid) 사용 (유료, 한도 표시 없음)" }
+        let pct = Int((left * 100).rounded())
+        if let uses { return "\(label) \(pct)% 남음 · 설명 약 \(uses.explain)번, 질문 약 \(uses.ask)번" }
+        return "\(label) 한도 \(pct)% 남음"
     }
 
     /// 남은 한도로 설명·질문을 몇 번 더 할 수 있나 (qwen 한도 ÷ 한 번 평균)
@@ -172,7 +175,7 @@ struct UsageFooter: View {
             .overlay(alignment: .leading) {
                 if let text = caption {
                     Text(text).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
-                        .allowsHitTesting(false)
+                        .minimumScaleFactor(0.85).allowsHitTesting(false)
                 }
             }
             // 게이지마다 따로 감지하면 옆으로 옮길 때 신호가 꼬인다. 줄 전체에서 마우스 가로 위치로 어느 게이지인지 고른다
@@ -230,13 +233,6 @@ struct UsageFooter: View {
     }
 }
 
-extension AppState {
-    /// 설명해줘 버튼 도움말. 화면과 강의 내용이 어느 회사로 가는지 밝힌다
-    var explainHelp: String {
-        "설명해줘 — 지금 화면과 최근 강의 내용을 AI 가 짚어 설명합니다. 화면 캡처와 강의 내용이 \(explainProvider.label)(API 키를 발급한 회사)로 전송됩니다"
-    }
-}
-
 /// 작은 창: 녹음 표시, 가장 최근 전사된 한 줄과 번역. 오른쪽 버튼으로 원래 크기로
 struct CompactPopover: View {
     @EnvironmentObject var state: AppState
@@ -267,7 +263,7 @@ struct CompactPopover: View {
             }
             .buttonStyle(.plain)
             .disabled(state.explaining)
-            .help(state.explainHelp)
+            .help("AI 질문하기")
             Button { state.compact = false } label: {
                 Image(systemName: "rectangle.expand.vertical").font(.system(size: 12)).foregroundStyle(.secondary)
                     .frame(width: 22, height: 22).contentShape(Rectangle())
@@ -367,7 +363,7 @@ struct StatusHeader<Extra: View>: View {
             }
             Spacer()
             if state.listening && !state.paused { Waveform(level: state.level) }
-            // 설명해줘: 화면 캡처가 고른 AI 회사로 전송된다 (도움말에 적어 둔다)
+            // 설명해줘: 화면 캡처가 고른 AI 회사로 전송된다
             Button { AppDelegate.shared?.explain() } label: {
                 Group {
                     if state.explaining {
@@ -381,7 +377,7 @@ struct StatusHeader<Extra: View>: View {
             }
             .buttonStyle(.plain)
             .disabled(state.explaining)
-            .help(state.explainHelp)
+            .help("AI 질문하기")
             if state.listening {
                 // 일시정지: 세션은 그대로 두고 듣기만 멈춘다. 다시 누르면 같은 기록에 이어 쓴다
                 Button { AppDelegate.shared?.togglePause() } label: {
@@ -407,7 +403,7 @@ struct StatusHeader<Extra: View>: View {
                      arrowEdge: .bottom) {
                 RecordChooser().environmentObject(state)
             }
-            .help(state.listening ? "받아쓰기 끝내기 (다음 녹음은 새 기록)" : "받아쓰기 시작")
+            .help(state.listening ? "녹음 종료" : "녹음 시작")
             extra
         }
         .padding(.horizontal, 14)
@@ -634,14 +630,14 @@ private struct SettingsPage: View {
                     FooterButton(icon: "questionmark.circle", title: "설정 안내") {
                         AppDelegate.shared?.showOnboarding()
                     }
-                    .help("처음 설정 안내 다시 보기")
+                    .help("설정 안내")
                     FooterButton(icon: "book", title: "사용 가이드") {
                         AppDelegate.shared?.showGuide()
                     }
                     FooterButton(icon: "exclamationmark.bubble", title: "문의·신고") {
                         if let url = Updater.issueURL { NSWorkspace.shared.open(url) }
                     }
-                    .help("문의·문제 신고 (GitHub)")
+                    .help("문의·신고")
                 }
                 FooterButton(icon: "power", title: "Ezrite 종료") { NSApp.terminate(nil) }
                     .padding(.top, 4)
@@ -698,7 +694,7 @@ private struct KeyRow: View {
                                 .frame(width: 22, height: 20).contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .help("이 키 지우기")
+                        .help("키 삭제")
                     } else {
                         Color.clear
                     }

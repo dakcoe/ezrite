@@ -1,6 +1,6 @@
 {
   "name": "ezrite-app",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "Ezrite Windows판 시험 앱",
   "main": "main.js",

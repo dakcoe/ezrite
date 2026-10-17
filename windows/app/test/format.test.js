@@ -50,9 +50,9 @@ test('자동 스크롤: 맨 아래(여유 24px 안)일 때만 새 줄을 따라�
 });
 
 test('게이지 설명 글 (맥 UsageFooter 와 같은 꼴)', () => {
-  assert.equal(usageCaption('받아쓰기', 0.875, 2), '받아쓰기 남은 한도 88% (호출 88%, 모델 2개 합산)');
-  assert.equal(usageCaption('화면 설명', 0.5, 1), '화면 설명 남은 한도 50% (호출 50%)');
-  assert.equal(usageCaption('번역', null, 2), '번역 남은 한도 — 아직 모름 (한 번 쓰면 보입니다)');
+  assert.equal(usageCaption('받아쓰기', 0.875), '받아쓰기 한도 88% 남음');
+  assert.equal(usageCaption('화면 설명', 0.5), '화면 설명 한도 50% 남음');
+  assert.equal(usageCaption('번역', null), '번역 한도 아직 모름');
 });
 
 test('재생 막대 시각은 맥 PlayerBar 처럼 m:ss, 한 시간 넘으면 h:mm:ss', () => {
@@ -60,4 +60,16 @@ test('재생 막대 시각은 맥 PlayerBar 처럼 m:ss, 한 시간 넘으면 h:
   assert.equal(playClock(65.9), '1:05');
   assert.equal(playClock(3725), '1:02:05');
   assert.equal(playClock(Number.NaN), '0:00');
+});
+
+const { paidCaption, captionScale } = require('../renderer/format');
+test('유료 서비스로 돌린 게이지: 서비스 이름과 한도 표시 없음만', () => {
+  assert.equal(paidCaption('화면 설명', 'Gemini'), '화면 설명: Gemini 사용 (유료, 한도 표시 없음)');
+});
+test('글이 칸보다 길면 85% 까지만 줄여 맞춘다', () => {
+  assert.equal(captionScale(200, 250), 1, '넉넉하면 그대로');
+  assert.equal(captionScale(250, 250), 1);
+  assert.equal(captionScale(270, 250), 249 / 270);
+  assert.equal(captionScale(400, 250), 0.85, '더는 줄이지 않는다');
+  assert.equal(captionScale(0, 0), 1);
 });

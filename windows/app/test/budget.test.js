@@ -128,9 +128,9 @@ test('[mac UsageFooter] 게이지 값은 호출 횟수와 하루 양 중 덜 남
   assert.equal(f.translate, 1);
   assert.equal(f.explain, 0.5);
   assert.equal(f.uses, '설명 40 · 질문 42');
-  assert.equal(f.captions.audio, '받아쓰기 남은 한도 75% (호출 95% · 음성 시간 75%, 모델 2개 합산)');
-  assert.equal(f.captions.translate, '번역 남은 한도 100% (토큰 100%, 모델 2개 합산)');
-  assert.equal(f.captions.explain, '화면 설명 남은 한도 50% (호출 50% · 토큰 74%) · 설명 약 40번, 질문 약 42번');
+  assert.equal(f.captions.audio, '받아쓰기 한도 75% 남음');
+  assert.equal(f.captions.translate, '번역 한도 100% 남음');
+  assert.equal(f.captions.explain, '화면 설명 50% 남음 · 설명 약 40번, 질문 약 42번');
 });
 
 test('[mac Usage.level] 절반 아래 노랑, 십분의 일 아래 빨강', () => {

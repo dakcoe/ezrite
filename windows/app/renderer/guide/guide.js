@@ -37,7 +37,7 @@
     const c = box(caret);
     const fly = document.getElementById('flyout');
     fly.style.left = `${Math.min(a.width - fly.offsetWidth - 8, c.x + c.w / 2 - fly.offsetWidth / 2)}px`;
-    const put = (id, x, y) => { const b = document.getElementById(id); b.style.left = `${x - 10}px`; b.style.top = `${y - 10}px`; };
+    const put = (id, x, y) => { const b = document.getElementById(id); b.style.left = `${x - 13}px`; b.style.top = `${y - 13}px`; };
     put('badge1', c.x - 4, c.y - 2);
     const e = box(document.getElementById('foEzrite'));
     put('badge2', e.x - 4, e.y - 2);
@@ -45,6 +45,8 @@
     put('badge3', p.x + p.w + 2, p.y + 10);
   }
   addEventListener('resize', alignTray);
+  // 그림을 누르면 창 가득 크게 본다 (zoom.js)
+  window.EzZoom.attachZoom(document, document.querySelectorAll('.art img.shot'));
   document.getElementById('trayPop').addEventListener('load', alignTray);
   show(Number(location.hash.slice(1)) || 0);
   alignTray();

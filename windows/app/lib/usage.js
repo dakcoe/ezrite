@@ -65,10 +65,10 @@ function footer(usage, budget, now = Date.now()) {
     const amount = g.together ? budget.lowest(g.models, g.kind, now) : budget.fraction(g.models, g.kind, now);
     const total = combined(requests, amount);
     out[g.key] = total;
-    const calls = requests != null ? `호출 ${pct(requests)} · ` : '';
-    const merged = g.models.length > 1 ? (g.together ? ', 두 모델 중 적게 남은 쪽' : `, 모델 ${g.models.length}개 합산`) : '';
-    const uses = g.key === 'explain' ? ` · 설명 약 ${left('explain')}번, 질문 약 ${left('ask')}번` : '';
-    out.captions[g.key] = `${g.label} 남은 한도 ${pct(total ?? amount)} (${calls}${g.kind === 'audio' ? '음성 시간' : '토큰'} ${pct(amount)}${merged})${uses}`;
+    // 맥 1.1.1: 짧게. 화면 설명은 남은 횟수를 함께 (호출·토큰 세부는 빼고 덜 남은 쪽 하나만)
+    out.captions[g.key] = g.key === 'explain'
+      ? `${g.label} ${pct(total ?? amount)} 남음 · 설명 약 ${left('explain')}번, 질문 약 ${left('ask')}번`
+      : `${g.label} 한도 ${pct(total ?? amount)} 남음`;
   }
   out.uses = `설명 ${left('explain')} · 질문 ${left('ask')}`;
   return out;

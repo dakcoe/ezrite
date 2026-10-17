@@ -77,7 +77,7 @@ struct OnboardingView: View {
             }
 
             Step(n: 3, done: false, title: "첫 녹음",
-                 detail: "메뉴바의 마이크 아이콘을 누르고 ● 버튼으로 받아 적기를 시작하세요. ⚙ 에서 소리 출처(컴퓨터 소리·특정 앱·마이크)와 인식 언어를 고를 수 있습니다.") {
+                 detail: "메뉴바의 마이크 아이콘을 누르고 ● 버튼으로 받아 적기를 시작하세요. ⚙ 에서 소리 출처(컴퓨터 소리·특정 앱·마이크)와 인식 언어를 고를 수 있습니다. ✨ 를 누르면 그 순간 화면이 AI 서비스로 전송됩니다.") {
                 Button("시작하기") { onFinish() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!hasKey)

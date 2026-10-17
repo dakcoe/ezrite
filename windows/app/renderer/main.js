@@ -77,7 +77,7 @@
       if (e.kind === 'gap') return h('div', { class: 'entry gap' }, e.original);
       // 녹음이 끝난 기록만: 줄 옆 ▶ 를 누르면 그 줄의 말만 듣는다 (앞뒤 0.3초 여유)
       const play = canPlay && e.time
-        ? h('button', { class: 'line-play', html: icon('playCircle', 14, 1.6), title: '이 줄만 듣기', onclick: () => player.playRange(e.time[0] - 0.3, e.time[1] + 0.3) })
+        ? h('button', { class: 'line-play', html: icon('playCircle', 14, 1.6), title: '듣기', onclick: () => player.playRange(e.time[0] - 0.3, e.time[1] + 0.3) })
         : null;
       return h('div', { class: `entry${play ? ' with-play' : ''}` }, play,
         h('div', { class: 'entry-text' }, h('div', { class: 'orig' }, e.original),
@@ -99,12 +99,12 @@
     const head = h('div', { class: 'note-head' },
       h('button', { class: 'back', html: icon('chevronLeft', 15, 2.2), title: '목록으로', onclick: () => H.close() }),
       h('div', { class: 'note-name' }, name, h('div', { class: 'note-date' }, F.sessionDate(new Date(o.date)))),
-      smallButton('share', '다른 폴더로 내보내기 (글·소리 복사)', () => H.exportTo(o.path), busy),
+      smallButton('share', '내보내기', () => H.exportTo(o.path), busy),
       smallButton('copy', '전체 복사', () => H.copy(o.path)),
       smallButton('folder', '탐색기에서 보기', () => H.reveal(o.path)),
       // 저장된 소리로 다시 받아 적기 (맥 Retranscriber) — 자리만. 다음 단계에서 붙인다
-      smallButton('rotate', '저장된 소리로 다시 받아 적기 — 다음 단계에서 됩니다', () => {}, true),
-      smallButton('trash', '기록 지우기', () => H.remove(o.path), busy));
+      smallButton('rotate', '다시 받아쓰기', () => {}, true),
+      smallButton('trash', '삭제', () => H.remove(o.path), busy));
     if (o.audio !== playerSrc) {
       playerSrc = o.audio;
       if (o.audio) player.open(o.audio);
@@ -186,10 +186,10 @@
       h('button', { class: 'link-btn notices', onclick: () => window.ezrite.openNotices() }, '오픈소스 고지'),
 
       h('div', { class: 'footer-buttons' },
-        h('button', { class: 'fbtn', title: '처음 설정 안내 다시 보기', onclick: () => window.ezrite.openOnboarding() },
+        h('button', { class: 'fbtn', title: '설정 안내', onclick: () => window.ezrite.openOnboarding() },
           h('span', { html: icon('help', 14, 1.6) }), '설정 안내'),
         h('button', { class: 'fbtn', onclick: () => window.ezrite.openGuide() }, h('span', { html: icon('book', 14, 1.6) }), '사용 가이드'),
-        h('button', { class: 'fbtn', title: '문의·문제 신고 (GitHub)', onclick: () => window.ezrite.openIssue() },
+        h('button', { class: 'fbtn', title: '문의·신고', onclick: () => window.ezrite.openIssue() },
           h('span', { html: icon('report', 14, 1.6) }), '문의·신고')),
       h('button', { class: 'fbtn quit', onclick: () => window.ezrite.quit() }, h('span', { html: icon('power', 14, 1.8) }), 'Ezrite 종료'));
   }
@@ -256,12 +256,12 @@
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
     save.addEventListener('click', submit);
     const trash = s.hasKey
-      ? h('button', { class: 'slot trash', html: icon('trash', 13, 1.8), title: '이 키 지우기', onclick: () => window.ezrite.removeKey('groq') })
+      ? h('button', { class: 'slot trash', html: icon('trash', 13, 1.8), title: '키 삭제', onclick: () => window.ezrite.removeKey('groq') })
       : h('span', { class: 'slot' });
     const status = s.keyStatus
       ? h('span', { class: `check ${s.keyStatus.startsWith('✕') ? 'bad' : ''}` }, s.keyStatus)
       : !s.hasKey
-        ? h('button', { class: 'link', title: 'https://console.groq.com/keys', onclick: () => window.ezrite.openKeyPage() },
+        ? h('button', { class: 'link', title: '키 발급받기', onclick: () => window.ezrite.openKeyPage() },
           '무료 키 발급받기 ↗ (받아쓰기에 필요)')
         : null;
     return h('div', { class: 'key-row' },

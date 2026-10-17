@@ -8,7 +8,7 @@
   // ── 보통 크기 ──
   const gear = h('button', {
     class: 'gear', html: icon('gear', 15, 1.7),
-    title: '설정 — 지난 기록은 열린 창의 탭에서 볼 수 있습니다',
+    title: '설정',
     onclick: () => window.ezrite.openMain('settings'),
   });
   const header = statusHeader('popup', gear);
@@ -23,11 +23,24 @@
   const quitBtn = h('button', { class: 'small', html: icon('power', 13, 2.4), onclick: () => window.ezrite.quit() });
   const footer = h('div', { class: 'footer' }, gauges, compactBtn, quitBtn);
 
+  // 글이 칸보다 길면 글자를 85% 까지 줄여 맞춘다 (맥 minimumScaleFactor 0.85). 실제 그려진 폭으로 잰다
+  const CAPTION_PX = 10.5;
+  function showCaption(text) {
+    caption.style.fontSize = '';
+    caption.textContent = text;
+    caption.classList.remove('hidden');
+    // flex 칸의 scrollWidth 는 넘쳐도 칸 폭을 돌려줄 때가 있어 글자 자체의 폭을 잰다
+    const textWidth = () => { const r = document.createRange(); r.selectNodeContents(caption); return r.getBoundingClientRect().width; };
+    const k = F.captionScale(textWidth(), caption.clientWidth);
+    if (k < 1) caption.style.fontSize = `${(CAPTION_PX * k).toFixed(2)}px`;
+    return { scale: k, fits: Math.ceil(textWidth()) <= caption.clientWidth };
+  }
+  window.Ez.showCaption = showCaption; // 화면 확인용 (가장 긴 글이 맞는지 잰다)
   const hover = (el, text) => {
-    el.addEventListener('mouseenter', () => { caption.textContent = typeof text === 'function' ? text() : text; caption.classList.remove('hidden'); });
+    el.addEventListener('mouseenter', () => showCaption(typeof text === 'function' ? text() : text));
     el.addEventListener('mouseleave', () => caption.classList.add('hidden'));
   };
-  hover(compactBtn, '작은 창 — 최근 한 줄과 번역만');
+  hover(compactBtn, '작은 창으로');
   hover(quitBtn, 'Ezrite 종료');
 
   const GAUGES = [
@@ -45,7 +58,7 @@
       let el;
       if (typeof v === 'string') {
         el = h('div', { class: 'gauge' }, ico, h('span', { class: 'paid' }, v));
-        hover(el, `${g.label}: ${v} 사용 중 — 유료 크레딧이라 하루 한도 표시 없음`);
+        hover(el, F.paidCaption(g.label, v));
       } else {
         const fill = h('b');
         if (typeof v === 'number') {
@@ -54,7 +67,7 @@
         }
         el = h('div', { class: 'gauge' }, ico, h('div', { class: 'track' }, fill));
         hover(el, () => current?.footer.captions?.[g.key]
-          ?? F.usageCaption(g.label, typeof current?.footer[g.key] === 'number' ? current.footer[g.key] : null, g.models));
+          ?? F.usageCaption(g.label, typeof current?.footer[g.key] === 'number' ? current.footer[g.key] : null));
       }
       return el;
     });

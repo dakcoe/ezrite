@@ -144,9 +144,16 @@ test('맥·윈도우 한 릴리스: DMG 만 있으면 (윈도우판이 아직 �
   assert.equal(release(JSON.stringify(dmgOnly)).download, 'https://github.com/dakcoe/ezrite/releases/tag/v1.1.0');
 });
 
-test('업데이트 저장소는 공개 리포 dakcoe/ezrite, 버전은 1.1.0', () => {
+test('업데이트 저장소는 공개 리포 dakcoe/ezrite, 버전은 루트·앱·helper 가 같다', () => {
   const pkg = require('../package.json');
   assert.equal(pkg.ezriteUpdateRepo, 'dakcoe/ezrite');
-  assert.equal(pkg.version, '1.1.0');
+  assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
+  // 릴리스마다 숫자를 고치지 않도록, 세 곳이 서로 같은지만 본다
+  const fs = require('fs');
+  const path = require('path');
+  const root = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8'));
+  const cargo = fs.readFileSync(path.join(__dirname, '..', '..', 'helper', 'Cargo.toml'), 'utf8');
+  assert.equal(root.version, pkg.version);
+  assert.equal(cargo.match(/^version = "([^"]+)"/m)[1], pkg.version);
   assert.equal(latestURL(pkg.ezriteUpdateRepo), 'https://api.github.com/repos/dakcoe/ezrite/releases/latest');
 });

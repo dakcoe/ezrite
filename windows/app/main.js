@@ -9,7 +9,7 @@ const fs = require('fs');
 const { execFile, execFileSync, spawn } = require('child_process');
 const { parseListOutput, rmsFromS16le, levelFromRms } = require('./lib/audio');
 const os = require('os');
-const { parseDevEnv, supportsMaterial, popupPosition, buildSources, keepSelected, helperCandidates, mixArgs, notPlayingMessage, sourceArgs, supportsProcessLoopback, LOOPBACK_UNSUPPORTED,
+const { parseDevEnv, supportsMaterial, popupPosition, buildSources, keepSelected, helperCandidates, mixArgs, notPlayingMessage, sourceArgs, supportsProcessLoopback, LOOPBACK_UNSUPPORTED, guideSize,
   themeSource, themeColors, titleBarOverlay } = require('./lib/ui');
 const { mixedSource } = require('./lib/mixer');
 const { flattenBGRA, hexColor } = require('./lib/png');
@@ -1047,7 +1047,6 @@ function openPreview(name) {
 // ── 사용 가이드 · 처음 한 번 · 오픈소스 고지 · 로그인할 때 실행 ──
 
 let guideWin = null;
-const GUIDE = { width: 640, height: 720 };
 
 /** 사용 가이드 (맥 showGuide: Resources/web/guide.html). 넘기는 슬라이드 7장 */
 function showGuide() {
@@ -1057,7 +1056,7 @@ function showGuide() {
     return;
   }
   guideWin = new BrowserWindow({
-    ...GUIDE,
+    ...guideSize(screen.getPrimaryDisplay().workArea), // 760×860, 낮은 화면은 높이만 맞춘다
     useContentSize: true,
     show: false,
     icon: APP_ICON,

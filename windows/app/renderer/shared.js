@@ -51,12 +51,12 @@
 
   // ── 상태 머리 ──
   /** place: 'popup' | 'window'. extra: 오른쪽 끝 버튼 (톱니) */
-  // 맥 explainHelp: 화면과 강의 내용이 어느 회사로 가는지 밝힌다
-  const EXPLAIN_HELP = '설명해줘 — 지금 화면과 최근 강의 내용을 AI 가 짚어 설명합니다. 화면 캡처와 강의 내용이 Groq(API 키를 발급한 회사)로 전송됩니다';
+  // 맥처럼 짧은 이름만. 화면이 AI 서비스로 간다는 안내는 사용 가이드(STEP 06)에 있다
+  const EXPLAIN_HELP = 'AI 질문하기';
 
   /** ✨ 설명해줘 단추. 하는 중에는 돌아가는 표시로 바뀌고 눌리지 않는다. update(s) 를 상태마다 부른다 */
   function explainButton(cls, size) {
-    const b = h('button', { class: cls, title: EXPLAIN_HELP, 'aria-label': '설명해줘', onclick: () => window.ezrite.explain() });
+    const b = h('button', { class: cls, title: EXPLAIN_HELP, 'aria-label': 'AI 질문하기', onclick: () => window.ezrite.explain() });
     let shown = null;
     b.update = (s) => {
       const busy = Boolean(s.explaining);
@@ -114,7 +114,7 @@
       const on = s.listening || s.paused;
       rec.classList.toggle('on', on);
       rec.innerHTML = icon(on ? 'stop' : 'record', on ? 13 : 16);
-      rec.title = on ? '받아쓰기 끝내기 (다음 녹음은 새 기록)' : '받아쓰기 시작';
+      rec.title = on ? '녹음 종료' : '녹음 시작';
     }
     return { el, update };
   }
