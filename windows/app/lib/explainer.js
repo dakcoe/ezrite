@@ -11,6 +11,7 @@
 const { EventEmitter } = require('node:events');
 const E = require('./explain');
 const G = require('./groq-explain');
+const AI = require('./ai');
 
 const LOADING_READ = '화면을 읽는 중…';
 const LOADING_MAKE = '설명을 만드는 중…';
@@ -20,11 +21,12 @@ const WATCH_MS = 400;
 const WATCH_HIDDEN_MS = 600;
 
 class Explainer extends EventEmitter {
-  constructor({ groq, grab, ocr, createCard, createOverlay, context, popupFrame = () => null,
+  // ai: Claude·Gemini·GPT 호출 (lib/ai.js AIClient). context() 의 provider·model 이 Groq 가 아니면 그쪽에 묻는다
+  constructor({ groq, ai = null, onNotice = () => {}, grab, ocr, createCard, createOverlay, context, popupFrame = () => null,
     sleep = (ms) => new Promise((r) => setTimeout(r, ms)), devQuestion = null, askDelay = 6000, onUsed = () => {}, watch = true }) {
     super();
     // watch=false: 표시를 그린 뒤 화면을 지켜보지 않는다 (EZRITE_CAPTURABLE 녹화용 — 찍을 때마다 카드·표시를 빼서 깜박인다)
-    Object.assign(this, { groq, grab, ocr, createCard, createOverlay, context, popupFrame, sleep, devQuestion, askDelay, onUsed, watch });
+    Object.assign(this, { groq, ai, onNotice, grab, ocr, createCard, createOverlay, context, popupFrame, sleep, devQuestion, askDelay, onUsed, watch });
     this.busy = false;
     this.card = null;
     this.overlay = null;
@@ -34,6 +36,11 @@ class Explainer extends EventEmitter {
     this.history = [];
     this.watchToken = null;
     this.watching = Promise.resolve();
+  }
+
+  /** 설명·질문을 Groq 가 아닌 서비스에 묻나 (모델이 비면 Groq) */
+  usesOther(provider, model) {
+    return Boolean(this.ai) && provider !== 'groq' && AI.isProvider(provider) && Boolean(model);
   }
 
   setBusy(b) {
@@ -66,7 +73,7 @@ class Explainer extends EventEmitter {
       const card = this.ensureCard();
       this.history = [];
       this.explanation = '';
-      const { transcript, guide } = this.context();
+      const { transcript, guide, provider, model } = this.context();
       try {
         const shot = await this.grab({ display: null, full: true });
         this.display = shot.display;
@@ -77,6 +84,20 @@ class Explainer extends EventEmitter {
         card.render({ loading: LOADING_MAKE });
         const jpeg = shot.jpeg(JPEG_WIDTH);
         const args = { jpeg, lines, transcript, guide, onUsed: this.onUsed };
+
+        // 다른 서비스: 한 번에 묻는다. Groq 규칙·글자 섞임 고치기는 붙이지 않는다 (맥과 같다)
+        if (this.usesOther(provider, model)) {
+          try {
+            const text = await this.ai.complete(provider, {
+              model, prompt: G.unifiedPrompt(lines, transcript, guide), image: jpeg, json: true, maxTokens: AI.EXPLAIN_MAX_TOKENS,
+            });
+            this.present(card, lines, shot, text, { data: text }, hint);
+            return;
+          } catch (e) {
+            if (!AI.fallsBack(e)) throw e;
+            this.onNotice(`${AI.LABEL[provider]} 설명 실패 → Groq 로 대신했습니다`);
+          }
+        }
 
         // qwen 한 번으로. 실패하거나 빈 답이면 두 모델에 나눠 묻는다
         const data = await G.explainUnified(this.groq, args).catch(() => null);
@@ -125,10 +146,28 @@ class Explainer extends EventEmitter {
     try {
       const shot = await this.grab({ display: this.display, full: true });
       const lines = await this.lines(shot.png());
-      const { transcript, guide } = this.context();
+      const { transcript, guide, provider, model } = this.context();
       const prompt = G.questionPrompt(question, this.history, this.explanation, lines, transcript, guide);
-      const data = await G.answer(this.groq, prompt, { jpeg: shot.jpeg(JPEG_WIDTH), lines, transcript, onUsed: this.onUsed });
-      const a = E.answerPresentation(data, lines);
+      const jpeg = shot.jpeg(JPEG_WIDTH);
+      let a = null;
+      if (this.usesOther(provider, model)) {
+        // 답을 읽지 못하면 한 번 더 묻는다. 두 번째는 생각 단계를 꺼서 토큰이 모자라 답이 잘리는 일을 막는다
+        for (const think of [true, false]) {
+          try {
+            const text = await this.ai.complete(provider, { model, prompt, image: jpeg, json: true, maxTokens: AI.EXPLAIN_MAX_TOKENS, think });
+            a = E.answerPresentation(text, lines);
+            if (a) break;
+          } catch (e) {
+            if (!AI.fallsBack(e)) throw e;
+            break;
+          }
+        }
+        if (!a) this.onNotice(`${AI.LABEL[provider]} 답변 실패 → Groq 로 대신했습니다`);
+      }
+      if (!a) {
+        const data = await G.answer(this.groq, prompt, { jpeg, lines, transcript, onUsed: this.onUsed });
+        a = E.answerPresentation(data, lines);
+      }
       if (!a) {
         card.answer({ error: ANSWER_FAILED });
         return;

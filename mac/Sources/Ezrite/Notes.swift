@@ -53,7 +53,18 @@ enum Notes {
         return rest.trimmingCharacters(in: .whitespaces)
     }
 
-    /// 이름을 바꾸고(빈 문자열이면 이름 없앰) 새 경로를 돌려준다. 소리 파일도 같이 옮긴다
+    /// 기록 하나가 자기 이름의 폴더에 들어 있나 (저장 폴더/기록이름/기록이름.txt). 예전 기록은 저장 폴더에 바로 있다
+    static func isFoldered(_ txt: URL) -> Bool {
+        txt.deletingLastPathComponent().lastPathComponent == txt.deletingPathExtension().lastPathComponent
+    }
+
+    /// 휴지통으로 보낼 것: 폴더 기록이면 폴더째, 예전 기록이면 글과 딸린 파일
+    static func trashTargets(_ txt: URL) -> [URL] {
+        isFoldered(txt) ? [txt.deletingLastPathComponent()] : companions(txt).map(\.url) + [txt]
+    }
+
+    /// 이름을 바꾸고(빈 문자열이면 이름 없앰) 새 경로를 돌려준다. 소리 파일도 같이 옮긴다.
+    /// 폴더 기록이면 폴더 이름도 같이 바꾼다
     static func rename(_ url: URL, to title: String) throws -> URL {
         let name = url.deletingPathExtension().lastPathComponent
         var base = String(name.prefix(19))
@@ -61,8 +72,20 @@ enum Notes {
         if tail.first == "_" { base += String(tail.prefix { $0 == "_" || $0.isNumber }) }
         let clean = title.components(separatedBy: CharacterSet(charactersIn: "/:\n")).joined(separator: " ")
             .trimmingCharacters(in: .whitespaces)
-        let dest = url.deletingLastPathComponent()
-            .appendingPathComponent(clean.isEmpty ? base : "\(base) \(clean)").appendingPathExtension("txt")
+        let newName = clean.isEmpty ? base : "\(base) \(clean)"
+        if isFoldered(url) {
+            let folder = url.deletingLastPathComponent()
+            let newFolder = folder.deletingLastPathComponent().appendingPathComponent(newName)
+            guard newFolder != folder else { return url }
+            try FileManager.default.moveItem(at: folder, to: newFolder)
+            return try rename(inPlace: newFolder.appendingPathComponent(url.lastPathComponent), to: newName)
+        }
+        return try rename(inPlace: url, to: newName)
+    }
+
+    /// 같은 폴더 안에서 글과 딸린 파일의 이름만 바꾼다
+    private static func rename(inPlace url: URL, to newName: String) throws -> URL {
+        let dest = url.deletingLastPathComponent().appendingPathComponent(newName).appendingPathExtension("txt")
         guard dest != url else { return url }
         let others = companions(url)
         try FileManager.default.moveItem(at: url, to: dest)
@@ -79,7 +102,7 @@ enum Notes {
     /// iCloud 폴더는 앱이 직접 휴지통으로 옮기는 것을 macOS 가 막는다(권한 오류 513). 그럴 땐 Finder 에게 맡긴다
     /// — 처음 한 번 "Finder 제어" 허락을 묻는다. 끝나면 실패 이유(없으면 nil)를 알린다
     static func delete(_ url: URL, done: @escaping (String?) -> Void) {
-        let files = companions(url).map(\.url) + [url]
+        let files = trashTargets(url)
         NSWorkspace.shared.recycle(files) { _, error in
             DispatchQueue.main.async {
                 guard error != nil else { return done(nil) }
@@ -224,6 +247,11 @@ enum Notes {
 
     /// 앱이 죽어 남은 조각을 합친다 (실행할 때 prune 이 부른다)
     static func recoverParts(in dir: URL = dir) {
+        for sub in subfolders(dir) { recoverParts(inFolder: sub) }
+        recoverParts(inFolder: dir)
+    }
+
+    private static func recoverParts(inFolder dir: URL) {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
         let groups = Dictionary(grouping: names.filter { $0.range(of: #"\.part-\d{3}\.m4a$"#, options: .regularExpression) != nil }) {
             String($0[..<$0.range(of: ".part-")!.lowerBound])
@@ -263,7 +291,7 @@ enum Notes {
         }
 
         private func create() throws -> URL {
-            try FileManager.default.createDirectory(at: Notes.dir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: planned.deletingLastPathComponent(), withIntermediateDirectories: true)
             FileManager.default.createFile(atPath: planned.path, contents: nil)
             return planned
         }
@@ -273,14 +301,14 @@ enum Notes {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd_HH-mm-ss"
         let base = f.string(from: Date())
-        var u = dir.appendingPathComponent(base + ".txt")
-        var n = 2
-        while FileManager.default.fileExists(atPath: u.path)
-                || FileManager.default.fileExists(atPath: u.deletingPathExtension().appendingPathExtension("m4a").path) {
-            u = dir.appendingPathComponent("\(base)_\(n).txt")
-            n += 1
+        // 저장 폴더/기록이름/기록이름.txt. 폴더는 처음 쓸 때 만든다 (예전처럼 바로 놓인 같은 이름도 피한다)
+        let taken = { (name: String) in
+            [dir.appendingPathComponent(name), dir.appendingPathComponent(name + ".txt"), dir.appendingPathComponent(name + ".m4a")]
+                .contains { FileManager.default.fileExists(atPath: $0.path) }
         }
-        return u
+        var name = base, n = 2
+        while taken(name) { name = "\(base)_\(n)"; n += 1 }
+        return dir.appendingPathComponent(name).appendingPathComponent(name + ".txt")
     }
 
     /// 파일 형식 그대로의 글: 원문 / 네 칸 들여쓴 번역 / 끊김 표시
@@ -293,9 +321,17 @@ enum Notes {
     /// 이 앱이 만든 기록만 고른다 — 이름이 시작 시각으로 시작하는 .txt. 저장 위치가 수업 폴더여도 다른 노트는 섞이지 않는다
     static func sessions(in dir: URL = dir) -> [Session] {
         let urls = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
-        return urls.filter { $0.pathExtension == "txt" }
+        let foldered = subfolders(dir).map { $0.appendingPathComponent($0.lastPathComponent + ".txt") }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+        return (urls.filter { $0.pathExtension == "txt" } + foldered)
             .compactMap { u in startedAt(u).map { Session(url: u, date: $0) } }
             .sorted { $0.date > $1.date }
+    }
+
+    /// 이 앱이 만든 기록 폴더 (이름이 시작 시각으로 시작하는 폴더)
+    static func subfolders(_ dir: URL) -> [URL] {
+        let urls = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+        return urls.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true && startedAt($0) != nil }
     }
 
     /// 이름 앞 19자가 "yyyy-MM-dd_HH-mm-ss" 면 그 시각, 아니면 이 앱 파일이 아니다
@@ -359,6 +395,11 @@ enum Notes {
     static func prune(in dir: URL = dir, autoDelete: Bool? = nil) {
         let autoDelete = autoDelete ?? (dir.standardizedFileURL.path == defaultDir.standardizedFileURL.path)
         recoverParts(in: dir)
+        // 글 없이 소리만 남은 기록 폴더는 폴더째 지운다
+        for sub in subfolders(dir) where !FileManager.default.fileExists(atPath: sub.appendingPathComponent(sub.lastPathComponent + ".txt").path) {
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: sub.path)) ?? []
+            if names.allSatisfy({ $0.hasSuffix(".m4a") || $0 == ".DS_Store" }) { try? FileManager.default.removeItem(at: sub) }
+        }
         let all = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         for a in all where a.pathExtension == "m4a" && startedAt(a) != nil && !a.lastPathComponent.contains(".part-") {
             let txt = a.deletingPathExtension().appendingPathExtension("txt")
@@ -367,13 +408,20 @@ enum Notes {
         guard autoDelete else { return }
         let cutoff = Date().addingTimeInterval(-keepDays * 86400)
         for s in sessions(in: dir) where s.date < cutoff {
-            for c in companions(s.url) { try? FileManager.default.removeItem(at: c.url) }
-            try? FileManager.default.removeItem(at: s.url)
+            for t in trashTargets(s.url) { try? FileManager.default.removeItem(at: t) }
         }
     }
 
     /// 글과 딸린 파일(소리, 설명)을 다른 폴더로 복사한다. 같은 이름이 있으면 덮어쓰지 않고 " 2", " 3"을 붙인다
     static func export(_ txt: URL, to folder: URL) throws -> [URL] {
+        if isFoldered(txt) {
+            // 폴더 기록은 폴더째 복사한다
+            let src = txt.deletingLastPathComponent(), base = src.lastPathComponent
+            var dest = folder.appendingPathComponent(base), n = 2
+            while FileManager.default.fileExists(atPath: dest.path) { dest = folder.appendingPathComponent("\(base) \(n)"); n += 1 }
+            try FileManager.default.copyItem(at: src, to: dest)
+            return [dest]
+        }
         let sources = [(url: txt, suffix: ".txt")] + companions(txt)
         let base = txt.deletingPathExtension().lastPathComponent
         var name = base

@@ -28,8 +28,8 @@ function viewEntries(entries) {
  * 팝업 아래 줄 게이지 값 (맥 UsageFooter): 호출 횟수(헤더)와 하루 양(Budget) 중 덜 남은 쪽, 마우스를 올렸을 때 글,
  * 설명·질문 남은 횟수. 계산은 usage.js footer()
  */
-function usageFooter(usage, budget = new Budget(), now = Date.now()) {
-  return Usage.footer(usage, budget, now);
+function usageFooter(usage, budget = new Budget(), now = Date.now(), paid = {}) {
+  return Usage.footer(usage, budget, now, paid);
 }
 
 class LiveSession extends EventEmitter {

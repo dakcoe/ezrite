@@ -130,6 +130,7 @@ final class Transcriber {
 
         state.entries = []
         state.liveSession = nil
+        state.savedSession = nil
         Notes.prune()
         writer = Notes.Writer()
         // 다시 연결해도 같은 파일에 이어 쓴다
@@ -164,6 +165,7 @@ final class Transcriber {
         stopCapture()
         recorder?.close()           // 여기서 m4a 가 마무리된다. 앱 종료 때도 이 길로 온다
         recorder = nil
+        state.savedSession = writer.url  // 받아 적은 글이 있을 때만 (없으면 기록이 남지 않는다)
         if let activity { ProcessInfo.processInfo.endActivity(activity) }
         activity = nil
     }

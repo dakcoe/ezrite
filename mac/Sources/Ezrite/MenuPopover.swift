@@ -40,6 +40,7 @@ struct MenuPopover: View {
     private var full: some View {
         VStack(spacing: 0) {
             UpdateBanner()
+            SavedBanner()
             StatusHeader {
                 Button {
                     AppDelegate.shared?.popover.page = .settings
@@ -89,6 +90,51 @@ struct UpdateBanner: View {
             .padding(.horizontal, 14).padding(.vertical, 10)
             .background(Color.blue.opacity(0.08))
         }
+    }
+}
+
+/// 녹음을 끝내면 맨 위에 뜨는 띠: 어디에 저장됐는지와 [기록 보기]. 다음 녹음을 시작하거나 ✕ 를 누르면 사라진다
+struct SavedBanner: View {
+    @EnvironmentObject var state: AppState
+
+    var body: some View {
+        if let url = state.savedSession {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Text("녹음 기록 저장됨").font(.system(size: 12.5, weight: .semibold))
+                    Spacer()
+                    Button("기록 보기") {
+                        AppDelegate.shared?.popover.page = .history
+                        AppDelegate.shared?.popover.open(url)
+                        AppDelegate.shared?.showMainWindow()
+                    }
+                    .controlSize(.small).buttonStyle(.borderedProminent)
+                    Button { state.savedSession = nil } label: {
+                        Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                            .frame(width: 18, height: 18).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).help("닫기")
+                }
+                // 저장 위치. 누르면 Finder 에서 그 기록 폴더를 보여 준다
+                Button { NSWorkspace.shared.activateFileViewerSelecting([url]) } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "folder").font(.system(size: 10))
+                        Text(Self.place(url)).lineLimit(1).truncationMode(.middle)
+                    }
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain).help("Finder 에서 보기 — " + (url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 9)
+            .background(Color.green.opacity(0.08))
+        }
+    }
+
+    /// "수업녹음 › 2026-10-18_09-00-00 1주차" 처럼 저장 폴더 이름과 기록 폴더(예전 기록이면 파일) 이름. 전체 경로는 도움말에
+    static func place(_ txt: URL) -> String {
+        let target = Notes.isFoldered(txt) ? txt.deletingLastPathComponent() : txt
+        return target.deletingLastPathComponent().lastPathComponent + " › " + target.lastPathComponent
     }
 }
 
@@ -285,6 +331,7 @@ struct MainView: View {
     var body: some View {
         VStack(spacing: 0) {
             UpdateBanner()
+            SavedBanner()
             StatusHeader(place: "window") {
                 Button { model.page = model.page == .settings ? .live : .settings } label: {
                     Image(systemName: "gearshape")

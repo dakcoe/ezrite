@@ -6,6 +6,20 @@ const {
 const { Readable } = require('stream');
 const path = require('path');
 const fs = require('fs');
+
+// 처리 안 된 예외는 기본 오류 창 대신 %APPDATA%\Ezrite\logs\main.log 로 쓰고 앱 안 알림으로 알린다.
+// 다른 앱 모듈을 부르기 전에 달아서, 불러오는 중의 오류도 창으로 뜨지 않게 한다
+require('./lib/crashlog').install({
+  logDir: path.join(process.env.APPDATA || app.getPath('appData'), 'Ezrite', 'logs'),
+  onError: (msg) => {
+    try {
+      showNotice(`문제가 생겨 기록해 두었습니다: ${msg}`);
+    } catch {
+      // 상태가 아직 준비되지 않았으면 로그만 남긴다
+    }
+  },
+});
+
 const { execFile, execFileSync, spawn } = require('child_process');
 const { parseListOutput, LevelMeter } = require('./lib/audio');
 const os = require('os');
@@ -16,22 +30,28 @@ const { flattenBGRA, hexColor } = require('./lib/png');
 const sample = require('./lib/sample');
 const { KeyStore } = require('./lib/keystore');
 const { GroqClient } = require('./lib/groq');
+const AI = require('./lib/ai');
+const Providers = require('./lib/providers');
+const { translate: translateWith } = require('./lib/translation');
 const { Transcriber, languageCode, MESSAGES } = require('./lib/transcriber');
 const { LiveSession, usageFooter } = require('./lib/live');
 const { parseWav, wavFeed } = require('./lib/devfeed');
 const { loadDemoScript, DemoScript, demoSource, fakeLevel } = require('./lib/demoscript');
 const { fakeFetch } = require('./lib/fakegroq');
 const notes = require('./lib/notes');
+const Saved = require('./lib/saved');
 const { PcmFile, finishAudio, parseRange } = require('./lib/recording');
 const Settings = require('./lib/settings');
 const { Budget } = require('./lib/budget');
+const { AIClient } = require('./lib/ai');
 const { Updater, issueURL } = require('./lib/updater');
 const PKG = require('./package.json');
 const E = require('./lib/explain');
 const { Explainer } = require('./lib/explainer');
 const ExplainUI = require('./explain-ui');
 
-// 녹음 듣기용 주소 ezrite-note://audio/<파일 이름>. 저장 폴더의 .m4a 만 내준다 (renderer 가 아무 파일이나 읽지 못하게)
+// 녹음 듣기용 주소 ezrite-note://audio/<기록이름>.m4a 또는 /<기록 폴더>/<기록이름>.m4a.
+// 저장 폴더 안 이 앱 기록의 .m4a 만 내준다 (renderer 가 아무 파일이나 읽지 못하게, notes.audioFile)
 protocol.registerSchemesAsPrivileged([
   { scheme: 'ezrite-note', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
 ]);
@@ -81,10 +101,16 @@ const state = {
   notesDir: '', // 화면에 보일 저장 위치
   liveSession: null, // 지금 쓰고 있는 기록 파일 (지난 기록의 "진행 중")
   opened: null, // 지난 기록에서 연 기록 { path, title, date, audio, audioSrc, live, entries }
+  saved: null, // 방금 끝난 녹음의 기록 "저장됨" 띠 { path, target, place, help } (lib/saved.js)
   version: app.getVersion(),
   appAudio: true, // 프로그램별 소리 받기를 쓸 수 있는 Windows 인지 (설정에 안내)
   hasKey: false, // 키 자체는 화면 쪽으로 보내지 않는다. 있는지만
-  keyStatus: null, // 키 줄 아래 한 줄 ("저장됨 …" / "✕ …")
+  keyStatus: null, // Groq 키 줄 아래 한 줄 (처음 설정 안내). providerStatus.groq 와 같다
+  ai: Settings.DEFAULTS.ai, // 기능별 AI: 서비스·모델, 받아 온 모델 목록 (lib/settings.js)
+  aiView: null, // 화면에 보낼 고르기 칸과 키 있음/없음 (키 자체는 보내지 않는다)
+  providerStatus: {}, // 서비스 → 키 확인 결과 한 줄
+  modelCheck: {}, // "서비스.용도" → 모델 확인 결과 한 줄
+  checking: {}, // 서비스 또는 "서비스.용도" → 확인을 시작한 때(ms). 확인 중일 때만
   inflight: 0,
   micReady: false,
   sample: false,
@@ -102,6 +128,7 @@ const keepSettings = !dev.preview && !dev.shot;
   const saved = Settings.load(SETTINGS_FILE);
   Object.assign(state, {
     language: saved.language, options: saved.options, notesFolder: saved.notesFolder, sourceId: saved.sourceId, userGuide: saved.userGuide, theme: saved.theme,
+    ai: saved.ai,
   });
   state.welcomed = saved.welcomed;
 }
@@ -125,7 +152,7 @@ function persistSettings() {
   try {
     Settings.save(SETTINGS_FILE, {
       language: state.language, sourceId: state.sourceId, notesFolder: state.notesFolder, options: state.options,
-      userGuide: state.userGuide, welcomed: state.welcomed, theme: state.theme,
+      userGuide: state.userGuide, welcomed: state.welcomed, theme: state.theme, ai: state.ai,
     });
   } catch {
     // 설정을 못 써도 앱은 돈다
@@ -212,9 +239,42 @@ function sendLevel(v) {
 
 // ── 받아쓰기: 소리 출처 → VAD → Transcriber (lib/live.js) ──
 
-const GROQ_KEY_PAGE = 'https://console.groq.com/keys';
 const keystore = new KeyStore();
 const usage = {}; // 모델 → { remaining, limit } (응답 헤더)
+
+// Claude·Gemini·GPT (그리고 키 확인 때 Groq 모델 목록). 키는 keystore 에서 그때그때 읽는다
+const aiClient = new AIClient({
+  getKey: (p) => {
+    try {
+      return keystore.read(p);
+    } catch {
+      return null;
+    }
+  },
+  onSpent: (model, kind, amount) => {
+    budget.note(model, kind, amount);
+    saveBudget();
+  },
+});
+
+/** 그 서비스의 키가 있나 (Groq 는 hasKey) */
+function keyPresent(p) {
+  if (p === 'groq') return hasKey();
+  try {
+    return keystore.has(p);
+  } catch {
+    return false;
+  }
+}
+
+/** 화면에 보낼 기능별 AI 칸: 키는 있다/없다만 */
+function aiView() {
+  return {
+    keys: Object.fromEntries(AI.PROVIDERS.map((p) => [p, keyPresent(p)])),
+    translate: Providers.featureView(state.ai, 'translate', keyPresent),
+    explain: Providers.featureView(state.ai, 'explain', keyPresent),
+  };
+}
 
 /** 키가 있나. 키 파일을 못 읽어도 앱은 돌고, 녹음 시작 때 "키 없음"으로 안내된다 */
 function hasKey() {
@@ -238,7 +298,7 @@ function saveBudget() {
   }
 }
 function refreshFooter() {
-  if (!state.sample) setState({ footer: usageFooter(usage, budget) });
+  if (!state.sample) setState({ footer: usageFooter(usage, budget, Date.now(), { translate: state.ai.translateProvider, explain: state.ai.explainProvider }) });
 }
 
 const groq = new GroqClient({
@@ -261,6 +321,9 @@ const groq = new GroqClient({
 
 const transcriber = new Transcriber({
   groq,
+  translate: (lines, context) => translateWith(lines, context, {
+    provider: state.ai.translateProvider, model: state.ai.translateModel, groq, ai: aiClient, onNotice: showNotice,
+  }),
   language: () => languageCode(state.language),
   autoTranslate: () => state.options.autoTranslate,
 });
@@ -341,7 +404,8 @@ session.on('pcm', (chunk) => {
   if (out) sendLevel(out[out.length - 1]);
 });
 
-// ── 기록 저장: 받아 적은 줄 → 기록이름.txt (+ .times.json), 소리 → 기록이름.pcm → 끝내면 .m4a ──
+// ── 기록 저장: 기록마다 폴더 하나 (저장 폴더/기록이름/). 받아 적은 줄 → 기록이름.txt (+ .times.json),
+//    소리 → 기록이름.pcm → 끝내면 .m4a. 모두 그 폴더 안에 (맥 1.1.3 Notes.swift) ──
 
 let writer = null; // 지금 녹음의 기록 파일 (다음 녹음을 시작할 때까지 늦게 온 결과도 여기에 쓴다)
 let pcmFile = null;
@@ -378,6 +442,7 @@ function encodeLater(pcm) {
 }
 
 session.on('start', () => {
+  setState({ saved: Saved.next(state.saved, { event: 'start' }) });
   writer = new notes.Writer(notesDir());
   try {
     pcmFile = new PcmFile(writer.planned.replace(/\.txt$/, '.pcm'));
@@ -389,6 +454,8 @@ session.on('start', () => {
 });
 session.on('pcm', (chunk) => pcmFile?.write(chunk));
 session.on('stop', () => {
+  // 받아 적은 글이 있을 때만 (없으면 기록이 남지 않는다) — 맥 Transcriber.stop 의 savedSession = writer.url
+  setState({ saved: Saved.next(state.saved, { event: 'stop', written: writer?.path ?? null }) });
   const f = pcmFile;
   pcmFile = null;
   if (f) {
@@ -445,12 +512,16 @@ function ourWindows(full) {
 
 const explainer = new Explainer({
   groq,
+  ai: aiClient,
+  onNotice: (m) => showNotice(m),
   grab: (opts) => ExplainUI.grab(opts, ourWindows),
   ocr: ocrImage,
   context: () => ({
     // 최근 받아 적은 문장 12개 (맥 explain())
     transcript: transcriber.entries.filter((e) => e.kind === 'text').slice(-12).map((e) => e.original),
     guide: state.userGuide,
+    provider: state.ai.explainProvider,
+    model: state.ai.explainModel,
   }),
   popupFrame: () => (popup && !popup.isDestroyed() && popup.isVisible() ? popup.getBounds() : null),
   createCard: (hooks) => ExplainUI.createCard(hooks, { capturable: dev.capturable }),
@@ -482,8 +553,11 @@ function demoCard(value) {
 /** 앱이 죽어 남은 녹음(.pcm)을 m4a 로 바꾸고, 글 없는 소리와 (기본 위치면) 30일 지난 기록을 지운다 */
 async function recoverAndPrune() {
   const dir = notesDir();
-  for (const n of fs.existsSync(dir) ? fs.readdirSync(dir) : []) {
-    if (n.startsWith('.encoding-')) fs.rmSync(path.join(dir, n), { force: true }); // 바꾸다 꺼진 반쪽 파일
+  // 바꾸다 꺼진 반쪽 파일 (기록 폴더 안에도 생긴다)
+  for (const folder of [dir, ...notes.subfolders(dir)]) {
+    for (const n of fs.existsSync(folder) ? fs.readdirSync(folder) : []) {
+      if (n.startsWith('.encoding-')) fs.rmSync(path.join(folder, n), { force: true });
+    }
   }
   for (const pcm of notes.pendingAudio(dir)) {
     try {
@@ -512,7 +586,8 @@ function reloadSessions() {
 function audioSrc(txt) {
   const m4a = txt.replace(/\.txt$/, '.m4a');
   if (!fs.existsSync(m4a)) return null;
-  return `ezrite-note://audio/${encodeURIComponent(path.basename(m4a))}?v=${Math.round(fs.statSync(m4a).mtimeMs)}`;
+  const rel = notes.audioRel(notesDir(), txt).split('/').map(encodeURIComponent).join('/');
+  return `ezrite-note://audio/${rel}?v=${Math.round(fs.statSync(m4a).mtimeMs)}`;
 }
 
 function openNote(p) {
@@ -550,6 +625,7 @@ function renameNote(p, newTitle) {
   if (!txt || typeof newTitle !== 'string') return;
   try {
     const dest = notes.rename(txt, newTitle);
+    if (state.saved?.path === txt) setState({ saved: Saved.banner(dest) });
     reloadSessions();
     openNote(dest);
   } catch (e) {
@@ -571,7 +647,7 @@ async function deleteNote(p) {
     noLink: true,
   });
   if (response !== 0) return;
-  setState({ opened: null }); // 듣던 소리를 먼저 놓는다
+  setState({ opened: null, ...(state.saved?.path === txt ? { saved: null } : {}) }); // 듣던 소리를 먼저 놓는다
   const error = await notes.remove(txt, (f) => shell.trashItem(f));
   reloadSessions();
   if (error) {
@@ -628,16 +704,17 @@ function setNotesFolder(folder) {
   reloadSessions();
 }
 
-/** 녹음 듣기: 저장 폴더의 .m4a 만, 막대를 옮길 수 있게 Range 요청도 받는다 */
+/** 녹음 듣기: 저장 폴더 안 이 앱 기록의 .m4a 만 (예전 기록 옆, 기록 폴더 안), 막대를 옮길 수 있게 Range 요청도 받는다 */
 function serveAudio(request) {
   const url = new URL(request.url);
-  const name = decodeURIComponent(url.pathname.replace(/^\//, ''));
-  const dir = notesDir();
-  const file = path.join(dir, name);
-  if (url.hostname !== 'audio' || path.dirname(file) !== path.resolve(dir) || !/\.m4a$/i.test(name)
-    || name.includes('/') || name.includes('\\') || !fs.existsSync(file)) {
-    return new Response('not found', { status: 404 });
+  let rel;
+  try {
+    rel = decodeURIComponent(url.pathname.replace(/^\//, ''));
+  } catch {
+    rel = null;
   }
+  const file = url.hostname === 'audio' ? notes.audioFile(notesDir(), rel) : null;
+  if (!file) return new Response('not found', { status: 404 });
   const size = fs.statSync(file).size;
   const range = parseRange(request.headers.get('range'), size);
   const head = { 'Content-Type': 'audio/mp4', 'Accept-Ranges': 'bytes' };
@@ -708,27 +785,109 @@ function togglePause() {
 
 // ── 키 (Groq 만. 다른 서비스 키는 다음 단계) ──
 
-/** 키를 저장(빈 글이면 지움)한다. 키는 로그·상태·오류 어디에도 싣지 않는다 */
+/** 키 확인 결과 한 줄. started: 확인을 시작한 때(진행 표시의 경과 초), 끝났으면 null */
+function setProviderStatus(p, text, started = null) {
+  const providerStatus = { ...state.providerStatus, [p]: text };
+  const checking = { ...state.checking };
+  if (started) checking[p] = started;
+  else delete checking[p];
+  setState({ providerStatus, checking, ...(p === 'groq' ? { keyStatus: text } : {}) });
+}
+
+/** 기능별 AI 설정을 바꾸고 화면·게이지에 알린다 */
+function setAI(ai) {
+  state.ai = ai;
+  setState({ ai, aiView: aiView() });
+  persistSettings();
+  refreshFooter();
+}
+
+/** 키를 저장(빈 글이면 지움)한다. 키는 로그·상태·오류 어디에도 싣지 않는다 (맥 AppState.saveKey) */
 function saveKey(provider, key) {
-  if (provider !== 'groq' || typeof key !== 'string') return;
+  if (!AI.isProvider(provider) || typeof key !== 'string') return;
   const trimmed = key.trim();
-  if (trimmed.length > 512 || /\s/.test(trimmed)) {
-    setState({ keyStatus: '✕ 키 모양이 아닙니다 (공백 없이 gsk_… 한 줄)' });
+  if (!trimmed) {
+    removeKey(provider);
+    return;
+  }
+  const bad = Providers.keyShapeError(trimmed);
+  if (bad) {
+    setProviderStatus(provider, bad);
     return;
   }
   try {
-    keystore.save(trimmed, 'groq');
+    keystore.save(trimmed, provider);
   } catch (e) {
-    setState({ keyStatus: `✕ ${e.message}` });
+    setProviderStatus(provider, `✕ ${e.message}`);
     return;
   }
-  const saved = hasKey();
-  setState({
-    hasKey: saved,
-    // 맥은 저장하자마자 모델 목록을 불러 확인한다. 여기서는 Groq 를 부르지 않고 첫 받아쓰기 때 확인된다
-    keyStatus: saved ? '저장됨 · 받아쓰기를 시작하면 확인됩니다' : null,
-    error: saved && state.error === MESSAGES.noKey ? null : state.error,
+  if (provider === 'groq') {
+    const saved = hasKey();
+    setState({ hasKey: saved, error: saved && state.error === MESSAGES.noKey ? null : state.error });
+  }
+  setState({ aiView: aiView() });
+  verifyStoredKey(provider);
+}
+
+/** 키 확인: 모델 목록을 받고, Groq 가 아니면 용도별로 실제로 답하는 모델을 기본으로 정한다 */
+async function verifyStoredKey(p) {
+  // 가짜 Groq(화면 확인용)는 네트워크에 나가지 않는다
+  if (dev.fakeGroq && p === 'groq') {
+    setProviderStatus(p, '연결됨');
+    return;
+  }
+  const started = Date.now();
+  setProviderStatus(p, '키 확인 중', started);
+  const r = await Providers.verifyKey(p, aiClient, (text) => {
+    if (state.checking[p] === started) setProviderStatus(p, text, started);
   });
+  if (state.checking[p] !== started) return; // 그 사이 다시 저장했거나 지웠다
+  setAI(Providers.withVerified(state.ai, p, r));
+  setProviderStatus(p, r.status);
+}
+
+function removeKey(p) {
+  try {
+    keystore.remove(p);
+  } catch (e) {
+    setProviderStatus(p, `✕ ${e.message}`);
+    return;
+  }
+  const providerStatus = { ...state.providerStatus };
+  const checking = { ...state.checking };
+  delete providerStatus[p];
+  delete checking[p];
+  setState({ providerStatus, checking, ...(p === 'groq' ? { hasKey: hasKey(), keyStatus: null } : {}) });
+  setAI(Providers.afterRemove(state.ai, p));
+}
+
+/** 설정에서 고른 모델을 바로 불러 봐서 쓸 수 있는지 알려 준다 (맥 checkModel) */
+async function checkModel({ provider, model, feature }) {
+  const k = `${provider}.${feature}`;
+  const modelCheck = { ...state.modelCheck };
+  const checking = { ...state.checking };
+  if (provider === 'groq' || !model) {
+    delete modelCheck[k];
+    delete checking[k];
+    setState({ modelCheck, checking });
+    return;
+  }
+  const started = Date.now();
+  setState({ modelCheck: { ...modelCheck, [k]: '확인 중' }, checking: { ...checking, [k]: started } });
+  const reason = await aiClient.check(provider, model);
+  // 그 사이 다른 모델로 바꿨으면 버린다
+  if (state.ai[`${feature}Model`] !== model || state.checking[k] !== started) return;
+  const done = { ...state.checking };
+  delete done[k];
+  setState({ modelCheck: { ...state.modelCheck, [k]: Providers.checkLine(reason) }, checking: done });
+}
+
+/** 기능별 AI 고르기: { feature, provider } 또는 { feature, model } */
+function chooseAI(choice) {
+  const r = Providers.applyChoice(state.ai, choice, keyPresent);
+  if (r.ai === state.ai) return;
+  setAI(r.ai);
+  if (r.check) checkModel(r.check);
 }
 
 function applyPatch(patch) {
@@ -1124,8 +1283,21 @@ function registerIpc() {
   ipcMain.handle('window:onboarding', () => showOnboarding());
   ipcMain.handle('key:save', (_e, provider, key) => saveKey(provider, key));
   ipcMain.handle('key:remove', (_e, provider) => saveKey(provider, ''));
-  // 키 발급 페이지만 연다 (renderer 가 주소를 고르지 못하게)
-  ipcMain.handle('open:keyPage', () => shell.openExternal(GROQ_KEY_PAGE));
+  ipcMain.handle('ai:choose', (_e, choice) => chooseAI(choice));
+  // 저장됨 띠: 경로는 renderer 가 아니라 main 의 상태에서만 꺼낸다
+  ipcMain.handle('saved:dismiss', () => setState({ saved: null }));
+  ipcMain.handle('saved:open', () => {
+    const p = state.saved?.path;
+    if (!p) return;
+    showMain('history');
+    openNote(p);
+  });
+  ipcMain.handle('saved:reveal', () => {
+    const t = state.saved?.target;
+    if (t && fs.existsSync(t)) shell.showItemInFolder(t);
+  });
+  // 키 발급 페이지만 연다 (renderer 는 서비스 이름만 고른다. 주소는 main 이 정한다)
+  ipcMain.handle('open:keyPage', (_e, provider) => shell.openExternal(AI.KEY_PAGE[AI.isProvider(provider) ? provider : 'groq']));
   // 안내 창은 스크롤 없이 내용 높이에 맞춘다 (화면 작업 영역을 넘지는 않는다)
   ipcMain.handle('window:fit', (e, height) => {
     const win = BrowserWindow.fromWebContents(e.sender);
@@ -1211,6 +1383,7 @@ if (!app.requestSingleInstanceLock()) {
 
     // 미리보기 예시는 맥 스크린샷처럼 "키 있음"으로 둔다. 그 밖에는 실제 키 파일을 본다
     if (!state.sample) setState({ hasKey: hasKey() });
+    setState({ aiView: aiView() });
     if (state.loginItemAvailable) setState({ openAtLogin: app.getLoginItemSettings().openAtLogin });
     // 켤 때와 6시간마다 새 버전 확인. 미리보기·스크린샷은 EZRITE_UPDATE_JSON 이 있을 때만 (네트워크에 나가지 않게)
     if (dev.updateJSON || (!dev.preview && !dev.shot)) updater.start();

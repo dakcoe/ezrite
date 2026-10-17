@@ -4,7 +4,7 @@
 // explainMarks·explainVisuals·visualsBody·visualsSchema·asVisualsObject)과 프롬프트를 글자 그대로 옮겼다.
 // 요청은 groq.js 의 GroqClient.chat 으로 보낸다 (한도·재시도·키 가리기·lenientJSON 은 거기서).
 //
-// 맥과 다른 점: 맥의 다른 서비스(Claude·Gemini·GPT) 갈래와 하루 토큰 예산(Usage.used)은 아직 옮기지 않았다.
+// 다른 서비스(Claude·Gemini·GPT) 갈래는 lib/ai.js 와 explainer.js 에 있다 (Groq 규칙·fixScript 는 Groq 갈래에만).
 // 사용자 AI 지침(GroqClient.guide)은 전역 대신 guide 인자로 받는다.
 
 const { GroqClient, RateLimitedError, GroqError } = require('./groq');

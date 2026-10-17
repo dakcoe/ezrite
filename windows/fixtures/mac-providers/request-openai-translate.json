@@ -1,0 +1,24 @@
+{
+  "body" : {
+    "max_completion_tokens" : 2000,
+    "messages" : [
+      {
+        "content" : [
+          {
+            "text" : "Translate numbered lecture transcript lines into natural Korean. Output only \"N. translation\", one per line. Lines are speech-recognition chunks: a sentence may continue across lines; fix clearly misheard words; drop fillers (um, uh). Keep technical terms accurate. No notes. Never output the Previous line; \"1.\" is the first numbered line.\n\nPrevious (do not translate): Last time we covered PCA.\n1. So kernel PCA lets us do PCA.\n2. We center the kernel matrix.",
+            "type" : "text"
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "model" : "gpt-5-luna"
+  },
+  "headers" : {
+    "Authorization" : "Bearer <KEY>",
+    "Content-Type" : "application\/json"
+  },
+  "method" : "POST",
+  "timeout" : 90,
+  "url" : "https:\/\/api.openai.com\/v1\/chat\/completions"
+}

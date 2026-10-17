@@ -32,6 +32,8 @@
   --yellow: #f4c34f;
   --control-bg: #ffffff;
   --control-line: rgba(0, 0, 0, 0.12);
+  --field-bg: #f3f4f8;
+  --field-line: rgba(0, 0, 0, 0.14);
   --switch-off: rgba(0, 0, 0, 0.09);
   --popup-line: rgba(0, 0, 0, 0.14);
   --fill-hover: rgba(0, 0, 0, 0.11);
@@ -56,6 +58,8 @@
     --blue: #3d8cf8;
     --control-bg: #45474b;
     --control-line: rgba(255, 255, 255, 0.1);
+    --field-bg: rgba(255, 255, 255, 0.07);
+    --field-line: rgba(255, 255, 255, 0.16);
     --switch-off: rgba(255, 255, 255, 0.16);
     --popup-line: rgba(255, 255, 255, 0.12);
     --fill-hover: rgba(255, 255, 255, 0.15);
@@ -366,18 +370,29 @@ html.material .caption { background: var(--popup-bg); }
 .key-row { display: flex; flex-direction: column; gap: 4px; }
 .key-row .line { display: flex; align-items: center; gap: 8px; }
 .key-row .name { width: 52px; font-size: 12.5px; font-weight: 600; flex: none; }
+/* 입력칸으로 보이게: 바탕·테두리, 올리면 글자 커서, 누르면 파란 테두리 (1.1.2 까지는 테두리 없는 글자처럼 보여 누를 곳인지 몰랐다) */
 .key-row input {
-  flex: 1; min-width: 0; height: 20px; border: 0; background: transparent; outline: none;
-  font: inherit; font-size: 12px; color: var(--text);
+  flex: 1; min-width: 0; height: 22px; padding: 0 7px; box-sizing: border-box;
+  border: 1px solid var(--field-line); border-radius: 5px; background: var(--field-bg); outline: none;
+  font: inherit; font-size: 12px; color: var(--text); cursor: text;
+  transition: border-color var(--hover), box-shadow var(--hover);
 }
+.key-row input:hover { border-color: color-mix(in srgb, var(--blue) 45%, var(--field-line)); }
+.key-row input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 22%, transparent); }
 .key-row input::placeholder, textarea::placeholder { color: var(--tertiary); }
 .key-row .slot { width: 22px; flex: none; }
 .link { font-size: 10.5px; color: var(--blue); text-decoration: underline; margin-left: 60px; align-self: flex-start; }
 .link.disabled { opacity: 0.5; }
 .key-row .trash { display: grid; place-items: center; height: 20px; color: var(--secondary); }
 .key-row .trash:hover { color: var(--text); }
-.key-row .check { font-size: 10.5px; color: var(--green); margin-left: 60px; }
-.key-row .check.bad { color: var(--orange); }
+/* 확인 결과 한 줄 (맥 CheckLine): ✕ 주황, ✓ 초록, 그 밖(연결됨 · …, 확인 중)은 흐린 글자 */
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--secondary); line-height: 1.35; }
+.check.ok { color: var(--green); }
+.check.bad { color: var(--orange); }
+.key-row .check { margin-left: 60px; }
+.feature-check { padding: 0 0 6px 26px; }
+.spinner.small { width: 9px; height: 9px; border-width: 1.5px; flex: none; }
+.feature .picker select { max-width: 150px; }
 textarea {
   width: 100%; height: 70px; resize: none; border: 0; outline: none; background: transparent;
   font: inherit; font-size: 12px; color: var(--text); padding: 0 0 0 1px;
@@ -479,6 +494,21 @@ textarea {
 /* 팝업 위 "새 버전" 띠 (맥 UpdateBanner: 파란 8% 바탕) */
 .update-banner { flex: none; padding: 10px 14px; background: rgba(47, 123, 246, 0.08); display: flex; flex-direction: column; gap: 6px; }
 .update-banner.hidden { display: none; }
+/* 녹음 기록 저장됨 띠 (맥 SavedBanner: 초록 8%) */
+.saved-banner { flex: none; padding: 9px 14px; background: rgba(52, 199, 89, 0.08); display: flex; flex-direction: column; gap: 4px; }
+.saved-banner.hidden { display: none; }
+.saved-banner .top { display: flex; align-items: center; gap: 6px; }
+.saved-banner .sb-icon { color: var(--green); display: flex; }
+.saved-banner .sb-title { font-size: 12.5px; font-weight: 600; }
+.saved-banner .spacer { flex: 1; }
+.saved-banner .btn { height: 22px; }
+.saved-banner .sb-close { width: 18px; height: 18px; display: grid; place-items: center; color: var(--secondary); border-radius: 4px; }
+.saved-banner .sb-close:hover { background: var(--fill-hover); color: var(--text); }
+.saved-banner .sb-place { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 11px; color: var(--secondary); text-align: left; }
+.saved-banner .sb-place:hover { color: var(--text); }
+.saved-banner .sb-folder { display: flex; flex: none; }
+.saved-banner .sb-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top-banners { flex: none; display: flex; flex-direction: column; }
 .update-banner .top { display: flex; align-items: center; gap: 6px; }
 .update-banner .ub-icon { color: var(--blue); display: flex; }
 .update-banner .ub-title { font-size: 12.5px; font-weight: 600; }

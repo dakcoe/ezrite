@@ -30,8 +30,8 @@ const PROMPT_CHARS = 400; // 직전 문맥: 고유명사·용어 인식률이 �
 const TRANSLATE_PROMPT = 'Translate numbered lecture transcript lines into natural Korean. Output only "N. translation", one per line. '
   + 'Lines are speech-recognition chunks: a sentence may continue across lines; fix clearly misheard words; '
   + 'drop fillers (um, uh). Keep technical terms accurate. No notes. '
-  // 맥에 없는 한 문장: 앞줄이 문장 중간에서 끊기면 모델이 앞줄까지 "1." 로 옮겨 번호가 하나씩 밀렸다 (e2e 시험)
-  + 'The "Previous" text is context only: never output it; "1." is always the first numbered line.';
+  // 앞줄이 문장 중간에서 끊기면 모델이 앞줄까지 "1." 로 옮겨 번호가 하나씩 밀렸다. 맥과 같은 문장 (fixtures/mac-providers)
+  + 'Never output the Previous line; "1." is the first numbered line.';
 
 const MESSAGES = Object.freeze({
   noKey: 'Groq API 키가 없습니다. 설정에서 키를 입력하세요.',

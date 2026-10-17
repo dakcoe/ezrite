@@ -2,7 +2,7 @@
 
 // 트레이 팝업: 보통 크기(맥 MenuPopover)와 작은 창(맥 CompactPopover)
 (function () {
-  const { h, icon, F, statusHeader, explainButton, livePage, onState } = window.Ez;
+  const { h, icon, F, statusHeader, explainButton, livePage, onState, savedBanner } = window.Ez;
   const frame = document.getElementById('frame');
 
   // ── 보통 크기 ──
@@ -98,10 +98,15 @@
           h('button', { class: 'btn primary', onclick: () => window.ezrite.update.download() }, '받기')),
         notes ? h('div', { class: 'ub-notes secondary' }, notes) : null);
     }
-    requestAnimationFrame(() => window.ezrite.bannerHeight(r ? banner.offsetHeight : 0));
+    fitBanners();
   }
 
-  const full = h('div', { class: 'full' }, banner, header.el, h('div', { class: 'divider' }), body, h('div', { class: 'divider' }), footer);
+  // 저장됨 띠는 새 버전 띠 아래 (맥 MenuPopover.full). 두 띠의 높이만큼 팝업을 키운다
+  const saved = savedBanner();
+  const tops = h('div', { class: 'top-banners' }, banner, saved.el);
+  const fitBanners = () => requestAnimationFrame(() => window.ezrite.bannerHeight(tops.offsetHeight));
+
+  const full = h('div', { class: 'full' }, tops, header.el, h('div', { class: 'divider' }), body, h('div', { class: 'divider' }), footer);
 
   // ── 작은 창 ──
   const cDot = h('span', { class: 'dot' });
@@ -125,6 +130,7 @@
     }
     header.update(s);
     paintBanner(s);
+    if (saved.update(s)) fitBanners();
     live.update(s);
     // 게이지는 값이 바뀔 때만 다시 그린다 (마우스를 올려 둔 설명 글이 깜박이지 않게)
     const fk = JSON.stringify(s.footer);

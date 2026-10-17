@@ -49,16 +49,25 @@ const GAUGES = Object.freeze([
   { key: 'explain', label: '화면 설명', models: [VISION], kind: 'tokens', together: true },
 ]);
 
+const { LABEL } = require('./ai');
+
 const pct = (f) => `${Math.round(f * 100)}%`;
 
 /**
  * usage: 모델 → {remaining, limit} (헤더), budget: lib/budget.js. 게이지마다 남은 비율(0~1)과 마우스를 올렸을 때 글.
- * 번갈아 쓰는 모델(받아쓰기·번역)은 합치고, 함께 써야 하는 모델(화면 설명)은 가장 적게 남은 쪽
+ * 번갈아 쓰는 모델(받아쓰기·번역)은 합치고, 함께 써야 하는 모델(화면 설명)은 가장 적게 남은 쪽.
+ * paid: { translate, explain } → 그 기능의 서비스. Groq 가 아니면 유료 크레딧이라 막대 대신 서비스 이름 (맥 UsageFooter.paid)
  */
-function footer(usage, budget, now = Date.now()) {
+function footer(usage, budget, now = Date.now(), paid = {}) {
   const out = { captions: {} };
   const left = (use) => budget.usesLeft(use, VISION, now);
+  const service = (key) => (paid?.[key] && paid[key] !== 'groq' ? LABEL[paid[key]] ?? null : null);
   for (const g of GAUGES) {
+    const name = service(g.key);
+    if (name) {
+      out[g.key] = name;
+      continue;
+    }
     const requests = g.together
       ? (() => { const xs = g.models.map((m) => fraction([usage[m]])).filter((v) => v != null); return xs.length ? Math.min(...xs) : null; })()
       : fraction(g.models.map((m) => usage[m]));
@@ -70,7 +79,7 @@ function footer(usage, budget, now = Date.now()) {
       ? `${g.label} ${pct(total ?? amount)} 남음 · 설명 약 ${left('explain')}번, 질문 약 ${left('ask')}번`
       : `${g.label} 한도 ${pct(total ?? amount)} 남음`;
   }
-  out.uses = `설명 ${left('explain')} · 질문 ${left('ask')}`;
+  if (!service('explain')) out.uses = `설명 ${left('explain')} · 질문 ${left('ask')}`;
   return out;
 }
 

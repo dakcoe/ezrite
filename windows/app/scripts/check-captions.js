@@ -1,4 +1,5 @@
 'use strict';
+require('./guard'); // 오류가 나도 화면에 창을 띄우지 않고 종료 코드 1
 // 팝업 아래 줄의 마우스 올림 글이 칸에 다 들어가는지 실제로 그려서 잰다 (숨긴 팝업, 화면에 띄우지 않는다).
 //   npx electron scripts/check-captions.js [--shots <폴더>]   → 결과 JSON 한 줄, 하나라도 넘치면 종료 코드 1
 // test/caption-fit.test.js 가 부른다. 임시 APPDATA 를 써서 사용자 설정·기록을 건드리지 않는다
@@ -16,6 +17,8 @@ Object.assign(process.env, {
 
 const { app, BrowserWindow } = require('electron');
 const F = require('../renderer/format');
+// 단일 실행 잠금·캐시는 userData 기준이다. 시험끼리(동시에 도는 다른 점검) 부딪치지 않고 사용자 폴더도 건드리지 않게 임시 폴더로
+app.setPath('userData', path.join(tmp, 'userData'));
 require('../main.js');
 
 // 가장 긴 경우까지: 세 자리 남은 횟수, 이름이 긴 유료 서비스

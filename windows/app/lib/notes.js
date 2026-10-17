@@ -1,7 +1,9 @@
 'use strict';
 
 // 받아 적은 기록 저장. 맥 Notes.swift 이식 — 폴더·이름·형식이 맥과 같아서 파일을 서로 옮겨도 읽힌다.
-//   기록 파일:  <시작시각 yyyy-MM-dd_HH-mm-ss>[_n][ 이름].txt
+//   기록 하나 = 폴더 하나 (맥 1.1.3): <저장 폴더>/<기록이름>/<기록이름>.txt, 딸린 파일도 그 폴더에.
+//   예전처럼 저장 폴더에 바로 놓인 기록(<저장 폴더>/<기록이름>.txt)도 옮기지 않고 그대로 읽고 다룬다.
+//   기록이름:   <시작시각 yyyy-MM-dd_HH-mm-ss>[_n][ 이름]
 //   내용:       원문 한 줄 / 번역은 네 칸 들여쓰기 / "── " 로 시작하면 끊김 표시. 머리말·줄별 시각은 없다
 //   딸린 파일:  같은 이름 + .m4a(녹음) · .times.json(줄마다 녹음 위치) · .pcm(녹음 중 원본, Windows판만)
 //   기본 위치:  %APPDATA%\Ezrite\notes\autosave (맥 ~/Library/Application Support/Ezrite/notes/autosave).
@@ -18,6 +20,8 @@ const path = require('node:path');
 const os = require('node:os');
 
 const KEEP_DAYS = 30;
+// 탐색기가 폴더에 저절로 만드는 파일 (맥 .DS_Store 자리)
+const SYSTEM_FILES = new Set(['desktop.ini', 'thumbs.db']);
 const STAMP = /^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/;
 
 function defaultDir(env = process.env) {
@@ -48,16 +52,36 @@ const exists = (p) => fs.existsSync(p);
 const stem = (file) => path.basename(file).replace(/\.[^.]*$/, ''); // 마지막 확장자만 뗀다
 const swapExt = (txt, ext) => path.join(path.dirname(txt), stem(txt) + ext);
 
-/** 새 기록 경로. 같은 시각의 글이나 소리가 있으면 _2, _3 … */
+/** 기록 하나가 자기 이름의 폴더에 들어 있나 (저장 폴더/기록이름/기록이름.txt). 예전 기록은 저장 폴더에 바로 있다 (맥 isFoldered) */
+const isFoldered = (txt) => path.basename(path.dirname(txt)) === stem(txt);
+
+function isDir(p) {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** 이 앱이 만든 기록 폴더 (이름이 시작 시각으로 시작하는 폴더) (맥 subfolders) */
+function subfolders(dir) {
+  return readDir(dir).filter((n) => startedAt(n)).map((n) => path.join(dir, n)).filter(isDir);
+}
+
+/**
+ * 새 기록 경로: 저장 폴더/기록이름/기록이름.txt. 폴더는 처음 쓸 때 만든다.
+ * 같은 이름의 폴더나 예전처럼 바로 놓인 같은 이름의 글·소리가 있으면 _2, _3 … (맥 newURL)
+ */
 function newPath(dir, date = new Date()) {
   const base = stamp(date);
-  let p = path.join(dir, `${base}.txt`);
+  const taken = (name) => [path.join(dir, name), path.join(dir, `${name}.txt`), path.join(dir, `${name}.m4a`)].some(exists);
+  let name = base;
   let n = 2;
-  while (exists(p) || exists(swapExt(p, '.m4a'))) {
-    p = path.join(dir, `${base}_${n}.txt`);
+  while (taken(name)) {
+    name = `${base}_${n}`;
     n += 1;
   }
-  return p;
+  return path.join(dir, name, `${name}.txt`);
 }
 
 /** 파일 이름 = "시작시각[_n][ 이름].txt" — 이름이 따로 저장되지 않아 파일만 옮겨도 함께 간다 */
@@ -81,7 +105,7 @@ function companions(txt) {
     .map((n) => ({ path: path.join(dir, n), suffix: n.slice(base.length - 1) }));
 }
 
-/** 이름을 바꾸고(빈 글이면 이름 없앰) 새 경로를 돌려준다. 딸린 파일도 같이 옮긴다 */
+/** 이름을 바꾸고(빈 글이면 이름 없앰) 새 경로를 돌려준다. 딸린 파일도 같이 옮긴다. 폴더 기록이면 폴더 이름도 같이 바꾼다 */
 function rename(txt, newTitle) {
   const name = stem(txt);
   let base = name.slice(0, 19);
@@ -89,15 +113,29 @@ function rename(txt, newTitle) {
   if (tail.startsWith('_')) base += /^[_\d]*/.exec(tail)[0];
   // 맥: / : 줄바꿈에서 나눈 조각을 띄어쓰기로 잇는다. Windows 에서 못 쓰는 글자도 같은 식으로
   const clean = String(newTitle).split(/[/:\n\r\\*?"<>|\t]/).join(' ').trim();
-  const dest = path.join(path.dirname(txt), `${clean ? `${base} ${clean}` : base}.txt`);
+  const newName = clean ? `${base} ${clean}` : base;
+  if (isFoldered(txt)) {
+    const folder = path.dirname(txt);
+    const newFolder = path.join(path.dirname(folder), newName);
+    if (newFolder === folder) return txt;
+    // 맥은 moveItem 이 실패한다. Windows 의 renameSync 는 빈 폴더면 덮어쓸 수 있어서 먼저 막는다
+    if (exists(newFolder)) throw new Error('같은 이름의 기록이 이미 있습니다');
+    fs.renameSync(folder, newFolder);
+    return renameInPlace(path.join(newFolder, path.basename(txt)), newName);
+  }
+  return renameInPlace(txt, newName);
+}
+
+/** 같은 폴더 안에서 글과 딸린 파일의 이름만 바꾼다 (맥 rename(inPlace:)) */
+function renameInPlace(txt, newName) {
+  const dest = path.join(path.dirname(txt), `${newName}.txt`);
   if (dest === txt) return txt;
   if (exists(dest)) throw new Error('같은 이름의 기록이 이미 있습니다');
   const others = companions(txt);
   fs.renameSync(txt, dest);
-  const newBase = stem(dest);
   for (const c of others) {
     try {
-      fs.renameSync(c.path, path.join(path.dirname(dest), newBase + c.suffix));
+      fs.renameSync(c.path, path.join(path.dirname(dest), newName + c.suffix));
     } catch {
       // 딸린 파일 하나를 못 옮겨도 기록 이름은 바뀐 채로 둔다 (맥과 같다)
     }
@@ -105,9 +143,14 @@ function rename(txt, newTitle) {
   return dest;
 }
 
-/** 글과 딸린 파일을 휴지통으로 (trash: shell.trashItem). 실패하면 이유 글, 다 되면 null */
+/** 휴지통으로 보낼 것: 폴더 기록이면 폴더째, 예전 기록이면 글과 딸린 파일 (맥 trashTargets) */
+function trashTargets(txt) {
+  return isFoldered(txt) ? [path.dirname(txt)] : [...companions(txt).map((c) => c.path), txt];
+}
+
+/** 휴지통으로 (trash: shell.trashItem). 폴더 기록은 폴더째. 실패하면 이유 글, 다 되면 null */
 async function remove(txt, trash) {
-  const files = [...companions(txt).map((c) => c.path), txt];
+  const files = trashTargets(txt);
   for (const f of files) {
     try {
       await trash(f);
@@ -118,8 +161,20 @@ async function remove(txt, trash) {
   return null;
 }
 
-/** 글과 딸린 파일을 다른 폴더로 복사한다. 같은 이름이 있으면 덮어쓰지 않고 " 2", " 3" 을 붙인다 */
+/** 글과 딸린 파일을 다른 폴더로 복사한다. 같은 이름이 있으면 덮어쓰지 않고 " 2", " 3" 을 붙인다. 폴더 기록은 폴더째 */
 function exportTo(txt, folder) {
+  if (isFoldered(txt)) {
+    const src = path.dirname(txt);
+    const base = path.basename(src);
+    let dest = path.join(folder, base);
+    let n = 2;
+    while (exists(dest)) {
+      dest = path.join(folder, `${base} ${n}`);
+      n += 1;
+    }
+    fs.cpSync(src, dest, { recursive: true, errorOnExist: true, force: false });
+    return [dest];
+  }
   const sources = [{ path: txt, suffix: '.txt' }, ...companions(txt)];
   const base = stem(txt);
   let name = base;
@@ -222,14 +277,15 @@ function preview(txt) {
   return (line ?? '').replace(/�+$/, ''); // 400바이트에서 잘린 한글 조각은 뗀다
 }
 
-/** 이 앱이 만든 기록만 — 이름이 시작 시각으로 시작하는 .txt. 최신이 먼저 */
+/**
+ * 이 앱이 만든 기록만 — 이름이 시작 시각으로 시작하는 .txt. 저장 폴더에 바로 놓인 예전 기록과
+ * 기록 폴더 안의 "폴더이름.txt" 를 함께. 최신이 먼저 (맥 sessions)
+ */
 function sessions(dir) {
-  return readDir(dir)
-    .filter((n) => n.toLowerCase().endsWith('.txt') && startedAt(n))
-    .map((n) => {
-      const p = path.join(dir, n);
-      return { path: p, date: startedAt(n).getTime(), title: title(n), audio: exists(swapExt(p, '.m4a')), preview: preview(p) };
-    })
+  const flat = readDir(dir).filter((n) => n.toLowerCase().endsWith('.txt') && startedAt(n)).map((n) => path.join(dir, n));
+  const foldered = subfolders(dir).map((sub) => path.join(sub, `${path.basename(sub)}.txt`)).filter(exists);
+  return [...flat, ...foldered]
+    .map((p) => ({ path: p, date: startedAt(p).getTime(), title: title(p), audio: exists(swapExt(p, '.m4a')), preview: preview(p) }))
     .sort((a, b) => b.date - a.date);
 }
 
@@ -238,6 +294,11 @@ function sessions(dir) {
  * 어느 쪽이든 이 앱 이름 형식이 아닌 파일은 건드리지 않는다 (맥 Notes.prune)
  */
 function prune(dir, { autoDelete, now = Date.now() } = {}) {
+  // 글 없이 소리만 남은 기록 폴더는 폴더째 지운다. 사용자가 넣은 다른 파일이 있으면 두고 (맥: .m4a·.DS_Store 만 있으면)
+  for (const sub of subfolders(dir)) {
+    if (exists(path.join(sub, `${path.basename(sub)}.txt`))) continue;
+    if (readDir(sub).every((n) => n.toLowerCase().endsWith('.m4a') || SYSTEM_FILES.has(n.toLowerCase()))) fs.rmSync(sub, { recursive: true, force: true });
+  }
   for (const n of readDir(dir)) {
     if (!n.toLowerCase().endsWith('.m4a') || !startedAt(n)) continue;
     const audio = path.join(dir, n);
@@ -247,8 +308,7 @@ function prune(dir, { autoDelete, now = Date.now() } = {}) {
   const cutoff = now - KEEP_DAYS * 86400_000;
   for (const s of sessions(dir)) {
     if (s.date >= cutoff) continue;
-    for (const c of companions(s.path)) fs.rmSync(c.path, { force: true });
-    fs.rmSync(s.path, { force: true });
+    for (const t of trashTargets(s.path)) fs.rmSync(t, { recursive: true, force: true });
   }
 }
 
@@ -258,11 +318,14 @@ function prune(dir, { autoDelete, now = Date.now() } = {}) {
  */
 function pendingAudio(dir) {
   const out = [];
-  for (const n of readDir(dir)) {
-    if (!n.toLowerCase().endsWith('.pcm') || !startedAt(n)) continue;
-    const pcm = path.join(dir, n);
-    if (exists(swapExt(pcm, '.txt'))) out.push(pcm);
-    else fs.rmSync(pcm, { force: true });
+  // 기록 폴더 안과 저장 폴더 바로 아래 (맥 recoverParts 가 하위 폴더까지 찾는 것과 같다)
+  for (const folder of [...subfolders(dir), dir]) {
+    for (const n of readDir(folder)) {
+      if (!n.toLowerCase().endsWith('.pcm') || !startedAt(n)) continue;
+      const pcm = path.join(folder, n);
+      if (exists(swapExt(pcm, '.txt'))) out.push(pcm);
+      else fs.rmSync(pcm, { force: true });
+    }
   }
   return out.sort();
 }
@@ -275,8 +338,32 @@ function ownNote(dir, p) {
   if (typeof p !== 'string' || !p) return null;
   const full = path.resolve(p);
   const same = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase(); // Windows 는 대소문자 구분 없음
-  if (!same(path.dirname(full), dir)) return null;
+  const parent = path.dirname(full);
+  // 저장 폴더에 바로 놓인 예전 기록, 또는 저장 폴더/기록이름/기록이름.txt
+  const placed = same(parent, dir) || (same(path.dirname(parent), dir) && isFoldered(full) && startedAt(path.basename(parent)));
+  if (!placed) return null;
   if (!full.toLowerCase().endsWith('.txt') || !startedAt(full) || !exists(full)) return null;
+  return full;
+}
+
+/** 녹음 듣기 주소에 넣을 소리 위치: 저장 폴더 기준 상대 경로 ("기록.m4a" 또는 "기록/기록.m4a") */
+function audioRel(dir, txt) {
+  return path.relative(dir, swapExt(txt, '.m4a')).split(path.sep).join('/');
+}
+
+/**
+ * 녹음 듣기 주소의 상대 경로 → 소리 파일. 이 앱 기록의 .m4a(예전 기록 옆, 또는 기록 폴더 안의 "폴더이름.m4a")만,
+ * .. 나 다른 드라이브로 저장 폴더 밖을 가리키면 null (renderer 가 아무 파일이나 읽지 못하게)
+ */
+function audioFile(dir, rel) {
+  if (typeof rel !== 'string' || !rel || path.isAbsolute(rel) || /^[a-z]:/i.test(rel)) return null;
+  const parts = rel.split(/[\\/]/);
+  if (parts.some((x) => !x || x === '.' || x === '..') || parts.length > 2) return null;
+  const full = path.join(dir, ...parts);
+  if (!/\.m4a$/i.test(full)) return null;
+  const txt = swapExt(full, '.txt');
+  if (parts.length === 2 && !(isFoldered(txt) && startedAt(parts[0]))) return null;
+  if (!startedAt(path.basename(full)) || !exists(full)) return null;
   return full;
 }
 
@@ -298,7 +385,8 @@ class Writer {
   append(line) {
     try {
       if (!this.path) {
-        fs.mkdirSync(this.dir, { recursive: true });
+        // 기록 폴더는 첫 줄을 쓸 때 만든다 (맥 Writer.create)
+        fs.mkdirSync(path.dirname(this.planned), { recursive: true });
         this.path = this.planned;
       }
       const fd = fs.openSync(this.path, 'a');
@@ -326,6 +414,6 @@ class Writer {
 }
 
 module.exports = {
-  KEEP_DAYS, defaultDir, stamp, startedAt, newPath, title, companions, rename, remove, exportTo, render, parse,
-  timesPath, saveTimes, loadTimes, load, sessions, preview, prune, pendingAudio, ownNote, Writer,
+  KEEP_DAYS, defaultDir, stamp, startedAt, newPath, title, companions, isFoldered, subfolders, rename, trashTargets, remove, exportTo,
+  render, parse, timesPath, saveTimes, loadTimes, load, sessions, preview, prune, pendingAudio, ownNote, audioRel, audioFile, Writer,
 };

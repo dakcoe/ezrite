@@ -1,0 +1,24 @@
+{
+  "body" : {
+    "max_tokens" : 16,
+    "messages" : [
+      {
+        "content" : [
+          {
+            "text" : "Say OK",
+            "type" : "text"
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "model" : "gemini-3.8-flash"
+  },
+  "headers" : {
+    "Authorization" : "Bearer <KEY>",
+    "Content-Type" : "application\/json"
+  },
+  "method" : "POST",
+  "timeout" : 90,
+  "url" : "https:\/\/generativelanguage.googleapis.com\/v1beta\/openai\/chat\/completions"
+}

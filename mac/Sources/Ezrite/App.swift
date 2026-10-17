@@ -17,6 +17,7 @@ final class AppState: ObservableObject {
     @Published var recordedBefore: TimeInterval = 0   // 일시정지 전까지 들은 시간
     @Published var entries: [Entry] = []
     @Published var liveSession: URL?           // 지금 쓰고 있는 자동 저장 파일
+    @Published var savedSession: URL?          // 방금 끝난 녹음의 기록. 맨 위에 "저장됨" 띠를 띄운다
     @Published var inflight = 0                // Groq 에 보내 놓고 기다리는 발화 수
     @Published var level: Float = 0            // 최근 소리 크기 (파형)
     @Published var error: String?

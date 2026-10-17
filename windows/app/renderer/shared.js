@@ -193,6 +193,38 @@
   }
 
   // ── 고르기 칸과 스위치 ──
+  /**
+   * 녹음 기록 저장됨 띠 (맥 SavedBanner): ✓ 녹음 기록 저장됨 · [기록 보기] · ✕ / 폴더 아이콘 + "저장 폴더 › 기록 폴더".
+   * update(s) 는 모양이 바뀌었으면 true (팝업 높이를 다시 맞추게)
+   */
+  function savedBanner() {
+    const el = h('div', { class: 'saved-banner hidden' });
+    let key = '';
+    function update(s) {
+      const v = s.saved;
+      const k = JSON.stringify(v ? [v.place, v.help] : null);
+      if (k === key) return false;
+      key = k;
+      el.classList.toggle('hidden', !v);
+      if (!v) {
+        el.replaceChildren();
+        return true;
+      }
+      el.replaceChildren(
+        h('div', { class: 'top' },
+          h('span', { class: 'sb-icon', html: icon('checkCircle', 14, 2) }),
+          h('span', { class: 'sb-title' }, '녹음 기록 저장됨'),
+          h('span', { class: 'spacer' }),
+          h('button', { class: 'btn primary', onclick: () => window.ezrite.saved.open() }, '기록 보기'),
+          h('button', { class: 'sb-close', title: '닫기', 'aria-label': '닫기', html: icon('x', 11, 2.4), onclick: () => window.ezrite.saved.dismiss() })),
+        // 저장 위치. 누르면 탐색기에서 그 기록 폴더(예전 기록이면 파일)를 골라 보여 준다
+        h('button', { class: 'sb-place', title: v.help, onclick: () => window.ezrite.saved.reveal() },
+          h('span', { class: 'sb-folder', html: icon('folder', 11) }), h('span', { class: 'sb-path' }, v.place)));
+      return true;
+    }
+    return { el, update };
+  }
+
   function picker(options, value, onChange, { disabled = false, title } = {}) {
     const sel = h('select', { onchange: (e) => onChange(e.target.value), title, disabled });
     for (const o of options) sel.append(h('option', { value: o.value }, o.label));
@@ -291,5 +323,5 @@
     chooserFill?.(s);
   });
 
-  window.Ez = { h, icon, F, statusHeader, explainButton, livePage, picker, toggle, inputRows, onState, sourceOf, openChooser };
+  window.Ez = { h, icon, F, statusHeader, explainButton, livePage, picker, toggle, inputRows, onState, sourceOf, openChooser, savedBanner };
 })();

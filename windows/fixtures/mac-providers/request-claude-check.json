@@ -1,0 +1,28 @@
+{
+  "body" : {
+    "max_tokens" : 16,
+    "messages" : [
+      {
+        "content" : [
+          {
+            "text" : "Say OK",
+            "type" : "text"
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "model" : "claude-haiku-5-5",
+    "thinking" : {
+      "type" : "disabled"
+    }
+  },
+  "headers" : {
+    "anthropic-version" : "2023-06-01",
+    "Content-Type" : "application\/json",
+    "x-api-key" : "<KEY>"
+  },
+  "method" : "POST",
+  "timeout" : 90,
+  "url" : "https:\/\/api.anthropic.com\/v1\/messages"
+}

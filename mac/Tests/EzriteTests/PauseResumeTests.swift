@@ -29,8 +29,9 @@ struct PauseResumeTests {
 
     static func audioSeconds(in dir: URL) throws -> [Double] {
         Notes.AudioRecorder.waitForMerges()
-        return try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
-            .filter { $0.pathExtension == "m4a" && !$0.lastPathComponent.contains(".part-") }
+        // 기록은 저장 폴더/기록이름/ 안에 있다
+        let all = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL]) ?? []
+        return try all.filter { $0.pathExtension == "m4a" && !$0.lastPathComponent.contains(".part-") }
             .map { url in
                 let f = try AVAudioFile(forReading: url)
                 return Double(f.length) / f.fileFormat.sampleRate

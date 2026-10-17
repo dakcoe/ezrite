@@ -2,7 +2,7 @@
 
 // 전체 창 (맥 MainView): 상태 머리 · 실시간 / 지난 기록 / 설정 · 아래 탭 두 개
 (function () {
-  const { h, icon, F, statusHeader, livePage, toggle, inputRows, onState, picker } = window.Ez;
+  const { h, icon, F, statusHeader, livePage, toggle, inputRows, onState, picker, savedBanner } = window.Ez;
   const root = document.getElementById('root');
 
   const gear = h('button', { class: 'gear', title: '설정' });
@@ -15,7 +15,9 @@
     h('span', { html: icon('textBubble', 14, 1.6) }), '실시간');
   const tabHistory = h('button', { class: 'tab', onclick: () => window.ezrite.set({ page: 'history' }) },
     h('span', { html: icon('history', 14, 1.6) }), '지난 기록');
-  root.append(header.el, h('div', { class: 'divider' }), page, h('div', { class: 'divider' }),
+  // 저장됨 띠는 맨 위 (맥 MainView: UpdateBanner 아래)
+  const saved = savedBanner();
+  root.append(saved.el, header.el, h('div', { class: 'divider' }), page, h('div', { class: 'divider' }),
     h('div', { class: 'tabs' }, tabLive, tabHistory));
 
   // ── 지난 기록 (맥 HistoryPage): 목록 → 누르면 그 기록의 원문·번역과 녹음 듣기 ──
@@ -132,11 +134,11 @@
       h('div', { class: 'body' }, h('div', { class: 'title' }, title), h('div', { class: 'detail' }, detail)),
       toggle(value, (v) => window.ezrite.set({ options: { [key]: v } }), { disabled }));
   }
-  const PROVIDERS = ['Groq', 'Claude', 'Gemini', 'GPT'];
+  // 맥 Provider.allCases 순서. 값은 main 의 서비스 이름, 글은 보이는 이름
+  const PROVIDERS = [['groq', 'Groq'], ['claude', 'Claude'], ['gemini', 'Gemini'], ['openai', 'GPT']];
 
   function settingsPage(s) {
     const o = s.options;
-    const later = '다음 단계에서 됩니다';
     return h('div', { class: 'settings' },
       label('입력'),
       h('div', { class: 'card' }, inputRows(s)),
@@ -161,9 +163,9 @@
           : '30일 지난 기록은 자동으로 지웁니다.')),
 
       label('AI 서비스 키'),
-      h('div', { class: 'card' }, PROVIDERS.flatMap((p, i) => [
+      h('div', { class: 'card' }, PROVIDERS.flatMap(([p, name], i) => [
         i > 0 ? h('div', { class: 'sep' }) : null,
-        p === 'Groq' ? groqKeyRow(s) : laterKeyRow(p, later),
+        keyRow(s, p, name),
       ])),
       h('div', { class: 'note' }, '받아쓰기는 Groq 를 씁니다. 다른 서비스 키를 넣으면 번역·화면 설명에 고를 수 있습니다. 키는 이 PC에만 저장됩니다.'),
 
@@ -174,7 +176,7 @@
 
       label('기능별 AI'),
       h('div', { class: 'card' },
-        featureRow('charBubble', '번역'), h('div', { class: 'sep' }), featureRow('sparkles', '화면 설명')),
+        featureRow(s, 'charBubble', '번역', 'translate'), h('div', { class: 'sep' }), featureRow(s, 'sparkles', '화면 설명', 'explain')),
 
       label('버전'),
       h('div', { class: 'card version' },
@@ -238,53 +240,84 @@
     return t;
   }
 
-  /** Groq 키 한 줄 (맥 KeyRow): 이름 · 입력칸 · 저장 · 지우기, 아래에 확인 결과나 발급 링크 */
-  function groqKeyRow(s) {
+  // 붙여넣던 키 (다시 그려도 남게. 저장하면 지운다). 화면에만 있고 main 으로는 [저장] 때만 간다
+  const drafts = {};
+
+  /** 확인 결과 한 줄. 확인 중이면 돌아가는 표시와 경과 초 (맥 CheckLine) */
+  function checkLine(text, started) {
+    if (started) {
+      return h('span', { class: 'check' }, h('span', { class: 'spinner small' }),
+        h('span', { class: 'elapsed', 'data-started': String(started), 'data-text': text }, `${text}… ${elapsed(started)}초`));
+    }
+    const tone = text.startsWith('✕') ? ' bad' : text.startsWith('✓') ? ' ok' : '';
+    return h('span', { class: `check${tone}` }, text);
+  }
+  const elapsed = (started) => Math.max(0, Math.floor((Date.now() - started) / 1000));
+  // 확인 중 경과 초만 1초마다 고친다 (화면을 다시 그리지 않는다)
+  setInterval(() => {
+    for (const e of document.querySelectorAll('.elapsed[data-started]')) {
+      e.textContent = `${e.dataset.text}… ${elapsed(Number(e.dataset.started))}초`;
+    }
+  }, 1000);
+
+  /**
+   * 서비스 키 한 줄 (맥 KeyRow): 이름 · 입력칸 · [저장] · 지우기, 아래에 확인 결과나 발급 링크.
+   * 키가 있어도 칸에 바로 새 키를 붙여넣고 저장하면 바뀐다. Groq 는 받아쓰기에 꼭 필요해서 지우기가 없다
+   */
+  function keyRow(s, p, name) {
+    const saved = Boolean(s.aiView?.keys?.[p]);
     const input = h('input', {
-      type: 'password', autocomplete: 'off', spellcheck: 'false',
-      placeholder: s.hasKey ? '저장됨 · 새 키로 바꾸기' : '키 붙여넣기',
+      class: 'key-field', type: 'password', autocomplete: 'off', spellcheck: 'false',
+      placeholder: saved ? '저장됨 · 새 키로 바꾸기' : '키 붙여넣기', 'data-focus': `key-${p}`, 'aria-label': `${name} API 키`,
     });
-    const save = h('button', { class: 'btn', disabled: true }, '저장');
+    input.value = drafts[p] ?? '';
+    const save = h('button', { class: 'btn', disabled: !input.value.trim() }, '저장');
     const submit = () => {
       const v = input.value.trim();
       if (!v) return;
       input.value = ''; // 키는 화면에 남기지 않는다
+      delete drafts[p];
       save.disabled = true;
-      window.ezrite.saveKey('groq', v);
+      window.ezrite.saveKey(p, v);
     };
-    input.addEventListener('input', () => { save.disabled = !input.value.trim(); });
+    input.addEventListener('input', () => {
+      drafts[p] = input.value;
+      save.disabled = !input.value.trim();
+    });
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
     save.addEventListener('click', submit);
-    const trash = s.hasKey
-      ? h('button', { class: 'slot trash', html: icon('trash', 13, 1.8), title: '키 삭제', onclick: () => window.ezrite.removeKey('groq') })
+    // 버튼 두 칸은 늘 같은 폭으로 잡아 둔다. 지우기가 없는 줄(Groq·키 없음)도 칸을 비워 두어 네 줄이 나란히 선다
+    const trash = saved && p !== 'groq'
+      ? h('button', { class: 'slot trash', html: icon('trash', 13, 1.8), title: '키 삭제', onclick: () => window.ezrite.removeKey(p) })
       : h('span', { class: 'slot' });
-    const status = s.keyStatus
-      ? h('span', { class: `check ${s.keyStatus.startsWith('✕') ? 'bad' : ''}` }, s.keyStatus)
-      : !s.hasKey
-        ? h('button', { class: 'link', title: '키 발급받기', onclick: () => window.ezrite.openKeyPage() },
-          '무료 키 발급받기 ↗ (받아쓰기에 필요)')
+    const status = s.providerStatus?.[p];
+    const below = status
+      ? checkLine(status, s.checking?.[p])
+      : !saved
+        // 키가 없으면 발급 페이지로 바로 간다. Groq 는 무료라 받아쓰기를 쓰려면 이것부터 해야 한다
+        ? h('button', { class: 'link', title: '키 발급받기', onclick: () => window.ezrite.openKeyPage(p) },
+          p === 'groq' ? '무료 키 발급받기 ↗ (받아쓰기에 필요)' : '키 발급받기 ↗')
         : null;
     return h('div', { class: 'key-row' },
-      h('div', { class: 'line' }, h('span', { class: 'name' }, 'Groq'), input, save, trash),
-      status);
+      h('div', { class: 'line' }, h('span', { class: 'name' }, name), input, save, trash),
+      below);
   }
 
-  /** 다른 서비스 키는 번역·화면 설명 단계에서 붙인다. 지금은 모양만 */
-  function laterKeyRow(p, later) {
-    return h('div', { class: 'key-row' },
-      h('div', { class: 'line' },
-        h('span', { class: 'name' }, p),
-        h('input', { type: 'password', placeholder: '키 붙여넣기', disabled: true, title: later }),
-        h('button', { class: 'btn', disabled: true }, '저장'),
-        h('span', { class: 'slot' })),
-      h('span', { class: 'link disabled' }, '키 발급받기 ↗'));
-  }
-
-  function featureRow(ico, title) {
-    return h('div', { class: 'row' }, h('span', { class: 'ico', html: icon(ico, 16) }),
-      h('span', { class: 'title grow' }, title),
-      picker([{ value: 'groq', label: 'Groq' }], 'groq', () => {}, { disabled: false }),
-      h('span', { class: 'sub' }, '기본 모델'));
+  /** 기능 하나에 쓸 서비스와 모델 (맥 FeatureRow). 키를 넣은 서비스만 고를 수 있다 */
+  function featureRow(s, ico, title, feature) {
+    const v = s.aiView?.[feature] ?? { providers: [{ value: 'groq', label: 'Groq' }], provider: 'groq', model: '', models: [] };
+    const k = `${v.provider}.${feature}`;
+    const check = v.provider !== 'groq' ? s.modelCheck?.[k] : null;
+    return h('div', { class: 'feature' },
+      h('div', { class: 'row' }, h('span', { class: 'ico', html: icon(ico, 16) }),
+        h('span', { class: 'title grow' }, title),
+        picker(v.providers, v.provider, (p) => window.ezrite.chooseAI({ feature, provider: p }), { title: `${title}에 쓸 AI 서비스` }),
+        v.provider === 'groq'
+          ? h('span', { class: 'sub' }, '기본 모델')
+          // 무료 등급 등 계정마다 쓸 수 있는 모델이 달라서 직접 고르고, 고르면 바로 불러 본다
+          : picker(v.models.length ? v.models.map((m) => ({ value: m, label: m })) : [{ value: '', label: '모델 없음' }], v.model,
+            (m) => window.ezrite.chooseAI({ feature, model: m }), { title: `${title}에 쓸 모델`, disabled: !v.models.length })),
+      check ? h('div', { class: 'feature-check' }, checkLine(check, s.checking?.[k])) : null);
   }
 
   // 설정 화면은 고르기 칸을 다시 그리면 열린 목록이 닫히므로, 바뀐 것이 있을 때만 다시 그린다
@@ -292,6 +325,7 @@
   let shownKey = '';
   onState((s) => {
     current = s;
+    saved.update(s);
     header.update(s);
     gear.innerHTML = icon('gear', 16, 1.6);
     gear.classList.toggle('on', s.page === 'settings');
@@ -306,14 +340,23 @@
       return;
     }
     const key = JSON.stringify([s.page,
-      s.page === 'settings' ? [s.sources, s.sourceId, s.language, s.options, s.listening, s.notesDir, s.notesFolder, s.hasKey, s.keyStatus, s.update, s.openAtLogin, s.theme, s.appAudio] : null,
+      s.page === 'settings' ? [s.sources, s.sourceId, s.language, s.options, s.listening, s.notesDir, s.notesFolder, s.hasKey, s.update, s.openAtLogin, s.theme, s.appAudio,
+        s.aiView, s.providerStatus, s.modelCheck, s.checking] : null,
       s.page === 'history' ? [s.sessions, s.opened, s.opened?.live ? s.entries : null] : null]);
     if (key === shownKey) return;
     const scroll = page.firstElementChild?.scrollTop ?? 0;
     const samePage = shownKey.startsWith(JSON.stringify([s.page]).slice(0, -1));
     shownKey = key;
+    const focused = document.activeElement?.dataset?.focus ?? null;
     if (s.page === 'history') page.replaceChildren(historyPage(s));
     else page.replaceChildren(settingsPage(s));
+    if (focused) {
+      const el = page.querySelector(`[data-focus="${focused}"]`);
+      if (el) {
+        el.focus();
+        el.setSelectionRange?.(el.value.length, el.value.length);
+      }
+    }
     if (samePage && page.firstElementChild) page.firstElementChild.scrollTop = scroll;
   });
 })();

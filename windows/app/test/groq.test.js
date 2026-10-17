@@ -435,6 +435,6 @@ test('번역 요청: 앞줄이 있으면 밀린 응답도 제자리로 (GroqClie
   assert.deepEqual(await g.translate(['this line'], ['previous line ends mid sentence is']), ['이 줄 번역']);
 });
 
-test('번역 프롬프트: 앞줄(Previous)은 옮기지 말고 1번은 첫 번호 줄이라고 못 박는다', () => {
-  assert.ok(GroqClient.TRANSLATE_PROMPT.includes('never output it'));
+test('번역 프롬프트: 앞줄(Previous)은 옮기지 말고 1번은 첫 번호 줄이라고 못 박는다 (맥과 같은 문장)', () => {
+  assert.ok(GroqClient.TRANSLATE_PROMPT.endsWith('No notes. Never output the Previous line; "1." is the first numbered line.'));
 });

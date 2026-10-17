@@ -39,7 +39,16 @@ contextBridge.exposeInMainWorld('ezrite', {
   /** 키는 main 으로 보내기만 한다. 돌려받는 것은 상태의 hasKey(있다/없다)와 keyStatus 뿐 */
   saveKey: (provider, key) => ipcRenderer.invoke('key:save', provider, key),
   removeKey: (provider) => ipcRenderer.invoke('key:remove', provider),
-  openKeyPage: () => ipcRenderer.invoke('open:keyPage'),
+  /** 그 서비스의 키 발급 페이지 (주소는 main 이 정한다) */
+  openKeyPage: (provider = 'groq') => ipcRenderer.invoke('open:keyPage', provider),
+  /** 기능별 AI 고르기: { feature: 'translate'|'explain', provider } 또는 { feature, model } */
+  chooseAI: (choice) => ipcRenderer.invoke('ai:choose', choice),
+  /** 녹음 기록 저장됨 띠: [기록 보기] · ✕ · 탐색기에서 보기 (어느 기록인지는 main 이 안다) */
+  saved: {
+    open: () => ipcRenderer.invoke('saved:open'),
+    dismiss: () => ipcRenderer.invoke('saved:dismiss'),
+    reveal: () => ipcRenderer.invoke('saved:reveal'),
+  },
   /** 지난 기록: 경로는 main 이 저장 폴더 안의 기록인지 다시 확인한다 */
   history: {
     open: (p) => ipcRenderer.invoke('history:open', p),
