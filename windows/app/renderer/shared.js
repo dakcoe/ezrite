@@ -192,6 +192,38 @@
     return { el, update };
   }
 
+  /**
+   * 새 버전 띠 (맥 UpdateBanner): 버전, 바뀐 점(앞 세 줄), [나중에] [받기]. 팝업과 전체 창 맨 위에 같은 것을 둔다.
+   * update(s) 는 모양이 바뀌었으면 true (팝업 높이를 다시 맞추게)
+   */
+  function updateBanner() {
+    const el = h('div', { class: 'update-banner hidden' });
+    let key = '';
+    function update(s) {
+      const r = s.update?.available;
+      const k = JSON.stringify(r ? [r, s.update.current] : null);
+      if (k === key) return false;
+      key = k;
+      el.classList.toggle('hidden', !r);
+      if (!r) {
+        el.replaceChildren();
+        return true;
+      }
+      const notes = r.notes ? r.notes.split('\n').slice(0, 3).join('\n') : '';
+      el.replaceChildren(
+        h('div', { class: 'top' },
+          h('span', { class: 'ub-icon', html: icon('download', 15) }),
+          h('span', { class: 'ub-title' }, `새 버전 ${r.version}`),
+          h('span', { class: 'ub-now secondary' }, `지금 ${s.update.current}`),
+          h('span', { class: 'spacer' }),
+          h('button', { class: 'btn', onclick: () => window.ezrite.update.skip() }, '나중에'),
+          h('button', { class: 'btn primary', onclick: () => window.ezrite.update.download() }, '받기')),
+        notes ? h('div', { class: 'ub-notes secondary' }, notes) : null);
+      return true;
+    }
+    return { el, update };
+  }
+
   // ── 고르기 칸과 스위치 ──
   /**
    * 녹음 기록 저장됨 띠 (맥 SavedBanner): ✓ 녹음 기록 저장됨 · [기록 보기] · ✕ / 폴더 아이콘 + "저장 폴더 › 기록 폴더".
@@ -323,5 +355,5 @@
     chooserFill?.(s);
   });
 
-  window.Ez = { h, icon, F, statusHeader, explainButton, livePage, picker, toggle, inputRows, onState, sourceOf, openChooser, savedBanner };
+  window.Ez = { h, icon, F, statusHeader, explainButton, livePage, picker, toggle, inputRows, onState, sourceOf, openChooser, savedBanner, updateBanner };
 })();

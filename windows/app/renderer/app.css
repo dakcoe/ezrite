@@ -491,7 +491,7 @@ textarea {
   animation: ez-spin .8s linear infinite; }
 @keyframes ez-spin { to { transform: rotate(360deg); } }
 
-/* 팝업 위 "새 버전" 띠 (맥 UpdateBanner: 파란 8% 바탕) */
+/* 팝업·전체 창 맨 위 "새 버전" 띠 (맥 UpdateBanner: 파란 8% 바탕) */
 .update-banner { flex: none; padding: 10px 14px; background: rgba(47, 123, 246, 0.08); display: flex; flex-direction: column; gap: 6px; }
 .update-banner.hidden { display: none; }
 /* 녹음 기록 저장됨 띠 (맥 SavedBanner: 초록 8%) */

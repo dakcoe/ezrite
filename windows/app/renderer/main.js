@@ -2,7 +2,7 @@
 
 // 전체 창 (맥 MainView): 상태 머리 · 실시간 / 지난 기록 / 설정 · 아래 탭 두 개
 (function () {
-  const { h, icon, F, statusHeader, livePage, toggle, inputRows, onState, picker, savedBanner } = window.Ez;
+  const { h, icon, F, statusHeader, livePage, toggle, inputRows, onState, picker, savedBanner, updateBanner } = window.Ez;
   const root = document.getElementById('root');
 
   const gear = h('button', { class: 'gear', title: '설정' });
@@ -15,9 +15,10 @@
     h('span', { html: icon('textBubble', 14, 1.6) }), '실시간');
   const tabHistory = h('button', { class: 'tab', onclick: () => window.ezrite.set({ page: 'history' }) },
     h('span', { html: icon('history', 14, 1.6) }), '지난 기록');
-  // 저장됨 띠는 맨 위 (맥 MainView: UpdateBanner 아래)
+  // 맨 위 띠: 새 버전 띠, 그 아래 저장됨 띠 (맥 MainView). 실시간·지난 기록·설정 어느 화면이든 보인다
+  const banner = updateBanner();
   const saved = savedBanner();
-  root.append(saved.el, header.el, h('div', { class: 'divider' }), page, h('div', { class: 'divider' }),
+  root.append(h('div', { class: 'top-banners' }, banner.el, saved.el), header.el, h('div', { class: 'divider' }), page, h('div', { class: 'divider' }),
     h('div', { class: 'tabs' }, tabLive, tabHistory));
 
   // ── 지난 기록 (맥 HistoryPage): 목록 → 누르면 그 기록의 원문·번역과 녹음 듣기 ──
@@ -184,6 +185,9 @@
           h('div', { class: 'grow' }, h('div', { class: 'title' }, `Ezrite ${s.version}`),
             h('div', { class: 'sub' }, versionStatus(s))),
           s.update?.checking ? h('span', { class: 'spinner' }) : null,
+          // 새 버전이 있으면 그 자리에서 바로 받는다 (맥 설정과 같다)
+          s.update?.available && !s.update.checking
+            ? h('button', { class: 'btn primary', onclick: () => window.ezrite.update.download() }, '받기') : null,
           h('button', { class: 'btn', disabled: Boolean(s.update?.checking), onclick: () => window.ezrite.update.check() }, '업데이트 확인'))),
       h('button', { class: 'link-btn notices', onclick: () => window.ezrite.openNotices() }, '오픈소스 고지'),
 
@@ -199,7 +203,7 @@
   /** 버전 줄 아래 한 줄: 새 버전 있음 / 확인 중 / 최신 / 아직 확인 전 (맥 versionStatus) */
   function versionStatus(s) {
     const u = s.update ?? {};
-    if (u.available) return `새 버전 ${u.available.version} 이 있습니다 — 팝업 위 알림에서 받기`;
+    if (u.available) return `새 버전 ${u.available.version}가 있습니다`;
     if (u.checking) return '확인하는 중…';
     if (u.checkedAt) return '최신 버전입니다';
     return `빌드 ${s.build ?? s.version}`;
@@ -325,6 +329,7 @@
   let shownKey = '';
   onState((s) => {
     current = s;
+    banner.update(s);
     saved.update(s);
     header.update(s);
     gear.innerHTML = icon('gear', 16, 1.6);

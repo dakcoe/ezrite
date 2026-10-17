@@ -2,7 +2,7 @@
 
 // 트레이 팝업: 보통 크기(맥 MenuPopover)와 작은 창(맥 CompactPopover)
 (function () {
-  const { h, icon, F, statusHeader, explainButton, livePage, onState, savedBanner } = window.Ez;
+  const { h, icon, F, statusHeader, explainButton, livePage, onState, savedBanner, updateBanner } = window.Ez;
   const frame = document.getElementById('frame');
 
   // ── 보통 크기 ──
@@ -75,35 +75,12 @@
     gauges.replaceChildren(...kids, caption);
   }
 
-  // ── 새 버전 띠 (맥 UpdateBanner): 버전, 바뀐 점(앞 세 줄), [나중에] [받기] ──
-  const banner = h('div', { class: 'update-banner hidden' });
-  let bannerKey = '';
-  function paintBanner(s) {
-    const r = s.update?.available;
-    const key = JSON.stringify(r ?? null);
-    if (key === bannerKey) return;
-    bannerKey = key;
-    banner.classList.toggle('hidden', !r);
-    if (!r) {
-      banner.replaceChildren();
-    } else {
-      const notes = r.notes ? r.notes.split('\n').slice(0, 3).join('\n') : '';
-      banner.replaceChildren(
-        h('div', { class: 'top' },
-          h('span', { class: 'ub-icon', html: icon('download', 15) }),
-          h('span', { class: 'ub-title' }, `새 버전 ${r.version}`),
-          h('span', { class: 'ub-now secondary' }, `지금 ${s.update.current}`),
-          h('span', { class: 'spacer' }),
-          h('button', { class: 'btn', onclick: () => window.ezrite.update.skip() }, '나중에'),
-          h('button', { class: 'btn primary', onclick: () => window.ezrite.update.download() }, '받기')),
-        notes ? h('div', { class: 'ub-notes secondary' }, notes) : null);
-    }
-    fitBanners();
-  }
+  // 새 버전 띠 (맥 UpdateBanner, 전체 창과 같은 것)
+  const banner = updateBanner();
 
   // 저장됨 띠는 새 버전 띠 아래 (맥 MenuPopover.full). 두 띠의 높이만큼 팝업을 키운다
   const saved = savedBanner();
-  const tops = h('div', { class: 'top-banners' }, banner, saved.el);
+  const tops = h('div', { class: 'top-banners' }, banner.el, saved.el);
   const fitBanners = () => requestAnimationFrame(() => window.ezrite.bannerHeight(tops.offsetHeight));
 
   const full = h('div', { class: 'full' }, tops, header.el, h('div', { class: 'divider' }), body, h('div', { class: 'divider' }), footer);
@@ -129,8 +106,8 @@
       mode = want;
     }
     header.update(s);
-    paintBanner(s);
-    if (saved.update(s)) fitBanners();
+    // 두 띠 중 하나라도 모양이 바뀌면 팝업 높이를 다시 맞춘다
+    if ([banner.update(s), saved.update(s)].some(Boolean)) fitBanners();
     live.update(s);
     // 게이지는 값이 바뀔 때만 다시 그린다 (마우스를 올려 둔 설명 글이 깜박이지 않게)
     const fk = JSON.stringify(s.footer);
