@@ -49,8 +49,9 @@ final class StatusBar: NSObject {
             UserDefaults.standard.set(NSStringFromPoint(self.panel.frame.origin), forKey: Self.originKey)
         }
 
-        // 새 버전 띠가 나타나고 사라질 때 팝업 높이를 맞춘다 (위쪽 가장자리는 그대로)
-        Publishers.Merge(updater.$available.map { _ in () }, state.$compact.map { _ in () })
+        // 새 버전 띠가 나타나고 사라질 때, 작은 창에서 새 문장·번역이 올 때 팝업 높이를 맞춘다 (위쪽 가장자리는 그대로)
+        Publishers.Merge3(updater.$available.map { _ in () }, state.$compact.map { _ in () },
+                          state.$entries.filter { [weak state] _ in state?.compact == true }.map { _ in () })
             .receive(on: DispatchQueue.main).sink { [weak self, weak host] _ in
             DispatchQueue.main.async {
                 guard let self, let host else { return }
@@ -58,6 +59,11 @@ final class StatusBar: NSObject {
                 var f = self.panel.frame
                 f.origin.y += f.height - size.height
                 f.size = size
+                // 긴 문장으로 아래로 길어져 화면 밖으로 나가면 위로 올린다
+                if let screen = self.panel.screen?.visibleFrame, f.minY < screen.minY {
+                    f.size.height = min(f.height, screen.height)
+                    f.origin.y = screen.minY
+                }
                 self.placing = true
                 self.panel.setFrame(f, display: true)
                 self.placing = false
