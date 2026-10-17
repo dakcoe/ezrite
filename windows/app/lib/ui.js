@@ -18,6 +18,7 @@ function parseDevEnv(env) {
   const scale = Number(String(env.EZRITE_TEST_SCALE ?? '').trim() || NaN);
   const testFile = String(env.EZRITE_TESTFILE ?? '').trim();
   const demoScript = String(env.EZRITE_DEMO_SCRIPT ?? '').trim();
+  const capturePid = Number(String(env.EZRITE_CAPTURE_PID ?? '').trim() || NaN);
   const speed = Number(String(env.EZRITE_SPEED ?? '').trim() || NaN);
   const delay = Number(String(env.EZRITE_SHOT_DELAY ?? '').trim() || NaN);
   const explainAfter = Number(String(env.EZRITE_EXPLAIN ?? '').trim() || NaN);
@@ -30,6 +31,7 @@ function parseDevEnv(env) {
     theme: THEMES.includes(theme) ? theme : 'system',
     shot: shot || null,
     testScale: scale >= 1 && scale <= 3 ? scale : null,
+    capturePid: Number.isInteger(capturePid) && capturePid > 0 ? capturePid : null, // 이 pid 의 소리를 받는다 (출처 목록을 거치지 않는 시험용)
     demoScript: demoScript || null, // 시연 대본 json: 녹음을 누르면 이 줄들이 받아쓴 것처럼 차례로 뜬다 (lib/demoscript.js)
     testFile: testFile || null, // 이 wav 를 소리처럼 흘려 넣고 바로 녹음을 시작한다 (맥 EZRITE_TESTFILE)
     fakeGroq: ['1', 'true'].includes(norm(env.EZRITE_FAKE_GROQ)), // 네트워크 없는 가짜 Groq
@@ -219,10 +221,26 @@ function helperCandidates({ packaged, resourcesPath, appDir }) {
 
 /** 녹음에 쓸 출처 인자. 시연 대본 → {demo}, 시험 파일 → {testfile}, 아니면 고른 출처 (captureArgsFor) */
 function sourceArgs(dev, sourceId, sources) {
+  if (dev.capturePid) return { pid: dev.capturePid };
   if (dev.demoScript) return { demo: true };
   if (dev.testFile) return { testfile: true };
   return captureArgsFor(sourceId, sources);
 }
 
+/** 소리 크기를 보낼 창: 보이는 팝업·전체 창 모두 (숨기면 빼고, 다시 열면 다시 받는다) */
+function levelTargets(wins) {
+  return wins.filter((w) => w && !w.isDestroyed() && w.isVisible());
+}
+
+/** Electron 44+ 의 clipboard.writeText 는 Promise. 끝난 뒤에만 알리고, 실패는 안내 문구로 바꾼다 */
+async function copyText(clip, text) {
+  try {
+    await clip.writeText(text);
+    return '전체 복사함';
+  } catch (e) {
+    return `복사하지 못했습니다: ${e.message}`;
+  }
+}
+
 module.exports = {
-  GUIDE_SIZE, guideSize, supportsProcessLoopback, LOOPBACK_MIN_BUILD, LOOPBACK_UNSUPPORTED, sourceArgs, THEME_OPTIONS, themeSource, themeColors, titleBarOverlay, notPlayingMessage, mixArgs, helperCandidates, PREVIEWS, parseDevEnv, supportsMaterial, popupPosition, buildSources, captureArgsFor, keepSelected };
+  copyText, levelTargets, GUIDE_SIZE, guideSize, supportsProcessLoopback, LOOPBACK_MIN_BUILD, LOOPBACK_UNSUPPORTED, sourceArgs, THEME_OPTIONS, themeSource, themeColors, titleBarOverlay, notPlayingMessage, mixArgs, helperCandidates, PREVIEWS, parseDevEnv, supportsMaterial, popupPosition, buildSources, captureArgsFor, keepSelected };

@@ -10,7 +10,7 @@ test('EZRITE_PREVIEW·EZRITE_THEME·EZRITE_SHOT을 읽는다', () => {
     theme: 'dark',
     shot: 'C:\\a.png',
     testScale: null,
-    demoScript: null, testFile: null,
+    capturePid: null, demoScript: null, testFile: null,
     fakeGroq: false,
     speed: 1,
     shotDelay: 1200,
@@ -43,7 +43,7 @@ test('Mica·Acrylic은 Windows 11 22H2(빌드 22621) 이상에서만', () => {
 
 test('값이 없으면 미리보기 없음, 테마는 system', () => {
   assert.deepEqual(parseDevEnv({}), {
-    preview: null, theme: 'system', shot: null, testScale: null, demoScript: null, testFile: null, fakeGroq: false, speed: 1, shotDelay: 1200,
+    preview: null, theme: 'system', shot: null, testScale: null, capturePid: null, demoScript: null, testFile: null, fakeGroq: false, speed: 1, shotDelay: 1200,
     explainAfter: null, card: null, ask: null, capturable: false, updateJSON: null, shotScroll: 0,
   });
 });
@@ -238,4 +238,13 @@ test('프로그램별 소리 받기를 못 쓰는 Windows: 출처 목록에 프�
   // 예전에 고른 프로그램은 "켜져 있지 않음" 으로 남기지 않는다 (그 Windows 에서는 쓸 수 없으니)
   const kept = keepSelected(buildSources(list, { appsAllowed: false }), [], 'app:chrome.exe', { appsAllowed: false });
   assert.deepEqual(kept.map((s) => s.id), ['mic:m1']);
+});
+
+test('개발용 EZRITE_CAPTURE_PID: 그 프로세스의 소리를 바로 받는다 (없으면 평소와 같다)', () => {
+  const { sourceArgs } = require('../lib/ui');
+  assert.equal(parseDevEnv({}).capturePid, null);
+  assert.equal(parseDevEnv({ EZRITE_CAPTURE_PID: 'abc' }).capturePid, null);
+  assert.equal(parseDevEnv({ EZRITE_CAPTURE_PID: '1234' }).capturePid, 1234);
+  assert.deepEqual(sourceArgs({ capturePid: 1234 }, 'mic:x', []), { pid: 1234 });
+  assert.deepEqual(sourceArgs({ capturePid: null }, 'mic:x', []), { mic: 'x' });
 });

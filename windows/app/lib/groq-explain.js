@@ -55,7 +55,12 @@ const VISUALS_GUIDE = [
 /** Groq 모델에만 붙인다: qwen 은 줄 번호("5번 줄")를 그대로 말하고, 답 글에 LaTeX 를 써서 카드에 기호가 그대로 보인다 */
 const GROQ_RULES = '\nLine ids are only for you to point at lines — never write ids or "line N" in any text the student reads. '
   + 'In text the student reads, write math in plain Unicode (δ, Σ, ², ᵀ, √, →); never LaTeX or $ (KaTeX only in a card "formula"). '
-  + 'Break long text into short paragraphs of 2-3 sentences separated by \\n\\n; put derivation steps on their own lines.';
+  + 'Break long text into short paragraphs of 2-3 sentences separated by \\n\\n; put derivation steps on their own lines. '
+  // 한자·일본어 섞임, kernel→"코어" 같은 오역, 깨진 OCR 베끼기 예방 (맥과 같은 문장)
+  + 'Write every student-facing text in Korean (Hangul) only. Never use Chinese characters or Japanese, not even for technical terms. '
+  + 'Keep technical terms in their original English as written on the screen or in the speech (e.g. kernel, eigenvector, PCA), '
+  + 'optionally with Hangul (커널). If a screen line looks garbled by text recognition (random symbols or Chinese characters '
+  + 'inside a formula), do not copy it: write the formula correctly from the image, or describe it in words.';
 
 const NO_KEY = 'Groq API 키가 없습니다. 설정에서 키를 입력하세요.';
 
@@ -175,7 +180,7 @@ async function fixScript(groq, text, src) {
   try {
     const reply = await groq.chat({
       model: GroqClient.CHAT_MODELS[1], temperature: 0, reasoning_effort: 'low',
-      messages: [{ role: 'user', content: Script.fixPrompt(text, runs) }],
+      messages: [{ role: 'user', content: Script.fixPrompt(text, runs, src) }],
     }, k);
     return Script.apply(text, reply, runs) ?? text;
   } catch {

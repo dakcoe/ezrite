@@ -3,6 +3,6 @@ helper/target/
 .env
 *.log
 dist/
-dist-test/
-# 홍보 영상 촬영 원본·중간 파일·리허설 결과 (완성본 promo/windows-preview.mp4 와 promo/frames/ 는 커밋한다)
+dist-test*/
+# ?띾낫 ?곸긽 珥ъ쁺 ?먮낯쨌以묎컙 ?뚯씪쨌由ы뿀??寃곌낵 (?꾩꽦蹂?promo/windows-preview.mp4 ? promo/frames/ ??而ㅻ컠?쒕떎)
 promo/win/out/

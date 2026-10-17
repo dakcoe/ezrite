@@ -34,6 +34,12 @@ test('맥과 같은 프롬프트 조각 (줄 번호 금지·문단 나누기 규
   assert.ok(u.includes('Use flowchart TD/LR or sequenceDiagram.'));
   assert.ok(!u.includes('Line ids are only for you'));
   assert.ok(G.GROQ_RULES.includes('separated by \\n\\n')); // 글자 그대로의 \n (맥 "\\n\\n")
+  // 한자 섞임·"코어" 오역·깨진 OCR 베끼기 예방 문장이 맨 끝에 맥과 같게 붙는다
+  assert.ok(G.GROQ_RULES.endsWith('Write every student-facing text in Korean (Hangul) only. Never use Chinese characters or Japanese, '
+    + 'not even for technical terms. Keep technical terms in their original English as written on the screen or in the speech '
+    + '(e.g. kernel, eigenvector, PCA), optionally with Hangul (커널). If a screen line looks garbled by text recognition '
+    + '(random symbols or Chinese characters inside a formula), do not copy it: write the formula correctly from the image, '
+    + 'or describe it in words.'));
   const q = G.questionPrompt('q', [], '', lines, []);
   assert.ok(q.includes('{"answer":"Korean answer, paragraphs separated by \\n", "marks":'));
   assert.ok(q.includes('Explanation already shown to the student:\n(none)\n\nThe student now asks: q'));

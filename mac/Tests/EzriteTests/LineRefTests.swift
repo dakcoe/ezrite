@@ -59,3 +59,12 @@ struct LenientJSONTests {
         #expect(Explain.lenientJSON("죄송합니다") == nil)
     }
 }
+
+/// Groq 설명 규칙: 한국어만, 한자 금지, 전공 용어는 원문 영어, 깨진 글자 인식 줄은 베끼지 않기
+struct GroqRulesTests {
+    @Test func 한국어만_쓰고_전공_용어는_원문을_지키라고_한다() {
+        #expect(GroqClient.groqRules.contains("Korean (Hangul) only"))
+        #expect(GroqClient.groqRules.contains("original English"))
+        #expect(GroqClient.groqRules.contains("garbled"))
+    }
+}

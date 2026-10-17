@@ -71,10 +71,12 @@ final class ScreenAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
 
         let filter: SCContentFilter
         if let bundleID {
-            guard let app = content.applications.first(where: { $0.bundleIdentifier == bundleID }) else {
+            // 같은 앱이 여러 개 떠 있을 수 있다 (예: 보이지 않는 Chrome 이 하나 더). 첫 번째만 잡으면 소리 없는 쪽을 받는다
+            let apps = content.applications.filter { $0.bundleIdentifier == bundleID }
+            guard !apps.isEmpty else {
                 throw CaptureError("선택한 앱이 실행 중이 아닙니다. 앱을 켠 뒤 다시 시작하세요.")
             }
-            filter = SCContentFilter(display: display, including: [app], exceptingWindows: [])
+            filter = SCContentFilter(display: display, including: apps, exceptingWindows: [])
         } else {
             let me = content.applications.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
             filter = SCContentFilter(display: display, excludingApplications: me, exceptingWindows: [])

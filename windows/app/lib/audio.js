@@ -61,4 +61,33 @@ function appLabel(app) {
   return app.title ? `${app.exe} — ${app.title}` : app.exe;
 }
 
-module.exports = { parseListOutput, rmsFromS16le, levelFromRms, appLabel };
+/**
+ * 녹음 중 소리 크기: 받은 조각(s16le)을 every 샘플(기본 800 = 50ms)마다 묶어 { level(0~1), rms } 를 낸다.
+ * 프로그램 소리·마이크·섞은 소리 모두 LiveSession 'pcm' 조각을 그대로 넣는다 (맥 onLevel 은 90ms 마다)
+ */
+class LevelMeter {
+  constructor(every = 800) {
+    this.every = every;
+    this.reset();
+  }
+
+  reset() {
+    this.carry = Buffer.alloc(0);
+  }
+
+  /** 다 찬 묶음의 크기들 (없으면 null) */
+  push(chunk) {
+    const buf = this.carry.length ? Buffer.concat([this.carry, chunk]) : chunk;
+    const size = this.every * 2;
+    const out = [];
+    let at = 0;
+    for (; at + size <= buf.length; at += size) {
+      const { rms } = rmsFromS16le(buf.subarray(at, at + size));
+      out.push({ level: levelFromRms(rms), rms });
+    }
+    this.carry = Buffer.from(buf.subarray(at));
+    return out.length ? out : null;
+  }
+}
+
+module.exports = { parseListOutput, rmsFromS16le, levelFromRms, appLabel, LevelMeter };

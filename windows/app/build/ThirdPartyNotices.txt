@@ -170,7 +170,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================
-Electron 33.2.1 (앱 실행 환경) — https://www.electronjs.org
+Electron 44.9.0 (앱 실행 환경) — https://www.electronjs.org
 ==============================================================
 Copyright (c) Electron contributors
 Copyright (c) 2013-2020 GitHub Inc.

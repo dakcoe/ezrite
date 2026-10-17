@@ -7,10 +7,10 @@ const { Readable } = require('stream');
 const path = require('path');
 const fs = require('fs');
 const { execFile, execFileSync, spawn } = require('child_process');
-const { parseListOutput, rmsFromS16le, levelFromRms } = require('./lib/audio');
+const { parseListOutput, LevelMeter } = require('./lib/audio');
 const os = require('os');
-const { parseDevEnv, supportsMaterial, popupPosition, buildSources, keepSelected, helperCandidates, mixArgs, notPlayingMessage, sourceArgs, supportsProcessLoopback, LOOPBACK_UNSUPPORTED, guideSize,
-  themeSource, themeColors, titleBarOverlay } = require('./lib/ui');
+const { parseDevEnv, supportsMaterial, popupPosition, buildSources, keepSelected, helperCandidates, mixArgs, notPlayingMessage, sourceArgs, supportsProcessLoopback, LOOPBACK_UNSUPPORTED, guideSize, levelTargets,
+  themeSource, themeColors, titleBarOverlay, copyText } = require('./lib/ui');
 const { mixedSource } = require('./lib/mixer');
 const { flattenBGRA, hexColor } = require('./lib/png');
 const sample = require('./lib/sample');
@@ -207,9 +207,7 @@ async function refreshSources() {
 }
 
 function sendLevel(v) {
-  for (const w of [popup, mainWin]) {
-    if (w && !w.isDestroyed() && w.isVisible()) w.webContents.send('level', v);
-  }
+  for (const w of levelTargets([popup, mainWin])) w.webContents.send('level', v);
 }
 
 // ── 받아쓰기: 소리 출처 → VAD → Transcriber (lib/live.js) ──
@@ -330,25 +328,17 @@ session.on('change', (patch) => setState(patch));
 session.on('notice', (message) => showNotice(message));
 
 // 소리 크기 막대: 약 50ms(800샘플)마다 갱신
-let levelCarry = Buffer.alloc(0);
-let levelSum = 0;
-let levelCount = 0;
+const levelMeter = new LevelMeter();
+session.on('start', () => levelMeter.reset());
 session.on('pcm', (chunk) => {
   if (demo) {
     // 시연 대본: 소리는 무음이라 말하는 것처럼 보이는 가짜 크기를 보낸다
     sendLevel({ level: fakeLevel(Date.now() / 1000), rms: 0 });
     return;
   }
-  const r = rmsFromS16le(chunk, levelCarry);
-  levelCarry = r.carry;
-  levelSum += r.rms * r.rms * r.samples;
-  levelCount += r.samples;
-  if (levelCount >= 800) {
-    const rms = Math.sqrt(levelSum / levelCount);
-    sendLevel({ level: levelFromRms(rms), rms });
-    levelSum = 0;
-    levelCount = 0;
-  }
+  // 프로그램 소리·마이크·섞은 소리 모두 같은 조각이 온다 (lib/mixer.js 가 섞은 뒤)
+  const out = levelMeter.push(chunk);
+  if (out) sendLevel(out[out.length - 1]);
 });
 
 // ── 기록 저장: 받아 적은 줄 → 기록이름.txt (+ .times.json), 소리 → 기록이름.pcm → 끝내면 .m4a ──
@@ -589,27 +579,30 @@ async function deleteNote(p) {
   }
 }
 
+// Electron 43+ 는 defaultPath 가 없으면 늘 다운로드 폴더에서 연다. 마지막으로 고른 곳을 직접 기억한다
+let lastExportDir;
+
 async function exportNote(p) {
   const txt = noteFor(p);
   if (!txt) return;
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWin, {
-    title: '내보낼 폴더', buttonLabel: '여기로 내보내기', properties: ['openDirectory', 'createDirectory'],
+    title: '내보낼 폴더', buttonLabel: '여기로 내보내기', properties: ['openDirectory', 'createDirectory'], defaultPath: lastExportDir,
   });
   if (canceled || !filePaths[0]) return;
   try {
     notes.exportTo(txt, filePaths[0]);
+    lastExportDir = filePaths[0];
     showNotice(`내보냄 → ${path.basename(filePaths[0]) || filePaths[0]}`);
   } catch (e) {
     showNotice(`내보내지 못했습니다: ${e.message}`);
   }
 }
 
-function copyNote(p) {
+async function copyNote(p) {
   const txt = noteFor(p, { allowLive: true });
   if (!txt) return;
   const entries = state.listening && txt === state.liveSession ? transcriber.entries : notes.load(txt);
-  clipboard.writeText(notes.render(entries));
-  showNotice('전체 복사함');
+  showNotice(await copyText(clipboard, notes.render(entries)));
 }
 
 function revealNote(p) {
@@ -621,7 +614,7 @@ function revealNote(p) {
 async function chooseNotesFolder() {
   if (state.listening) return;
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWin, {
-    title: '저장 위치', buttonLabel: '여기에 저장', properties: ['openDirectory', 'createDirectory'],
+    title: '저장 위치', buttonLabel: '여기에 저장', properties: ['openDirectory', 'createDirectory'], defaultPath: state.notesFolder || undefined,
   });
   if (canceled || !filePaths[0]) return;
   setNotesFolder(filePaths[0]);

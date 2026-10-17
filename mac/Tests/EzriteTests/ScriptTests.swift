@@ -30,4 +30,11 @@ struct ScriptTests {
         #expect(Script.apply("本课程 光合成", reply: "本课程=이 강의", runs: ["本课程", "光合成"]) == nil)
         #expect(Script.apply("本课程", reply: "本课程=本强의", runs: ["本课程"]) == nil)
     }
+
+    @Test func 고칠_때_원문을_같이_주고_전공_용어는_원문_영어를_쓰라고_한다() {
+        // "核" 을 뜻으로 옮겨 kernel 이 "코어" 가 된 일이 있었다. 원문에 있는 영어 용어를 고르게 한다
+        let p = Script.fixPrompt("커널 PCA 에서 核 행렬을 중심화합니다", runs: ["核"], source: "Center the kernel matrix K")
+        #expect(p.contains("Center the kernel matrix K"))
+        #expect(p.contains("원문"))
+    }
 }

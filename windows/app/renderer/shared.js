@@ -40,11 +40,8 @@
   const waves = new Set();
   window.ezrite.onLevel((v) => { level = v.level; });
   function tick(now) {
-    const hs = F.waveHeights(level, now / 1000);
-    for (const w of waves) {
-      if (!w.isConnected) { waves.delete(w); continue; }
-      [...w.children].forEach((bar, i) => { bar.style.height = `${hs[i].toFixed(1)}px`; });
-    }
+    // 화면에 붙기 전·작은 창으로 잠시 떨어진 막대도 버리지 않는다 (예전엔 버려서 다시 붙어도 안 움직였다)
+    F.paintWaves(waves, F.waveHeights(level, now / 1000));
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);

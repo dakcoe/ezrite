@@ -28,12 +28,16 @@ enum Script {
         return runs.filter { unique.insert($0).inserted }
     }
 
-    /// 조각만 옮겨 달라는 요청. 한자는 한국 한자음으로 (超越=초월)
-    static func fixPrompt(_ text: String, runs: [String]) -> String {
+    /// 조각만 옮겨 달라는 요청. 원문(화면 글자·강의 말)에 그 용어의 영어가 있으면 그대로 쓴다 (核 → kernel).
+    /// 원문 없이 뜻으로만 옮기면 kernel 이 "코어" 가 되는 일이 있었다. 그 밖의 한자는 한국 한자음으로 (超越=초월)
+    static func fixPrompt(_ text: String, runs: [String], source: String = "") -> String {
         """
         다음 한국어 글에 다른 언어 문자가 잘못 섞였다. 나열된 조각만 한국어로 옮겨라.
-        한자는 한국 한자음 독음으로 옮겨라 (超越=초월, 金融=금융). 독음이 어색하면 뜻으로 옮겨라.
+        조각이 전공 용어이고 아래 원문에 그 용어의 영어가 있으면 그 영어를 그대로 써라 (核=kernel, 特征值=eigenvalue).
+        그렇지 않은 한자는 한국 한자음 독음으로 옮겨라 (超越=초월, 金融=금융). 독음이 어색하면 뜻으로 옮겨라.
         형식은 한 줄에 하나, `원문=번역`. 다른 말은 쓰지 마라.
+
+        원문: \(source.prefix(400))
 
         글: \(text.prefix(400))
 

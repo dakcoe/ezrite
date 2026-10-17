@@ -1,6 +1,6 @@
 {
   "name": "ezrite-app",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "description": "Ezrite Windows판 시험 앱",
   "main": "main.js",
@@ -11,7 +11,8 @@
     "dist": "node scripts/make-notices.js && electron-builder --win nsis --x64 --publish never"
   },
   "devDependencies": {
-    "electron": "^33.2.1",
+    "@electron/fuses": "2.1.3",
+    "electron": "44.9.0",
     "electron-builder": "26.15.3"
   },
   "ezriteUpdateRepo": "dakcoe/ezrite",
@@ -21,6 +22,14 @@
     "appId": "com.dakcoe.ezrite",
     "productName": "Ezrite",
     "copyright": "Copyright (c) 2026 dakcoe",
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "enableCookieEncryption": true
+    },
     "directories": {
       "output": "../dist"
     },

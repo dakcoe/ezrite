@@ -69,5 +69,16 @@
     return Math.max(0.85, (boxWidth - 1) / textWidth); // 1px 여유: 반올림으로 넘치지 않게
   }
 
-  return { sessionDate, clock, playClock, waveHeights, sourceLine, atBottom, usageCaption, paidCaption, captionScale };
+  /**
+   * 녹음 막대 그리기. 아직 화면에 붙지 않았거나 잠시 떨어진 막대(작은 창 전환)는 건너뛰기만 한다.
+   * 예전에는 떨어진 막대를 목록에서 지워서, 다시 붙어도 영영 움직이지 않았다
+   */
+  function paintWaves(waves, heights) {
+    for (const w of waves) {
+      if (!w.isConnected) continue;
+      [...w.children].forEach((bar, i) => { bar.style.height = `${heights[i].toFixed(1)}px`; });
+    }
+  }
+
+  return { paintWaves, sessionDate, clock, playClock, waveHeights, sourceLine, atBottom, usageCaption, paidCaption, captionScale };
 });

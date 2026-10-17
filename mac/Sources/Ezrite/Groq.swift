@@ -377,7 +377,12 @@ extension GroqClient {
     /// Groq 모델에만 붙인다: qwen 은 줄 번호("5번 줄")를 그대로 말하고, 답 글에 LaTeX 를 써서 카드에 기호가 그대로 보인다
     static let groqRules = "\nLine ids are only for you to point at lines — never write ids or \"line N\" in any text the student reads. " +
         "In text the student reads, write math in plain Unicode (δ, Σ, ², ᵀ, √, →); never LaTeX or $ (KaTeX only in a card \"formula\"). " +
-        "Break long text into short paragraphs of 2-3 sentences separated by \\n\\n; put derivation steps on their own lines."
+        "Break long text into short paragraphs of 2-3 sentences separated by \\n\\n; put derivation steps on their own lines. " +
+        // qwen 이 가끔 한국어 답에 한자(核 등)를 섞는다. 32번 시험에서는 재현되지 않았지만 예방으로 둔다
+        "Write every student-facing text in Korean (Hangul) only. Never use Chinese characters or Japanese, not even for technical terms. " +
+        "Keep technical terms in their original English as written on the screen or in the speech (e.g. kernel, eigenvector, PCA), optionally with Hangul (커널). " +
+        "If a screen line looks garbled by text recognition (random symbols or Chinese characters inside a formula), do not copy it: " +
+        "write the formula correctly from the image, or describe it in words."
 
     static func marksPrompt(lines: [Explain.Line], transcript: [String]) -> String {
         "\(audience)\n\(context(lines: lines, transcript: transcript))\n\n\(marksTask)\nReturn JSON only: {\(marksShape)}"
@@ -438,7 +443,7 @@ extension GroqClient {
         let runs = Script.foreignRuns(text, source: source)
         guard !runs.isEmpty, let key = APIKey.groq() else { return text }
         let reply = try? await chat(["model": Self.chatModels[1], "temperature": 0, "reasoning_effort": "low",
-                                     "messages": [["role": "user", "content": Script.fixPrompt(text, runs: runs)]]], key: key)
+                                     "messages": [["role": "user", "content": Script.fixPrompt(text, runs: runs, source: source)]]], key: key)
         return reply.flatMap { Script.apply(text, reply: $0, runs: runs) } ?? text
     }
 
