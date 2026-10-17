@@ -22,6 +22,7 @@
   <a href="https://github.com/dakcoe/ezrite/releases/latest"><img src="https://img.shields.io/github/v/release/dakcoe/ezrite?label=release&color=2458f2" alt="최신 버전"></a>
   <a href="https://github.com/dakcoe/ezrite/releases"><img src="https://img.shields.io/github/downloads/dakcoe/ezrite/total?color=2458f2" alt="내려받은 수"></a>
   <a href="#환경"><img src="https://img.shields.io/badge/macOS-13%2B%20·%20Apple%20칩%20·%20Intel-black" alt="macOS 13 이상, Apple 칩과 Intel"></a>
+  <a href="#환경"><img src="https://img.shields.io/badge/Windows-10%20·%2011%20(64비트)-0078d4" alt="Windows 10, 11 64비트"></a>
   <a href="#설치방법"><img src="https://img.shields.io/badge/시작-무료%20Groq%20키-0d0e12" alt="무료 Groq 키로 시작"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT 라이선스"></a>
 </p>
@@ -45,7 +46,7 @@ https://github.com/user-attachments/assets/b86042f0-8575-4644-ba03-9b57968179bc
 무료 Groq 키 하나면 되고(Groq 가입은 무료), Ezrite 자체에는 계정도 구독도 없습니다.
 
 > [!NOTE]
-> 지금은 Mac 에서 쓸 수 있습니다. **Windows 판은 따로 만들고 있습니다.**
+> Mac 과 **Windows** 에서 쓸 수 있습니다. Windows 판은 1.1.0 에서 처음 공개했습니다.
 
 ## 기능
 
@@ -89,20 +90,28 @@ https://github.com/user-attachments/assets/b86042f0-8575-4644-ba03-9b57968179bc
 
 ## 설치방법
 
+**Mac**
+
 1. [최신 버전](https://github.com/dakcoe/ezrite/releases/latest)에서 DMG 를 내려받아 열고, `Ezrite` 를 `Applications` 폴더로 끌어 넣습니다.
 2. 처음 열 때 "확인되지 않은 개발자" 창이 뜨면 DMG 안의 `설치 안내.txt` 를 따라 주세요.
 3. 앱이 안내하는 대로 [무료 Groq 키](https://console.groq.com/keys)를 넣고, 마이크·화면 녹화 권한을 허용합니다.
 
+**Windows**
+
+1. [최신 버전](https://github.com/dakcoe/ezrite/releases/latest)에서 `Ezrite-Setup-x.y.z.exe` 를 내려받아 실행합니다. 관리자 권한 없이 내 계정에만 설치됩니다.
+2. 서명 없는 빌드라 "Windows의 PC 보호" 창이 뜹니다. **추가 정보** → **실행**을 누르세요.
+3. 작업 표시줄 오른쪽 `^` 안의 Ezrite 아이콘을 누르고, 안내에 따라 [무료 Groq 키](https://console.groq.com/keys)를 넣습니다.
+
 ## 개인정보
 
-- API 키와 기록은 **내 Mac 에만** 저장됩니다. Ezrite 계정도, 사용 기록 수집도 없습니다.
+- API 키와 기록은 **내 컴퓨터에만** 저장됩니다. Ezrite 계정도, 사용 기록 수집도 없습니다.
 - 받아쓰기·번역에는 소리와 글자가, 설명 버튼을 누를 때는 그 순간의 화면이 고른 AI 서비스로 전송됩니다. 누르기 전에 개인 창은 가려 주세요.
-- 화면 녹화 권한은 다른 앱의 **소리를 받는 데만** 씁니다. 화면을 저장하지 않습니다.
+- (Mac) 화면 녹화 권한은 다른 앱의 **소리를 받는 데만** 씁니다. 화면을 저장하지 않습니다.
 
 ## 환경
 
-- macOS 13 (Ventura) 이상
-- Apple 칩과 Intel 모두 지원 (Intel 은 대략 2017년 이후 모델)
+- macOS 13 (Ventura) 이상. Apple 칩과 Intel 모두 지원 (Intel 은 대략 2017년 이후 모델)
+- Windows 10·11 64비트. 크롬·줌 같은 프로그램 소리만 골라 받기는 Windows 11 에서 됩니다 (Windows 10 은 마이크)
 - 무료 [Groq](https://console.groq.com/keys) 키
 
 ## 직접 빌드하기
@@ -118,3 +127,5 @@ EZRITE_SIGN_ID="내 인증서 이름" ./build.sh   # 빌드 → 서명 → /Appl
 - 서명에는 키체인의 코드 서명 인증서가 필요합니다. 키체인 접근 → 인증서 지원 → 인증서 생성에서 "코드 서명" 용 자체 서명 인증서를 만들어 그 이름을 넘기세요.
 - 같은 인증서로 서명해야 다시 빌드해도 마이크·화면 녹화 권한이 유지됩니다.
 - 구조와 개발 메모는 [`mac/DEVELOPMENT.md`](mac/DEVELOPMENT.md) 에 있습니다.
+
+Windows 판 소스는 [`windows/`](windows) 폴더에 있습니다 (Electron + 소리 받기용 Rust 보조 프로그램). 빌드 방법은 [`windows/README.md`](windows/README.md) 를 보세요.

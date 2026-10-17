@@ -32,7 +32,7 @@ final class AudioPipeline {
 
     /// 방금 끝난 발화의 녹음 파일 안 위치
     private func emit(_ u: [Float]) {
-        let end = startOffset + Double(consumed) / sampleRate
+        let end = startOffset + Double(consumed - vad.carried) / sampleRate
         onUtterance(u, end - Double(u.count) / sampleRate, end)
     }
 

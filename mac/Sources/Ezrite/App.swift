@@ -157,6 +157,12 @@ final class AppState: ObservableObject {
         }
     }
     var notesDir: URL { notesFolder.isEmpty ? Notes.defaultDir : URL(fileURLWithPath: notesFolder) }
+    /// 화면 테마 (system / light / dark). 바꾸면 바로 모든 창에 적용한다
+    @Published var theme: String = defaults.string(forKey: "theme") ?? "system" {
+        didSet { Self.defaults.set(theme, forKey: "theme"); Theme.apply(theme) }
+    }
+    /// 로그인할 때 자동 실행. 시스템 상태를 그대로 보인다 (설정 화면을 열 때 다시 읽는다)
+    @Published var loginItem = LoginItem.current
     @Published var includeMic: Bool = defaults.bool(forKey: "includeMic") {
         didSet { Self.defaults.set(includeMic, forKey: "includeMic") }
     }
@@ -195,6 +201,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var bag: Set<AnyCancellable> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Theme.apply(state.theme)
         AppDelegate.shared = self
         Notes.dir = state.notesDir
         GroqClient.guide = state.userGuide

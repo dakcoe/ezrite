@@ -1,0 +1,16 @@
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+svg { position: fixed; inset: 0; width: 100%; height: 100%; overflow: visible; }
+/* 맥 MarksView 색: 짚은 곳 주황 (1, 0.42, 0.17), 경로 파랑 (0.18, 0.48, 0.97) */
+.focus { fill: none; stroke: #ff6b2b; stroke-width: 3; filter: drop-shadow(0 0 3px rgba(255, 107, 43, .6)); }
+.route { fill: none; stroke: #2e7af7; stroke-width: 2.5; }
+.arrow { fill: none; stroke: #2e7af7; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round;
+         filter: drop-shadow(0 0 2px rgba(46, 122, 247, .5)); }
+.arrow.scene { stroke-width: 3.5; }
+.dot { filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, .35)); }
+.dot.focus-dot { fill: #ff6b2b; }
+.dot.route-dot { fill: #2e7af7; }
+text { fill: #fff; font: 700 13px "Segoe UI Variable", "Segoe UI", sans-serif; text-anchor: middle; dominant-baseline: central; }
+text.small { font-size: 12px; }
+/* 장면이 바뀌면 살짝 나타난다 (맥 .animation easeInOut 0.35) */
+#marks > g { animation: in .35s ease-in-out; }
+@keyframes in { from { opacity: 0; } to { opacity: 1; } }

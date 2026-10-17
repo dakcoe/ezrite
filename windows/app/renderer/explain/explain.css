@@ -1,0 +1,96 @@
+@font-face { font-family: "Pretendard Variable"; font-weight: 45 920; font-display: block;
+  src: url("../../assets/fonts/PretendardVariable.woff2") format("woff2-variations"), url("../../assets/fonts/PretendardVariable.woff2") format("woff2"); }
+:root {
+  --bg: #ffffff; --fg: #1d1d1f; --muted: #6e6e73; --line: #e5e5ea; --soft: #f5f5f7;
+  --accent: #ff6b2c; --accent-soft: #fff1ea;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1c1c1e; --fg: #f5f5f7; --muted: #a1a1a6; --line: #38383a; --soft: #2c2c2e;
+          --accent: #ff8a50; --accent-soft: #3a2a22; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 14px/1.55 "Pretendard Variable", Pretendard, "Segoe UI Variable", "Malgun Gothic", sans-serif;
+  word-break: keep-all; overflow-wrap: anywhere; }
+/* 위: 설명과 대화가 스크롤되는 곳, 아래: 질문 칸 (늘 보인다) */
+/* 스크롤은 #scroll 하나만. 그림 도구가 남기는 절대 위치 요소가 밖으로 새어 문서 전체가 한 번 더 스크롤되지 않게 가둔다 */
+html, body { overflow: hidden; }
+body { display: flex; flex-direction: column; height: 100vh; }
+#scroll { flex: 1; min-height: 0; overflow-y: auto; position: relative; }
+main { padding: 16px 18px 12px; }
+#chat { padding: 0 18px 12px; }
+.qa { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 4px; }
+.q { align-self: flex-end; background: var(--accent-soft); color: var(--fg); border-radius: 12px 12px 4px 12px;
+     padding: 8px 11px; margin: 0 0 10px 40px; font-weight: 600; white-space: pre-wrap; }
+.a { white-space: pre-line; margin: 0 0 8px; }
+#ask { display: none; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); background: var(--bg); }
+#ask.on { display: flex; }
+#ask textarea { flex: 1; resize: none; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px;
+                font: inherit; font-size: 13.5px; line-height: 20px; background: var(--soft); color: var(--fg);
+                height: 38px; overflow-y: hidden; }
+#ask { align-items: flex-end; }
+#ask button { height: 38px; }
+#ask textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+#ask button { border: 0; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 700; padding: 0 14px;
+              cursor: pointer; font-size: 13px; }
+#ask button:disabled { opacity: .45; cursor: default; }
+.loading { display: flex; gap: 10px; align-items: center; color: var(--muted); padding: 30px 4px; }
+.spin { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent);
+  border-radius: 50%; animation: s 0.8s linear infinite; }
+@keyframes s { to { transform: rotate(360deg); } }
+.error { color: #d70015; background: #ffebee; border-radius: 10px; padding: 12px; }
+@media (prefers-color-scheme: dark) { .error { background: #3a1d1f; color: #ff6961; } }
+.summary { font-size: 15px; margin: 2px 0 14px; }
+.marks { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 8px; }
+.marks li { display: flex; gap: 10px; align-items: flex-start; }
+.badge { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff;
+  font-weight: 700; font-size: 12px; display: grid; place-items: center; margin-top: 1px; }
+.route { margin: 0 0 16px; }
+.route .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.chip { background: #2f7bf6; color: #fff; border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 600; }
+.route .arrow { color: var(--muted); }
+.visual { border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-top: 12px; }
+.visual h3 { margin: 0 0 10px; font-size: 14px; }
+.steps { list-style: none; margin: 0; padding: 0; counter-reset: n; }
+.steps li { counter-increment: n; position: relative; padding: 0 0 12px 34px; }
+.steps li::before { content: counter(n); position: absolute; left: 0; top: 0; width: 22px; height: 22px;
+  border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 12px;
+  display: grid; place-items: center; }
+.steps li:not(:last-child)::after { content: ""; position: absolute; left: 10.5px; top: 24px; bottom: 2px;
+  width: 1px; background: var(--line); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { border-bottom: 1px solid var(--line); padding: 7px 8px; text-align: left; vertical-align: top; }
+th { background: var(--soft); font-weight: 600; }
+.formula { background: var(--soft); border-radius: 10px; padding: 12px; overflow-x: auto; text-align: center; }
+.body { margin: 10px 0 0; white-space: pre-line; }
+dl { margin: 10px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; }
+dt { font-weight: 600; } dd { margin: 0; color: var(--muted); }
+.diagram { overflow-x: auto; text-align: center; }
+.diagram svg { max-width: 100%; height: auto; }
+.fail { color: var(--muted); font-size: 12px; }
+/* 설명 영상: 장면마다 자막이 바뀌고 옆 그림이 단계별로 나타난다 */
+.player { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 4px 0 10px; margin-bottom: 6px;
+          border-bottom: 1px solid var(--line); }
+.say { font-size: 16.5px; font-weight: 600; line-height: 1.5; min-height: 50px; transition: opacity .25s; }
+.say.fade { opacity: 0; }
+.say .n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent);
+          color: #fff; font-size: 12px; font-weight: 700; margin-right: 8px; vertical-align: 2px; }
+.ctrl { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.ctrl button { border: 0; background: var(--soft); color: var(--fg); border-radius: 50%; width: 26px; height: 26px;
+               font-size: 13px; cursor: pointer; padding: 0; }
+.ctrl button:disabled { opacity: .35; cursor: default; }
+.ctrl .all { width: auto; border-radius: 13px; padding: 0 10px; font-size: 12px; margin-left: auto; }
+.sdots { display: flex; gap: 5px; }
+.sdots button { width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
+.sdots button.on { background: var(--accent); width: 20px; border-radius: 5px; }
+.bar { height: 2px; background: var(--line); margin-top: 8px; border-radius: 1px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent); }
+.hidden { display: none !important; }
+.dim { opacity: .28; }
+/* 주고받기 그림: 설정값보다 그림 도구 기본 스타일이 우선해서 직접 정한다. 칸 글씨는 크게, 화살표 글씨는 그보다 작게 */
+.diagram svg text.actor, .diagram svg text.actor > tspan { font-size: 17px !important; font-weight: 600; }
+.diagram svg .messageText { font-size: 13.5px !important; }
+.diagram svg .noteText, .diagram svg .noteText > tspan { font-size: 13px !important; }
+/* Windows: ⏸ ▶ 가 색 이모지로 그려지지 않게 기호 글꼴로 (맥은 글자 모양) */
+.ctrl button { font-family: "Segoe UI Symbol", "Segoe UI", sans-serif; }
+.hint { margin: 0 0 10px; font-size: 12px; color: var(--secondary, #6e6e73); background: rgba(127,127,127,.12); border-radius: 8px; padding: 7px 10px; }

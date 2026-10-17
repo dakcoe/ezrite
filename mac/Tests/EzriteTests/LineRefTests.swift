@@ -34,6 +34,12 @@ struct LineRefTests {
         #expect(Explain.dropLineRefs("see line 25 here", lines: Self.lines) == "see ‘순전파: z = Wa + b’ here")
         #expect(Explain.dropLineRefs("화면 25번 \"순전파\"", lines: Self.lines) == "‘순전파: z = Wa + b’ \"순전파\"")
     }
+
+    @Test func 번호를_앞에_쓴_N번_화면도_바꾸거나_지운다() {
+        #expect(Explain.dropLineRefs("25번 화면을 보면", lines: Self.lines) == "‘순전파: z = Wa + b’을 보면")
+        // 없는 번호를 괄호에 넣은 꼴은 뜻이 없으니 지운다 (gpt-oss 가 "(0번 화면)" 처럼 남긴다)
+        #expect(Explain.dropLineRefs("손실이 줄어요 (0번 화면).", lines: Self.lines) == "손실이 줄어요.")
+    }
 }
 
 /// Groq 이 "Failed to generate JSON" 으로 거절한 원문(수식 역슬래시가 그대로인 JSON)을 고쳐 읽는다

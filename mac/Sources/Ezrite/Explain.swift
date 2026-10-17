@@ -268,10 +268,12 @@ enum Explain {
         }
         let quote = { (t: String) in "‘\(safe(t))’" }
         var named = s
-        for pattern in [#"(?:화면|스크린)\s*(\d+)번(?:\s*(?:줄|라인))?"#, #"(\d+)번\s*(?:줄|라인)"#, #"(?i)\bline\s+(\d+)"#] {
+        for pattern in [#"(?:화면|스크린)\s*(\d+)번(?:\s*(?:줄|라인))?"#, #"(\d+)번\s*(?:줄|라인|화면|스크린)"#, #"(?i)\bline\s+(\d+)"#] {
             named = sub(pattern, named, quote)
         }
-        return sub(#"\s*\((\d+)번\)"#, named) { _ in "" }
+        named = sub(#"\s*\((\d+)번\)"#, named) { _ in "" }
+        // 없는 번호를 괄호에 넣은 "(0번 화면)" 은 바꿀 글자가 없어 남는다. 뜻이 없으니 지운다
+        return named.replacingOccurrences(of: #"\s*\(\d+번\s*(?:화면|스크린|줄|라인)\)"#, with: "", options: .regularExpression)
     }
 
     /// 모델이 JSON 글 안에 수식 역슬래시를 그대로 써서(\delta, \frac) 깨진 JSON 을 고쳐 읽는다.

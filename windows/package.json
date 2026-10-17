@@ -1,0 +1,13 @@
+{
+  "name": "ezrite-windows",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Ezrite Windows판 (Electron 앱 + Rust 소리 받기 보조 프로그램)",
+  "scripts": {
+    "test": "cargo test --manifest-path helper/Cargo.toml --config helper/.cargo/config.toml && npm --prefix app test",
+    "lint": "cargo clippy --manifest-path helper/Cargo.toml --config helper/.cargo/config.toml -- -D warnings && npm --prefix app run lint",
+    "build": "cargo build --release --manifest-path helper/Cargo.toml --config helper/.cargo/config.toml",
+    "start": "npm --prefix app start",
+    "dist": "npm run build && npm --prefix app run dist"
+  }
+}

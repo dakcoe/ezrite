@@ -87,7 +87,7 @@ enum Retranscribe {
         while i + VAD.blockSize <= samples.count {
             consumed += VAD.blockSize
             if let u = vad.feed(Array(samples[i..<i + VAD.blockSize])) {
-                let end = Double(consumed) / sampleRate
+                let end = Double(consumed - vad.carried) / sampleRate
                 out.append(max(0, end - Double(u.count) / sampleRate)...end)
             }
             i += VAD.blockSize

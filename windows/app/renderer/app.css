@@ -1,0 +1,493 @@
+/* Ezrite 화면 공통. 색·간격·글자 크기는 design/mac/*.png (2배율)에서 읽어 1/2로 옮겼다 */
+
+/* 앱에 넣어 둔 Pretendard (OFL, assets/fonts/LICENSE-Pretendard.txt). 맑은 고딕은 한글 자간이 벌어지고 획이 거칠다.
+   불러오기 전에 다른 글꼴로 잠깐 그렸다 바뀌지 않게 block */
+@font-face {
+  font-family: "Pretendard Variable";
+  src: url("../assets/fonts/PretendardVariable.woff2") format("woff2-variations"),
+       url("../assets/fonts/PretendardVariable.woff2") format("woff2");
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: block;
+}
+:root {
+  color-scheme: light;
+  --font: "Pretendard Variable", Pretendard, "Segoe UI Variable", "Malgun Gothic", sans-serif;
+
+  --popup-bg: #d9dcde;          /* 맥 팝오버(흐림 재질)가 밝은 바탕에서 보이는 색 */
+  --win-bg: #eef0f2;
+  --text: #1d1d1f;
+  --secondary: #6e6e73;
+  --tertiary: rgba(0, 0, 0, 0.28);
+  --divider: rgba(0, 0, 0, 0.045);
+  --fill-1: rgba(0, 0, 0, 0.04);      /* 기록 줄 */
+  --fill-2: rgba(0, 0, 0, 0.05);      /* 카드 */
+  --fill-3: rgba(0, 0, 0, 0.075);     /* 동그란 버튼, 고른 탭 */
+  --stroke: rgba(0, 0, 0, 0.08);
+  --dot-idle: rgba(0, 0, 0, 0.3);
+  --blue: #3b84f6;
+  --red: #ec4b3f;
+  --orange: #f29a1f;
+  --green: #5cbb5a;
+  --yellow: #f4c34f;
+  --control-bg: #ffffff;
+  --control-line: rgba(0, 0, 0, 0.12);
+  --switch-off: rgba(0, 0, 0, 0.09);
+  --popup-line: rgba(0, 0, 0, 0.14);
+  --fill-hover: rgba(0, 0, 0, 0.11);
+  --divider-strong: rgba(0, 0, 0, 0.11);   /* 상태 머리 아래 선 (맥 Divider 보다 조금 진하게: 반투명 재질 위에서도 보이게) */
+  --popup-tint: rgba(222, 225, 227, 0.82);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --popup-bg: #2b2d30;
+    --win-bg: #1f2023;
+    --text: #f5f5f7;
+    --secondary: #98989d;
+    --tertiary: rgba(235, 235, 245, 0.3);
+    --divider: rgba(255, 255, 255, 0.07);
+    --fill-1: rgba(255, 255, 255, 0.045);
+    --fill-2: rgba(255, 255, 255, 0.055);
+    --fill-3: rgba(255, 255, 255, 0.1);
+    --stroke: rgba(255, 255, 255, 0.08);
+    --dot-idle: rgba(255, 255, 255, 0.32);
+    --blue: #3d8cf8;
+    --control-bg: #45474b;
+    --control-line: rgba(255, 255, 255, 0.1);
+    --switch-off: rgba(255, 255, 255, 0.16);
+    --popup-line: rgba(255, 255, 255, 0.12);
+    --fill-hover: rgba(255, 255, 255, 0.15);
+    --divider-strong: rgba(255, 255, 255, 0.16);
+    --popup-tint: rgba(40, 42, 45, 0.8);
+  }
+}
+
+/* 크기 (DIP). 고치기 쉽게 여기에 모아 둔다 */
+:root {
+  --title-h: env(titlebar-area-height, 32px); /* Windows 11 기본 제목 막대 = titleBarOverlay 높이 */
+  --header-h: 58px;
+  --popup-body-h: 260px;
+  --footer-h: 24px;
+  --popup-radius: 0px;   /* 팝업 모서리는 Windows 11이 창째로 둥글게 깎는다 */
+  --card-radius: 10px;
+  --row-radius: 8px;
+  --pad: 14px;
+  --hover: 120ms;
+  --scroll-thumb: rgba(0, 0, 0, 0.28);
+}
+@media (prefers-color-scheme: dark) {
+  :root { --scroll-thumb: rgba(255, 255, 255, 0.3); }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--text);
+  -webkit-user-select: none;
+  user-select: none;
+  overflow: hidden;      /* 창 자체는 스크롤하지 않는다. 목록만 안에서 스크롤 */
+  cursor: default;
+  -webkit-font-smoothing: antialiased;
+  /* 한글 낱말 가운데서 줄이 꺾이지 않게 ("붙입/니다"). 너무 긴 낱말만 아무 데서나 */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+img, svg { -webkit-user-drag: none; }
+button, input, select, textarea { font: inherit; color: inherit; margin: 0; }
+button { border: 0; background: none; padding: 0; cursor: default; outline: none; transition: background-color var(--hover), color var(--hover), opacity var(--hover); }
+button:disabled { opacity: 0.45; }
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.ic { display: block; flex: none; }
+.hidden { display: none !important; }
+.secondary { color: var(--secondary); }
+
+/* 얇은 겹침 스크롤 막대: 마우스를 올렸을 때만 보인다 */
+::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
+:hover::-webkit-scrollbar-thumb { background-color: var(--scroll-thumb); }
+::-webkit-scrollbar-button { display: none; height: 0; width: 0; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* ── 창 바탕 ── */
+body.popup { background: var(--popup-bg); }
+.popup-frame {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  background: var(--popup-bg);
+  border-radius: var(--popup-radius);
+  overflow: hidden;
+}
+body.window { background: var(--win-bg); display: flex; flex-direction: column; }
+/* Windows 11 Mica·Acrylic: 바탕을 비워 Windows가 칠하게 한다. 글자 대비는 같은 색 변수를 쓴다 */
+html.material body.window, html.material body.popup { background: transparent; }
+/* Acrylic은 뒤 화면 색을 그대로 비춰 글자 대비가 흔들린다. 맥 팝업 색을 반투명하게 덮어 대비를 지킨다 */
+html.material .popup-frame { background: var(--popup-tint); }
+html.material .chooser, html.material .window .chooser { background: var(--popup-bg); }
+html.material .caption { background: var(--popup-bg); }
+
+/* 위 띠: 제목 막대(Windows 창 버튼은 titleBarOverlay가 같은 바탕으로 그린다)와
+   상태 머리가 한 띠로 이어지게 같은 바탕, 사이 선 없음 */
+.titlebar {
+  height: var(--title-h); flex: none;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 600; color: color-mix(in srgb, var(--text) 85%, transparent);
+  -webkit-app-region: drag;
+}
+
+.divider { height: 1px; flex: none; background: var(--divider); }
+/* 상태 머리 바로 아래 선은 또렷하게: 받아 적은 줄이 머리 뒤로 지나가는 것처럼 보이지 않게 경계를 긋는다 */
+.status + .divider { background: var(--divider-strong); }
+
+/* ── 상태 머리 (StatusHeader) ── */
+.status {
+  height: var(--header-h); flex: none;
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 var(--pad);
+}
+.status.drag, .window .status { -webkit-app-region: drag; }
+.status button, .status select, .status input { -webkit-app-region: no-drag; }
+.status .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.status .line1 { display: flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 700; white-space: nowrap; }
+.status .line1 .time { font-variant-numeric: tabular-nums; }
+.status .line2 { font-size: 11px; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dot-idle); flex: none; }
+.dot.rec { background: var(--red); }
+.dot.paused { background: var(--orange); }
+
+.round {
+  width: 28px; height: 28px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  background: var(--fill-3);
+}
+.round.rec { background: var(--blue); color: #fff; }
+.round.rec.on { background: rgba(236, 75, 63, 0.9); }
+.gear { width: 26px; height: 28px; display: grid; place-items: center; color: var(--secondary); flex: none; }
+.window .gear { width: 30px; height: 34px; }
+.gear.on { color: var(--blue); }
+
+.wave { display: flex; align-items: center; gap: 2.5px; height: 16px; }
+.wave i { display: block; width: 2.5px; height: 3px; border-radius: 2px; background: var(--red); }
+
+/* ── 팝업 몸통: 머리 58 + 260 + 아래 줄 24 (맥 MenuPopover) ── */
+.full { display: flex; flex-direction: column; height: 100%; }
+.live-box { height: var(--popup-body-h); flex: none; display: flex; }
+
+/* ── 실시간 ── */
+.live { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.live .empty {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: 30px; text-align: center;
+  font-size: 12.5px; color: var(--secondary);
+}
+.banner-box:empty { display: none; }
+.banner {
+  margin: 12px 12px 0; padding: 10px;
+  display: flex; gap: 6px; align-items: flex-start;
+  border-radius: 10px;
+  background: rgba(242, 154, 31, 0.12);
+  color: var(--text);
+  font-size: 11.5px; line-height: 1.35;
+}
+.banner-icon { padding-top: 1px; flex: none; color: var(--orange); }
+.banner-body { display: flex; flex-direction: column; gap: 6px; -webkit-user-select: text; user-select: text; }
+.banner-links { display: flex; align-items: center; flex-wrap: wrap; -webkit-user-select: none; user-select: none; }
+.banner-links .sep-dot { color: var(--secondary); padding: 0 6px; }
+.link-btn { color: var(--blue); font-size: 11.5px; font-weight: 600; text-decoration: none; }
+.link-btn:hover { text-decoration: underline; }
+.transcript {
+  /* 스크롤 칸은 머리 아래 선에서 8px 떨어져 시작한다 (margin 은 스크롤되지 않는다).
+     올라간 줄은 그 칸 위끝에서 잘려, 선 바로 밑이나 머리 뒤로 글자가 지나가지 않는다. 흐림(mask)은 첫 줄을 뿌옇게 해서 뺐다 */
+  flex: 1; min-height: 0; overflow-y: auto; margin-top: 8px; padding: 8px 16px 16px;
+  display: flex; flex-direction: column; gap: 12px;
+  -webkit-user-select: text; user-select: text;
+}
+.entry .orig { font-size: 13.5px; line-height: 1.38; }
+.entry .tr { font-size: 12.5px; line-height: 1.38; color: var(--secondary); margin-top: 3px; }
+.entry.gap { font-size: 11px; color: var(--orange); opacity: 0.85; }
+.pending { font-size: 11.5px; color: var(--tertiary); -webkit-user-select: none; user-select: none; }
+
+/* ── 팝업 아래 줄 (UsageFooter) ── */
+.footer {
+  height: var(--footer-h); flex: none;
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 12px;
+  color: var(--secondary);
+}
+.gauges { flex: 1; min-width: 0; position: relative; display: flex; align-items: center; gap: 16px; height: 100%; }
+.gauge { width: 46px; flex: none; display: flex; align-items: center; gap: 4px; }
+.gauge .track { width: 30px; height: 4px; border-radius: 2px; background: var(--fill-3); overflow: hidden; }
+.gauge .track b { display: block; height: 100%; border-radius: 2px; }
+.gauge .paid { font-size: 11px; font-weight: 500; white-space: nowrap; }
+.gauge-uses { font-size: 9px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.caption {
+  position: absolute; left: 0; right: 0; top: 0; bottom: 0;
+  display: flex; align-items: center;
+  font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: var(--popup-bg);
+  pointer-events: none;
+}
+.footer .small { width: 20px; height: 20px; display: grid; place-items: center; flex: none; }
+
+/* ── 작은 창 (CompactPopover) ── */
+.compact {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px;
+  -webkit-app-region: drag;
+}
+.compact button { -webkit-app-region: no-drag; }
+.compact .dot { margin-top: 6px; }
+.compact .lines { flex: 1; min-width: 0; min-height: 74px; display: flex; flex-direction: column; gap: 3px; }
+.compact .orig { font-size: 13px; font-weight: 600; }
+.compact .tr { font-size: 12px; color: var(--secondary); }
+.compact .small { width: 22px; height: 22px; display: grid; place-items: center; color: var(--secondary); flex: none; }
+
+/* ── 녹음 시작 말풍선 (RecordChooser) ── */
+.chooser-shade { position: absolute; inset: 0; z-index: 20; }
+.chooser {
+  position: absolute; z-index: 21; width: 300px;
+  padding: 14px;
+  display: flex; flex-direction: column; gap: 12px;
+  border-radius: 12px;
+  background: var(--popup-bg);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22), 0 0 0 1px var(--popup-line);
+}
+.window .chooser { background: var(--win-bg); }
+.chooser::before {
+  content: ""; position: absolute; top: -6px; right: var(--tail, 30px);
+  width: 12px; height: 12px; transform: rotate(45deg);
+  background: inherit;
+  box-shadow: -1px -1px 0 0 var(--popup-line);
+}
+.chooser h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.chooser .actions { display: flex; align-items: center; gap: 8px; }
+.chooser .actions label { flex: 1; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--secondary); }
+.btn {
+  height: 22px; padding: 0 10px; border-radius: 6px;
+  background: var(--control-bg); box-shadow: 0 0 0 0.5px var(--control-line), 0 0.5px 1.5px rgba(0, 0, 0, 0.12);
+  font-size: 12.5px;
+}
+.btn.primary { height: 24px; padding: 0 14px; border-radius: 12px; background: var(--blue); color: #fff; font-weight: 600; box-shadow: none; }
+
+/* ── 카드·줄 (설정과 말풍선) ── */
+.card {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--fill-2);
+  box-shadow: inset 0 0 0 1px var(--stroke);
+}
+.card .sep { height: 1px; background: var(--divider); margin: 0; }
+.row { display: flex; align-items: center; gap: 10px; min-height: 22px; }
+.row .ico { width: 18px; display: flex; justify-content: center; color: var(--blue); flex: none; }
+.row .title { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.row .grow { flex: 1; min-width: 0; }
+.row .sub, .card > .sub { font-size: 11px; color: var(--secondary); line-height: 1.35; }
+
+/* 맥 팝업 버튼 모양의 고르기 칸 */
+.picker { position: relative; display: inline-flex; max-width: 200px; flex: none; }
+.picker select {
+  appearance: none; -webkit-appearance: none;
+  font: inherit; font-size: 13px; color: var(--text);
+  height: 22px; max-width: 200px;
+  padding: 0 26px 0 8px;
+  border: 0; border-radius: 6px;
+  background: var(--control-bg);
+  box-shadow: 0 0 0 0.5px var(--control-line), 0 0.5px 1.5px rgba(0, 0, 0, 0.14);
+  text-overflow: ellipsis;
+}
+.picker select:disabled { opacity: 0.5; }
+.picker select option { background: var(--control-bg); color: var(--text); }
+.picker .chev {
+  position: absolute; right: 2px; top: 2px; width: 18px; height: 18px; border-radius: 4.5px;
+  display: grid; place-items: center;
+  background: var(--blue); color: #fff; pointer-events: none;
+}
+
+/* 맥 작은 스위치 */
+.switch { position: relative; width: 32px; height: 18px; flex: none; }
+.switch input { appearance: none; -webkit-appearance: none; margin: 0; position: absolute; inset: 0; border-radius: 9px; background: var(--switch-off); transition: background 0.15s; }
+.switch input:checked { background: var(--blue); }
+.switch input:disabled { opacity: 0.5; }
+.switch i { position: absolute; top: 1.5px; left: 1.5px; width: 15px; height: 15px; border-radius: 50%; background: #fff; box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.3); pointer-events: none; transition: transform 0.15s; }
+.switch input:checked + i { transform: translateX(14px); }
+
+/* ── 전체 창 ── */
+.content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.tabs { flex: none; display: flex; gap: 6px; padding: 8px; }
+.tab {
+  flex: 1; height: 30px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  font-size: 13px; font-weight: 500; color: var(--secondary);
+}
+.tab.on { background: var(--fill-3); color: var(--text); }
+
+/* 지난 기록 */
+.sessions { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.session {
+  text-align: left; width: 100%;
+  padding: 8px 10px; border-radius: 8px;
+  background: var(--fill-1);
+  display: flex; flex-direction: column; gap: 3px;
+}
+.session .head { display: flex; align-items: center; gap: 6px; width: 100%; }
+.session .name { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session .head .wf { color: var(--secondary); }
+.session .head .spacer { flex: 1; }
+.session .head .chev { color: var(--tertiary); }
+.session .preview {
+  font-size: 11.5px; color: var(--secondary); line-height: 1.25;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.session .live-tag { font-size: 9.5px; font-weight: 700; color: #fff; background: var(--red); border-radius: 8px; padding: 1.5px 5px; }
+.sessions-empty { flex: 1; display: grid; place-items: center; font-size: 13px; color: var(--secondary); }
+
+/* 설정 */
+.settings { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+.section-label { font-size: 11px; font-weight: 600; letter-spacing: 0.6px; color: var(--secondary); padding-left: 2px; margin-bottom: -6px; }
+.note { font-size: 11px; color: var(--secondary); padding-left: 2px; margin-top: -6px; line-height: 1.35; }
+.toggle-card {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px; border-radius: 10px;
+  background: var(--fill-2); box-shadow: inset 0 0 0 1px var(--stroke);
+}
+.toggle-card .ico { width: 18px; display: flex; justify-content: center; color: var(--blue); padding-top: 1px; flex: none; }
+.toggle-card .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.toggle-card .title { font-size: 13px; font-weight: 600; }
+.toggle-card .detail { font-size: 11px; color: var(--secondary); line-height: 1.35; }
+.toggle-card.disabled { opacity: 0.5; }
+.toggle-card .switch { margin-left: 8px; }
+.path { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.key-row { display: flex; flex-direction: column; gap: 4px; }
+.key-row .line { display: flex; align-items: center; gap: 8px; }
+.key-row .name { width: 52px; font-size: 12.5px; font-weight: 600; flex: none; }
+.key-row input {
+  flex: 1; min-width: 0; height: 20px; border: 0; background: transparent; outline: none;
+  font: inherit; font-size: 12px; color: var(--text);
+}
+.key-row input::placeholder, textarea::placeholder { color: var(--tertiary); }
+.key-row .slot { width: 22px; flex: none; }
+.link { font-size: 10.5px; color: var(--blue); text-decoration: underline; margin-left: 60px; align-self: flex-start; }
+.link.disabled { opacity: 0.5; }
+.key-row .trash { display: grid; place-items: center; height: 20px; color: var(--secondary); }
+.key-row .trash:hover { color: var(--text); }
+.key-row .check { font-size: 10.5px; color: var(--green); margin-left: 60px; }
+.key-row .check.bad { color: var(--orange); }
+textarea {
+  width: 100%; height: 70px; resize: none; border: 0; outline: none; background: transparent;
+  font: inherit; font-size: 12px; color: var(--text); padding: 0 0 0 1px;
+}
+.footer-buttons { display: flex; gap: 8px; }
+.fbtn {
+  flex: 1; height: 32px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  font-size: 12px; font-weight: 500;
+  background: var(--fill-2); box-shadow: inset 0 0 0 1px var(--stroke);
+}
+.version .title { font-size: 13px; font-weight: 600; }
+
+/* ── 처음 쓰는 사람 안내 ── */
+.onboarding { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+.onboarding h1 { margin: 0; font-size: 20px; font-weight: 700; }
+.onboarding .lead { font-size: 12.5px; color: var(--secondary); margin-top: 4px; }
+.step {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 14px; border-radius: 10px;
+  background: var(--fill-2); box-shadow: inset 0 0 0 1px var(--stroke);
+}
+.step .badge {
+  width: 26px; height: 26px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  background: var(--blue); color: #fff; font-size: 13px; font-weight: 700;
+}
+.step .badge.done { background: var(--green); }
+.step .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.step .title { font-size: 14px; font-weight: 600; }
+.step .detail { font-size: 12px; color: var(--secondary); line-height: 1.4; }
+.step .buttons { display: flex; gap: 8px; align-items: center; width: 100%; }
+.step .field {
+  flex: 1; min-width: 0; height: 22px; padding: 0 7px;
+  border: 0; border-radius: 5px; outline: none;
+  background: var(--control-bg); box-shadow: inset 0 0 0 1px var(--control-line);
+  font: inherit; font-size: 13px; color: var(--text);
+}
+.step .field::placeholder { color: var(--tertiary); }
+.step .key-status { font-size: 11px; color: var(--secondary); }
+.guide { width: 462px; height: 290px; border: 0; background: transparent; }
+
+/* ── 마우스 올림 (120ms) ── */
+.round:not(:disabled):hover { background: var(--fill-hover); }
+.round.rec:not(:disabled):hover { filter: brightness(1.08); background: var(--blue); }
+.round.rec.on:not(:disabled):hover { background: rgba(236, 75, 63, 1); }
+.gear:hover, .footer .small:hover, .compact .small:hover { color: var(--text); }
+.tab:not(.on):hover { background: var(--fill-1); color: var(--text); }
+.session:hover { background: var(--fill-3); }
+.fbtn:not(:disabled):hover { background: var(--fill-3); }
+.btn:not(:disabled):not(.primary):hover { filter: brightness(0.97); }
+.btn.primary:hover { filter: brightness(1.08); }
+.session, .tab, .fbtn, .round { transition: background-color var(--hover), color var(--hover), filter var(--hover); }
+
+/* ── 지난 기록 열기 (맥 HistoryPage.detail) ── */
+.note-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.note-head { height: 46px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 10px; }
+.note-head .back { width: 26px; height: 26px; display: grid; place-items: center; color: var(--text); border-radius: 6px; flex: none; }
+.note-head .back:hover { background: var(--fill-1); }
+.note-name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.note-title {
+  border: 0; outline: none; background: transparent; padding: 0;
+  font-size: 13px; font-weight: 600; color: var(--text);
+  -webkit-user-select: text; user-select: text;
+}
+.note-title::placeholder { color: var(--tertiary); font-weight: 500; }
+.note-title:disabled { color: var(--text); }
+.note-date { font-size: 10.5px; color: var(--secondary); }
+.small-btn, .play-btn {
+  width: 28px; height: 26px; flex: none; border-radius: 7px;
+  display: grid; place-items: center; color: var(--text);
+  background: var(--fill-2); box-shadow: inset 0 0 0 1px var(--stroke);
+}
+.small-btn:not(:disabled):hover, .play-btn:hover { background: var(--fill-3); }
+.player { flex: none; display: flex; align-items: center; gap: 8px; padding: 0 12px 8px; }
+.player .clock { font-size: 11px; color: var(--secondary); font-variant-numeric: tabular-nums; min-width: 28px; }
+.player .clock:last-child { text-align: right; }
+/* 맥 작은 Slider 모양: 가는 막대 + 흰 손잡이 */
+.seek { flex: 1; min-width: 0; height: 16px; margin: 0; appearance: none; -webkit-appearance: none; background: transparent; }
+.seek::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, var(--blue) var(--fill, 0%), var(--switch-off) var(--fill, 0%));
+}
+.seek::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%;
+  background: #fff; box-shadow: 0 0.5px 2.5px rgba(0, 0, 0, 0.35);
+}
+.entry.with-play { display: flex; align-items: flex-start; gap: 6px; }
+.entry-text { flex: 1; min-width: 0; }
+.line-play { color: var(--secondary); padding-top: 1px; flex: none; -webkit-user-select: none; user-select: none; }
+.line-play:hover { color: var(--blue); }
+
+/* 설명해줘 하는 중 (맥 ProgressView) */
+.spinner { display: inline-block; width: 13px; height: 13px; border-radius: 50%;
+  border: 2px solid var(--fill-3); border-top-color: var(--secondary);
+  animation: ez-spin .8s linear infinite; }
+@keyframes ez-spin { to { transform: rotate(360deg); } }
+
+/* 팝업 위 "새 버전" 띠 (맥 UpdateBanner: 파란 8% 바탕) */
+.update-banner { flex: none; padding: 10px 14px; background: rgba(47, 123, 246, 0.08); display: flex; flex-direction: column; gap: 6px; }
+.update-banner.hidden { display: none; }
+.update-banner .top { display: flex; align-items: center; gap: 6px; }
+.update-banner .ub-icon { color: var(--blue); display: flex; }
+.update-banner .ub-title { font-size: 12.5px; font-weight: 600; }
+.update-banner .ub-now { font-size: 11px; }
+.update-banner .spacer { flex: 1; }
+.update-banner .btn { height: 22px; }
+.update-banner .ub-notes { font-size: 11px; white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+/* 설정: 버전 카드 아래 오픈소스 고지 */
+.link-btn.notices { align-self: flex-start; margin: -8px 0 0 4px; font-weight: 500; }
+.card.version .spinner { flex: none; }
+.settings > * { flex-shrink: 0; } /* 내용이 길어도 줄이 눌리지 않게 (스크롤된다) */
+.fbtn.quit { flex: none; } /* 세로 줄에서는 flex:1 이 높이를 0 부터 잡아 눌린다 */

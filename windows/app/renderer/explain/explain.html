@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<!-- 스크립트는 이 폴더 것만. 그림 도구(KaTeX·mermaid)가 style 속성과 <style> 을 쓰므로 스타일만 인라인 허용. 인터넷 연결 없음 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'none'">
+<!-- "설명해줘" 카드. 맥판 Resources/web/explain.html 을 옮겼다 (글꼴·CSP 만 Windows 용). 앱이 render({...}) 로 내용을 넣는다.
+     맥의 window.webkit.messageHandlers(height·scene·ask)는 preload-card.js 가 같은 이름으로 만들어 준다 -->
+<title>설명</title>
+<link rel="stylesheet" href="katex.min.css">
+<link rel="stylesheet" href="explain.css">
+<script src="katex.min.js"></script>
+<script src="mermaid.min.js"></script>
+</head>
+<body>
+<div id="scroll"><main id="root"></main><div id="chat"></div></div>
+<form id="ask">
+  <textarea id="q" placeholder="궁금한 걸 물어보세요" title="Enter 보내기 · Shift+Enter 줄바꿈" aria-label="질문"></textarea>
+  <button id="send" type="button">묻기</button>
+</form>
+<script src="explain.js"></script>
+</body>
+</html>

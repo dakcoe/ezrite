@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
+<!-- "설명해줘" 화면 위 표시 (맥 MarksOverlay). 화면 전체를 덮는 투명 창, 클릭은 아래 창으로 통과한다.
+     앱이 draw({ shapes, scene }) 로 그린다 (lib/explain.js shapes) -->
+<title>Ezrite 표시</title>
+<link rel="stylesheet" href="overlay.css">
+</head>
+<body>
+<svg id="marks" xmlns="http://www.w3.org/2000/svg"></svg>
+<script src="overlay.js"></script>
+</body>
+</html>

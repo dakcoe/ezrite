@@ -1,0 +1,8 @@
+node_modules/
+helper/target/
+.env
+*.log
+dist/
+dist-test/
+# 홍보 영상 촬영 원본·중간 파일·리허설 결과 (완성본 promo/windows-preview.mp4 와 promo/frames/ 는 커밋한다)
+promo/win/out/

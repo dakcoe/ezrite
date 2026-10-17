@@ -116,6 +116,21 @@ struct TranslationInputTests {
         #expect(text.contains("2. First, we look at all the tumors."))
     }
 
+    @Test func 모델이_앞줄까지_옮겨_번호가_하나_밀리면_첫_줄을_버린다() {
+        // Windows 설치 시험에서 실제로 나온 응답: 앞줄을 1. 로 옮기고 진짜 1번을 2. 로 돌려줬다
+        let out = "1. 이 조건을 만족하는 모든 할당은 계약곡선 위에 있습니다.\n2. 파레토 효율적입니다. 효율은 공정함과 상관없습니다."
+        #expect(GroqClient.parse(out, count: 1) == ["파레토 효율적입니다. 효율은 공정함과 상관없습니다."])
+    }
+
+    @Test func 번호가_맞게_오면_그대로_읽는다() {
+        #expect(GroqClient.parse("1. 하나\n2. 둘", count: 2) == ["하나", "둘"])
+        #expect(GroqClient.parse("2. 둘", count: 2) == [nil, "둘"])
+    }
+
+    @Test func 번역_지시에_앞줄은_출력하지_말라고_적는다() {
+        #expect(GroqClient.translatePrompt.contains("Never output the Previous line"))
+    }
+
     @Test func 앞줄이_없으면_옮길_줄만_보낸다() {
         #expect(GroqClient.translationInput(["Hello."], context: []) == "1. Hello.")
     }

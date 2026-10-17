@@ -507,6 +507,15 @@ private struct RecordChooser: View {
 // MARK: - 설정
 
 private struct SettingsPage: View {
+    /// 설치 디스크(DMG)에서 바로 켠 앱을 등록하면 디스크를 빼는 순간 깨진다
+    private static let fromInstaller = Installer.runsFromInstaller(
+        Bundle.main.bundlePath, readOnly: Installer.isReadOnly(Bundle.main.bundleURL))
+
+    private var loginDetail: String {
+        if Self.fromInstaller { return "응용 프로그램 폴더로 옮겨 설치한 뒤에 켤 수 있습니다." }
+        return state.loginItem.note ?? "맥에 로그인하면 메뉴바에 Ezrite 가 바로 뜹니다."
+    }
+
     @EnvironmentObject var state: AppState
     @EnvironmentObject var model: PopoverModel
     @EnvironmentObject var updater: Updater
@@ -539,6 +548,11 @@ private struct SettingsPage: View {
                            detail: "앱 소리를 받을 때 마이크도 섞어서 받아 적습니다.",
                            isOn: $state.includeMic)
                     .disabled(state.sourceID == "mic")
+                Card { PickerRow(icon: "circle.lefthalf.filled", title: "화면 테마", selection: $state.theme, options: Theme.options) }
+                ToggleCard(icon: "power", title: "로그인할 때 자동 실행", detail: loginDetail,
+                           isOn: Binding(get: { state.loginItem.isOn }, set: { state.loginItem = LoginItem.set($0) }))
+                    .disabled(Self.fromInstaller)
+                    .onAppear { state.loginItem = LoginItem.current }
 
                 SectionLabel("저장 위치")
                 Card {

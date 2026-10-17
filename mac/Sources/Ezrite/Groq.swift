@@ -197,7 +197,8 @@ extension GroqClient {
     static let translatePrompt = """
         Translate numbered lecture transcript lines into natural Korean. Output only "N. translation", one per line. \
         Lines are speech-recognition chunks: a sentence may continue across lines; fix clearly misheard words; \
-        drop fillers (um, uh). Keep technical terms accurate. No notes.
+        drop fillers (um, uh). Keep technical terms accurate. No notes. \
+        Never output the Previous line; "1." is the first numbered line.
         """
 
     /// 앞줄(문장이 이어질 때 참고, 옮기지 않음) + 번호 붙인 옮길 줄
@@ -230,14 +231,16 @@ extension GroqClient {
     }
 
     static func parse(_ out: String, count: Int) -> [String?] {
-        var result = [String?](repeating: nil, count: count)
+        var found: [Int: String] = [:]
         for raw in out.split(separator: "\n") {
             let line = raw.trimmingCharacters(in: .whitespaces)
-            guard let dot = line.firstIndex(of: "."), let n = Int(line[..<dot]), (1...count).contains(n) else { continue }
+            guard let dot = line.firstIndex(of: "."), let n = Int(line[..<dot]) else { continue }
             let text = line[line.index(after: dot)...].trimmingCharacters(in: .whitespaces)
-            if !text.isEmpty { result[n - 1] = text }
+            if !text.isEmpty { found[n] = text }
         }
-        return result
+        // 모델이 참고로 준 앞줄까지 "1." 로 옮겨 번호가 하나씩 밀려 오면 첫 줄을 버린다 (안 그러면 한 줄씩 어긋난다)
+        let shift = found[count + 1] != nil ? 1 : 0
+        return (1...max(count, 1)).prefix(count).map { found[$0 + shift] }
     }
 
     private func chatOnce(model: String, key: String, input: String) async throws -> String {

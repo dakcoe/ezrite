@@ -1,0 +1,80 @@
+{
+  "name": "ezrite-app",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Ezrite Windows판 시험 앱",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test \"test/*.test.js\"",
+    "lint": "node scripts/lint.js",
+    "dist": "node scripts/make-notices.js && electron-builder --win nsis --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "26.15.3"
+  },
+  "ezriteUpdateRepo": "dakcoe/ezrite",
+  "author": "dakcoe",
+  "license": "MIT",
+  "build": {
+    "appId": "com.dakcoe.ezrite",
+    "productName": "Ezrite",
+    "copyright": "Copyright (c) 2026 dakcoe",
+    "directories": {
+      "output": "../dist"
+    },
+    "files": [
+      "main.js",
+      "explain-ui.js",
+      "preload.js",
+      "preload-card.js",
+      "package.json",
+      "lib/**/*",
+      "renderer/**/*",
+      "assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../helper/target/release/ezrite-audio.exe",
+        "to": "ezrite-audio.exe"
+      },
+      {
+        "from": "build/ThirdPartyNotices.txt",
+        "to": "ThirdPartyNotices.txt"
+      }
+    ],
+    "electronLanguages": [
+      "ko",
+      "en-US"
+    ],
+    "npmRebuild": false,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/app.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createStartMenuShortcut": true,
+      "createDesktopShortcut": false,
+      "shortcutName": "Ezrite",
+      "uninstallDisplayName": "Ezrite",
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "assets/app.ico",
+      "uninstallerIcon": "assets/app.ico",
+      "artifactName": "Ezrite-Setup-${version}.exe",
+      "include": "build/installer.nsh"
+    },
+    "extraMetadata": {
+      "name": "ezrite"
+    }
+  }
+}

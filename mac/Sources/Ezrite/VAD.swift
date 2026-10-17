@@ -33,6 +33,8 @@ struct VAD {
     private var silenceSecs = 0.0
 
     var inSpeech: Bool { !utterance.isEmpty }
+    /// 내보낸 발화 뒤에 남아 다음 발화로 넘어간 샘플 수. 내보낸 발화의 끝 시각을 셀 때 뺀다
+    var carried: Int { utterance.count * Self.blockSize }
 
     static func rms(_ b: [Float]) -> Float {
         var sum: Float = 0
@@ -63,8 +65,8 @@ struct VAD {
             let total = Double(utterance.count) * Self.blockSecs
             let cut = (silenceSecs >= Self.shortSilence && speechSecs >= Self.minChunk)
                 || silenceSecs >= Self.longSilence
-                || total >= Self.maxChunk
-            return cut ? flush() : nil
+            if cut { return flush() }
+            return total >= Self.maxChunk ? splitAtQuietest(floor: floor) : nil
         }
 
         preroll.append(block)
@@ -77,6 +79,25 @@ struct VAD {
             preroll = []
         }
         return nil
+    }
+
+    /// 쉬지 않고 maxChunk 를 넘겼을 때: 마지막 1초 안에서 가장 조용한 블록까지 내보내고, 그 뒤는 다음 발화로 넘긴다.
+    /// 그냥 끝에서 자르면 단어 가운데가 잘려 양쪽 다 틀리게 받아 적힌다 ("decays i" / "t over time")
+    private mutating func splitAtQuietest(floor: Float) -> [Float]? {
+        let window = Int(1.0 / Self.blockSecs)
+        let start = max(0, utterance.count - window)
+        var quietest = start
+        for i in start..<utterance.count where Self.rms(utterance[i]) <= Self.rms(utterance[quietest]) { quietest = i }
+        let rest = Array(utterance[(quietest + 1)...])
+        utterance = Array(utterance[...quietest])
+        let out = flush()
+        // 넘긴 블록으로 바로 "말하는 중" 상태를 이어 간다
+        utterance = rest
+        let speech = rest.map { Self.rms($0) > floor * Self.noiseFactor }
+        speechSecs = Double(speech.filter { $0 }.count) * Self.blockSecs
+        // 넘긴 끝쪽이 조용했으면 그 무음도 이어서 센다 (Windows판과 같은 규칙)
+        silenceSecs = Double(speech.reversed().prefix { !$0 }.count) * Self.blockSecs
+        return out
     }
 
     /// 모으던 발화를 내보낸다. 너무 짧으면 버린다.

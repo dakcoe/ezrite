@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'">
+<!-- 처음 안내 창의 "무료 Groq 키 넣기" 애니메이션. 맥판 Resources/web/groq-guide.html 을 옮겼다 (글꼴만 Windows용).
+     저절로 넘어가지 않는다 — 아래 점이나 ‹ › 로 단계를 고르면 그 단계 움직임을 한 번 보여준다 -->
+<title>Groq 키 안내</title>
+<link rel="stylesheet" href="groq-guide.css">
+</head>
+<body>
+<div class="stage" id="stage">
+  <div class="browser"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    <div class="url" id="url">console.groq.com</div></div>
+
+  <!-- ① 로그인 -->
+  <div class="scene" id="s1">
+    <div class="login">
+      <div class="logo">groq</div>
+      <div class="m-sub sub">GroqCloud 로그인</div>
+      <div class="lbtn">Continue with Google</div>
+      <div class="lbtn">Continue with GitHub</div>
+      <div class="lbtn">Continue with Email</div>
+    </div>
+  </div>
+
+  <!-- ② API Keys 화면 -->
+  <div class="scene" id="s2">
+    <div class="top"><span class="logo">groq</span><span class="crumb">Personal / Default Project</span>
+      <div class="nav"><span>Playground</span><span class="active">API Keys</span><span>Dashboard</span><span>Docs</span></div>
+      <span class="avatar"></span></div>
+    <div class="page">
+      <div class="h">API Keys</div>
+      <div class="sub">Manage your project API keys.</div>
+      <table><tr><th>NAME</th><th>SECRET KEY</th><th>CREATED</th></tr>
+        <tr id="newrow" class="hide"><td>ezrite</td><td class="mono">gsk_...••••</td><td>today</td></tr></table>
+    </div>
+    <div class="create" id="create">+ Create API Key</div>
+
+    <!-- ③ 만들기 대화상자 -->
+    <div id="d1" class="hide">
+      <div class="shade"></div>
+      <div class="dialog">
+        <div class="t">Create API Key</div>
+        <div class="label">Display Name</div>
+        <div class="field" id="name"><span id="typed"></span></div>
+        <div class="hint">A display name for the key.</div>
+        <div class="label">Expiration</div>
+        <div class="select"><span>No expiration</span><span>⌄</span></div>
+        <div class="btnrow"><div class="btn" id="submit">Submit</div></div>
+      </div>
+    </div>
+
+    <!-- ④ 만들어진 키 -->
+    <div id="d2" class="hide">
+      <div class="shade"></div>
+      <div class="low dialog">
+        <div class="t">Create API Key</div>
+        <div class="small">Your new API key has been created. <b>Copy it now, as we will not display it again.</b></div>
+        <div class="keybox"><div class="key">gsk_••••••••••••••••••••••••</div>
+          <div class="btn" id="copy">⧉ Copy</div></div>
+        <div class="btnrow"><span class="copied" id="copied">복사됨</span><div class="btn plain" id="done">Done</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ⑤ Ezrite 에 붙여넣기 -->
+  <div class="scene" id="s5">
+    <div class="app">
+      <div class="hrow"><span class="badge" id="badge">1</span>
+        <b class="big">무료 Groq 키 넣기</b></div>
+      <div class="row">
+        <div class="appbtn">무료 키 발급받기 ↗</div>
+        <div class="grow field" id="paste"><span id="pasted" class="ph">gsk_… 붙여넣기</span></div>
+        <div class="appbtn blue" id="save">저장</div>
+      </div>
+      <div class="ok" id="ok">연결됨 · 모델 12개 ✓</div>
+    </div>
+  </div>
+
+  <div class="caption"><span id="cap"></span>
+    <div class="nav2"><button class="arrow" id="prev" aria-label="이전 단계">‹</button>
+      <div class="dots" id="dots"></div>
+      <button class="arrow next" id="next" aria-label="다음 단계">다음 ›</button></div></div>
+  <div class="ripple" id="ripple"></div>
+  <div class="cursor" id="cursor"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M1 1 L1 13 L4.5 9.8 L7 15 L9 14 L6.6 9 L11 9 Z" fill="#fff" stroke="#000" stroke-width="1"/></svg></div>
+</div>
+
+<script src="groq-guide.js"></script>
+</body>
+</html>
