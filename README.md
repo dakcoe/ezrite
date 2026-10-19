@@ -29,7 +29,6 @@
   <a href="https://github.com/dakcoe/ezrite/releases"><img src="https://img.shields.io/github/downloads/dakcoe/ezrite/total?color=2458f2" alt="내려받은 수"></a>
   <a href="#환경"><img src="https://img.shields.io/badge/macOS-13%2B%20·%20Apple%20칩%20·%20Intel-black" alt="macOS 13 이상, Apple 칩과 Intel"></a>
   <a href="#환경"><img src="https://img.shields.io/badge/Windows-10%20·%2011%20(64비트)-0078d4" alt="Windows 10, 11 64비트"></a>
-  <a href="#설치방법"><img src="https://img.shields.io/badge/시작-무료%20Groq%20키-0d0e12" alt="무료 Groq 키로 시작"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT 라이선스"></a>
 </p>
 
