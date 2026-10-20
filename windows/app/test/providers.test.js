@@ -44,13 +44,14 @@ test('서비스 고르기: 키가 있는 서비스만. 바꾸면 그 서비스�
 test('모델 고르기: 지금 서비스의 순위 목록에 있는 이름만 (또는 지금 모델). 고르면 바로 불러 본다', () => {
   const ai = { ...base(), explainProvider: 'claude', explainModel: 'claude-sonnet-5-5', providerModels: { claude: CLAUDE } };
   const has = () => true;
-  let r = P.applyChoice(ai, { feature: 'explain', model: 'claude-sonnet-4-6' }, has);
-  assert.equal(r.ai.explainModel, 'claude-sonnet-4-6');
-  assert.deepEqual(r.check, { provider: 'claude', model: 'claude-sonnet-4-6', feature: 'explain' });
-  r = P.applyChoice(r.ai, { feature: 'explain', model: 'claude-opus-5-5' }, has); // 설명 순위 밖 (맥 목록에도 없다)
-  assert.equal(r.ai.explainModel, 'claude-sonnet-4-6');
+  // 1.1.4: opus 는 설명의 맨 마지막 등급으로 고를 수 있고, 더 높은 sonnet 이 있는 sonnet-4-6 은 목록에 없다 (맥 olderClaude)
+  let r = P.applyChoice(ai, { feature: 'explain', model: 'claude-opus-5-5' }, has);
+  assert.equal(r.ai.explainModel, 'claude-opus-5-5');
+  assert.deepEqual(r.check, { provider: 'claude', model: 'claude-opus-5-5', feature: 'explain' });
+  r = P.applyChoice(r.ai, { feature: 'explain', model: 'claude-sonnet-4-6' }, has);
+  assert.equal(r.ai.explainModel, 'claude-opus-5-5');
   r = P.applyChoice(r.ai, { feature: 'explain', model: 'evil"model' }, has);
-  assert.equal(r.ai.explainModel, 'claude-sonnet-4-6');
+  assert.equal(r.ai.explainModel, 'claude-opus-5-5');
   assert.equal(r.check, null);
   r = P.applyChoice({ ...base() }, { feature: 'explain', model: 'claude-opus-5-5' }, has); // Groq 는 모델을 고르지 않는다
   assert.equal(r.ai.explainModel, '');
@@ -61,7 +62,7 @@ test('featureView: 화면에 보낼 고르기 칸 — 쓸 수 있는 서비스�
   const v = P.featureView(ai, 'explain', (p) => p !== 'openai');
   assert.deepEqual(v.providers, [{ value: 'groq', label: 'Groq' }, { value: 'claude', label: 'Claude' }, { value: 'gemini', label: 'Gemini' }]);
   assert.equal(v.provider, 'claude');
-  assert.deepEqual(v.models, ['claude-old', 'claude-sonnet-5-5', 'claude-sonnet-4-6']);
+  assert.deepEqual(v.models, ['claude-old', 'claude-sonnet-5-5', 'claude-opus-5-5']);
   assert.equal(v.model, 'claude-old');
 });
 

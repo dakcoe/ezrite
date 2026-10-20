@@ -204,6 +204,9 @@ enum Notes {
         static func waitForMerges() { mergeQueue.sync {} }
     }
 
+    /// 소리 합치기가 끝나면 object = 합친 m4a 로 알린다 (열려 있는 기록이 그때 소리를 불러온다)
+    static let audioMergedNote = Notification.Name("EzriteAudioMerged")
+
     /// 합친 뒤에만 조각을 지운다. 합친 파일은 임시 이름으로 만든 뒤 옮겨서, 도중에 꺼져도 반쯤 된 파일이 남지 않는다
     static func mergeAndClean(_ parts: [URL], into dest: URL) {
         let tmp = dest.deletingLastPathComponent().appendingPathComponent(".merging-" + dest.lastPathComponent)
@@ -212,6 +215,7 @@ enum Notes {
             try? FileManager.default.removeItem(at: dest)
             try FileManager.default.moveItem(at: tmp, to: dest)
             for p in parts { try? FileManager.default.removeItem(at: p) }
+            DispatchQueue.main.async { NotificationCenter.default.post(name: audioMergedNote, object: dest) }
         } catch {
             try? FileManager.default.removeItem(at: tmp)
         }

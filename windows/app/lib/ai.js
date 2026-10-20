@@ -90,6 +90,23 @@ function request(p, { model, key, prompt, image = null, json = false, maxTokens,
   };
 }
 
+/**
+ * 생각을 끈 Claude 요청이 400 으로 거절됐을 때 한 번 다시 보낼 요청 (맥 AI.swift thinkingOffRetry). 아니면 null.
+ * 모델마다 끄는 방법이 달라 이름으로 정하지 않고 오류 설명을 따른다:
+ *   "between_tools" 가 있으면 (sonnet-5-5) thinking 만 between_tools 로
+ *   "adaptive" 가 있으면 (opus-5-5: 끌 수 없다) adaptive + output_config.effort low 로
+ *   그 밖의 400 (설명에 "thinking" 이 없는 것 포함)은 다시 보내지 않는다
+ */
+function thinkingOffRetry(req, status, text) {
+  if (status !== 400 || req?.body?.thinking?.type !== 'disabled' || !req.url.startsWith('https://api.anthropic.com/')) return null;
+  const msg = errorMessage(text);
+  if (!msg.includes('thinking')) return null;
+  let change = null;
+  if (msg.includes('between_tools')) change = { thinking: { type: 'between_tools' } };
+  else if (msg.includes('adaptive')) change = { thinking: { type: 'adaptive' }, output_config: { effort: 'low' } };
+  return change && { ...req, body: { ...req.body, ...change } };
+}
+
 /** 키 저장 때 모델이 실제로 답하는지 짧게 불러 보는 요청 ("Say OK") */
 function checkRequest(p, model, key) {
   return request(p, { model, key, prompt: 'Say OK', image: null, json: false, maxTokens: CHECK_MAX_TOKENS, think: false });
@@ -191,11 +208,11 @@ const gptSmall = (m) => m.endsWith('-mini') || m.endsWith('-nano') || m.endsWith
 const gptExcluded = (m) => m.startsWith('gpt-')
   && ['-pro', '-codex', '-search', '-chat', '-audio', '-realtime', '-image', '-transcribe', '-tts'].some((x) => m.endsWith(x) || m.includes(`${x}-`));
 
-/** 용도별 등급. 앞쪽 등급을 먼저 고른다 */
+/** 용도별 등급. 앞쪽 등급을 먼저 고른다. Claude opus 는 비싸서 화면 설명의 맨 마지막 (기본은 sonnet) */
 function tiers(feature) {
   if (feature === 'explain') {
     return [(m) => m.includes('-sonnet-'), (m) => m.includes('-pro'), (m) => m.startsWith('gpt-') && m.endsWith('-sol'),
-      (m) => m.startsWith('gpt-') && !gptSmall(m) && !m.endsWith('-sol')];
+      (m) => m.startsWith('gpt-') && !gptSmall(m) && !m.endsWith('-sol'), (m) => m.includes('-opus-')];
   }
   return [(m) => m.includes('-haiku-'), (m) => m.includes('-flash'), (m) => m.startsWith('gpt-') && m.endsWith('-luna'),
     (m) => m.startsWith('gpt-') && m.endsWith('-mini')];
@@ -207,9 +224,19 @@ function version(m) {
   return r ? Number(r[0].replace('-', '.')) || 0 : 0;
 }
 
-/** 용도에 맞는 후보를 좋은 순서로: 등급 → 높은 버전 → 정식판(preview 아님). 키를 저장할 때 앞에서부터 실제로 불러 본다 */
+/** Claude 의 같은 등급(opus·sonnet·haiku)에 더 높은 버전이 있는 모델 (맥 olderClaude). 목록에서 숨긴다 */
+function olderClaude(m, all) {
+  const tier = /^claude-(opus|sonnet|haiku)-/.exec(m)?.[1];
+  return Boolean(tier) && all.some((x) => x.startsWith(`claude-${tier}-`) && version(x) > version(m));
+}
+
+/**
+ * 용도에 맞는 후보를 좋은 순서로: 등급 → 높은 버전 → 정식판(preview 아님). 키를 저장할 때 앞에서부터 실제로 불러 본다.
+ * Claude 는 등급마다 가장 높은 버전만 둔다 (sonnet-5-5 가 안 되면 옛 sonnet 이 아니라 Groq 로 간다)
+ */
 function ranked(models, feature) {
-  const ok = (models ?? []).filter((m) => typeof m === 'string' && !gptExcluded(m) && SHAPES.some((re) => re.test(m)));
+  const all = (models ?? []).filter((m) => typeof m === 'string');
+  const ok = all.filter((m) => !gptExcluded(m) && SHAPES.some((re) => re.test(m)) && !olderClaude(m, all));
   const out = [];
   for (const tier of tiers(feature)) {
     const group = ok.filter(tier).filter((m) => !out.includes(m));
@@ -253,13 +280,20 @@ class AIClient {
     }
   }
 
+  /** 보낸다. 생각을 끈 Claude 요청이 그 모델에서 거절되면 오류가 알려 준 방식으로 한 번 더 (thinkingOffRetry) */
+  async sendClaudeAware(req, ms) {
+    const res = await this.send(req, ms);
+    const retry = res && thinkingOffRetry(req, res.status, res.text);
+    return retry ? this.send(retry, ms) : res;
+  }
+
   /** 한 번 보내고 본문을 받는다. json 이면 코드블록을 벗긴 JSON 글 */
   async complete(p, { model, prompt, image = null, json = false, maxTokens, think = true }) {
     const label = LABEL[p];
     const key = this.getKey(p);
     if (!key) throw new AIFailure(401, `${label} API 키가 없습니다. 설정에서 키를 입력하세요.`);
     const req = request(p, { model, key, prompt, image, json, maxTokens, think });
-    const res = await this.send(req, this.requestMs);
+    const res = await this.sendClaudeAware(req, this.requestMs);
     // 응답이 없으면 Groq 로 대신하도록 상태 코드 없이 던진다
     if (!res) throw new AIFailure(null, `${label} 가 ${Math.round(this.requestMs / 1000)}초 동안 응답하지 않았습니다`);
     if (keyRejected(res.status, res.text)) {
@@ -289,7 +323,7 @@ class AIClient {
   async check(p, model) {
     const key = this.getKey(p);
     if (!key) return '키가 없습니다';
-    const res = await this.send(checkRequest(p, model, key), this.checkMs);
+    const res = await this.sendClaudeAware(checkRequest(p, model, key), this.checkMs);
     if (!res) return `${Math.round(this.checkMs / 1000)}초 동안 응답 없음`;
     return res.status === 200 ? null : redact(`${res.status} ${errorMessage(res.text).slice(0, 80)}`, key);
   }
@@ -308,5 +342,5 @@ class AIClient {
 module.exports = {
   PROVIDERS, FEATURES, LABEL, KEY_PAGE, ANTHROPIC_VERSION, TRANSLATE_MAX_TOKENS, EXPLAIN_MAX_TOKENS, CHECK_MAX_TOKENS,
   REQUEST_MS, CHECK_MS, AIFailure, AIClient, isProvider, redact, request, checkRequest, modelsRequest, reply, stripFences,
-  errorMessage, keyRejected, shouldFallback, fallsBack, modelIds, ranked, pick, version,
+  errorMessage, keyRejected, shouldFallback, fallsBack, modelIds, ranked, pick, version, thinkingOffRetry, olderClaude,
 };

@@ -26,6 +26,20 @@ final class PopoverModel: ObservableObject {
         titleDraft = url.map(Notes.title) ?? ""
         if let audio = url.flatMap(Notes.audioURL) { player.open(audio) } else { player.close() }
     }
+
+    init() {
+        merged = NotificationCenter.default.addObserver(forName: Notes.audioMergedNote, object: nil, queue: .main) { [weak self] n in
+            (n.object as? URL).map { self?.audioMerged($0) }
+        }
+    }
+    private var merged: NSObjectProtocol?
+
+    /// 녹음을 끝내자마자 연 기록은 소리 합치기가 끝나기 전이라 m4a 가 없다. 끝나면 그때 불러온다
+    func audioMerged(_ audio: URL) {
+        guard let opened, opened.deletingPathExtension().appendingPathExtension("m4a").standardizedFileURL
+                == audio.standardizedFileURL else { return }
+        player.open(audio)
+    }
 }
 
 /// 메뉴바 아이콘을 누르면 아이콘 아래에 뜨는 작은 팝업: 지금 받아 적는 내용만 본다.
@@ -105,6 +119,7 @@ struct SavedBanner: View {
                     Text("녹음 기록 저장됨").font(.system(size: 12.5, weight: .semibold))
                     Spacer()
                     Button("기록 보기") {
+                        state.savedSession = nil        // 확인했으니 띠를 내린다 (설정 화면에서 다시 뜨지 않게)
                         AppDelegate.shared?.popover.page = .history
                         AppDelegate.shared?.popover.open(url)
                         AppDelegate.shared?.showMainWindow()

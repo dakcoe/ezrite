@@ -210,3 +210,21 @@ test('Claude 모델 목록 → 이름순, 번역은 haiku-5-5·설명은 sonnet-
   assert.equal(AI.pick(list, 'explain'), 'claude-sonnet-5-5');
   assert.deepEqual(AI.modelIds({ data: [{ id: 'models/gemini-3.8-flash' }, { id: 'gemini-2.5-pro' }] }), ['gemini-2.5-pro', 'gemini-3.8-flash']);
 });
+
+// ── 1.1.4: Claude 모델 목록 (맥 olderClaude) ──
+test('Claude: 화면 설명은 sonnet 다음 맨 마지막 등급으로 opus, 같은 등급의 옛 버전은 숨긴다', () => {
+  const list = AI.modelIds(fixture('response-claude-models.json'));
+  assert.deepEqual(AI.ranked(list, 'explain'), ['claude-sonnet-5-5', 'claude-opus-5-5']);
+  assert.deepEqual(AI.ranked(list, 'translate'), ['claude-haiku-5-5']);
+  assert.equal(AI.pick(list, 'explain'), 'claude-sonnet-5-5', '기본은 sonnet 그대로');
+  // 맥 ProviderTests 기대값
+  const mac = ['claude-opus-5-5', 'claude-sonnet-4-6', 'claude-sonnet-5-5', 'claude-haiku-4-5-20251001', 'claude-haiku-5-5'];
+  assert.deepEqual(AI.ranked(mac, 'explain'), ['claude-sonnet-5-5', 'claude-opus-5-5']);
+  assert.deepEqual(AI.ranked(mac, 'translate'), ['claude-haiku-5-5']);
+  assert.deepEqual([AI.pick(mac, 'explain'), AI.pick(mac, 'translate')], ['claude-sonnet-5-5', 'claude-haiku-5-5']);
+  // 다른 서비스와 섞여도 opus 는 맨 뒤
+  const mixed = ['claude-opus-5-5', 'claude-sonnet-4-6', 'gemini-3.1-pro-preview', 'gpt-6-sol', 'gpt-5.5'];
+  assert.deepEqual(AI.ranked(mixed, 'explain'), ['claude-sonnet-4-6', 'gemini-3.1-pro-preview', 'gpt-6-sol', 'gpt-5.5', 'claude-opus-5-5']);
+  // 더 높은 버전이 없으면 옛 버전도 보인다 (sonnet-4-6 하나뿐)
+  assert.deepEqual(AI.ranked(['claude-sonnet-4-6', 'claude-opus-4-8', 'claude-opus-4-7'], 'explain'), ['claude-sonnet-4-6', 'claude-opus-4-8']);
+});

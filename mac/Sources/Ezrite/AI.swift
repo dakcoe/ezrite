@@ -138,6 +138,33 @@ enum AI {
         return ((err as? [String: Any])?["message"] as? String) ?? (err as? String) ?? ""
     }
 
+    /// 생각을 끈 Claude 요청("disabled")을 거절당했을 때, 그 모델이 받는 방식으로 바꾼 요청.
+    /// 모델마다 받는 값이 달라 이름으로 정할 수 없다: sonnet 5.5 는 "between_tools",
+    /// opus 5.5 는 둘 다 거절하고 "adaptive" + 낮은 effort, haiku 5.5 는 "disabled" 그대로
+    static func thinkingOffRetry(_ req: URLRequest, status: Int, body: Data) -> URLRequest? {
+        let msg = errorMessage(body)
+        guard status == 400, msg.contains("thinking"),
+              let sent = req.httpBody, var obj = try? JSONSerialization.jsonObject(with: sent) as? [String: Any],
+              (obj["thinking"] as? [String: Any])?["type"] as? String == "disabled" else { return nil }
+        if msg.contains("between_tools") {
+            obj["thinking"] = ["type": "between_tools"]
+        } else if msg.contains("adaptive") {
+            obj["thinking"] = ["type": "adaptive"]
+            obj["output_config"] = ["effort": "low"]
+        } else { return nil }
+        var r = req
+        r.httpBody = try? JSONSerialization.data(withJSONObject: obj)
+        return r
+    }
+
+    /// fetch 하고, 생각 끄는 방식이 틀렸다고 거절당하면 한 번 바꿔 다시 보낸다
+    static func send(_ req: URLRequest, within limit: UInt64) async -> (Data, URLResponse)? {
+        guard let first = await fetch(req, within: limit) else { return nil }
+        let code = (first.1 as? HTTPURLResponse)?.statusCode ?? 0
+        guard let retry = thinkingOffRetry(req, status: code, body: first.0) else { return first }
+        return await fetch(retry, within: limit)
+    }
+
     /// 키가 틀렸다는 응답인가. Gemini 는 틀린 키에 401 이 아니라 400 "Please pass a valid API key" 를 준다
     static func keyRejected(status: Int, body: Data) -> Bool {
         if status == 401 || status == 403 { return true }
@@ -166,7 +193,8 @@ enum AI {
         // GPT 의 pro·codex·search 는 이름 꼴에서 먼저 빠진다(gptExcluded)
         case .explain:
             return [{ $0.contains("-sonnet-") }, { $0.contains("-pro") }, { $0.hasPrefix("gpt-") && $0.hasSuffix("-sol") },
-                    { $0.hasPrefix("gpt-") && !gptSmall($0) && !$0.hasSuffix("-sol") }]
+                    { $0.hasPrefix("gpt-") && !gptSmall($0) && !$0.hasSuffix("-sol") },
+                    { $0.contains("-opus-") }]   // 비싸서 기본은 아니고 목록에서 직접 고른다
         case .translate:
             return [{ $0.contains("-haiku-") }, { $0.contains("-flash") }, { $0.hasPrefix("gpt-") && $0.hasSuffix("-luna") },
                     { $0.hasPrefix("gpt-") && $0.hasSuffix("-mini") }]
@@ -180,6 +208,12 @@ enum AI {
             .contains { m.hasSuffix($0) || m.contains($0 + "-") }
     }
 
+    /// 같은 등급(opus·sonnet·haiku)에 더 새 버전이 있는 Claude 모델. 목록에 최신판만 보인다
+    private static func olderClaude(_ m: String, in models: [String]) -> Bool {
+        guard m.hasPrefix("claude-"), let family = m.split(separator: "-").dropFirst().first else { return false }
+        return models.contains { $0.hasPrefix("claude-\(family)-") && version($0) > version(m) }
+    }
+
     /// 버전 숫자 (claude-sonnet-5-5 → 5.5, gemini-3.1-pro → 3.1, gpt-5.4-mini → 5.4)
     private static func version(_ m: String) -> Double {
         guard let r = m.range(of: #"\d+([.-]\d+)?"#, options: .regularExpression) else { return 0 }
@@ -190,6 +224,7 @@ enum AI {
     static func ranked(_ models: [String], for feature: Feature) -> [String] {
         let ok = models.filter { m in
             !gptExcluded(m) && shapes.contains { m.range(of: $0, options: .regularExpression) != nil }
+                && !olderClaude(m, in: models)
         }
         var out: [String] = []
         for tier in tiers(feature) {
@@ -211,7 +246,7 @@ enum AI {
                                      maxTokens: 16, think: false) else { return "키가 없습니다" }
         // timeoutInterval 은 "응답이 멈춘 시간" 기준이라, 연결만 붙들고 답을 안 주는 모델(Gemini 3.7·3.8 무료 등급)은
         // 끝나지 않는다. 전체 시간으로 끊는다
-        guard let (data, resp) = await fetch(req, within: checkTimeout) else { return "\(Int(checkTimeout / 1_000_000_000))초 동안 응답 없음" }
+        guard let (data, resp) = await send(req, within: checkTimeout) else { return "\(Int(checkTimeout / 1_000_000_000))초 동안 응답 없음" }
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         return code == 200 ? nil : "\(code) \(errorMessage(data).prefix(80))"
     }
@@ -251,7 +286,7 @@ enum AI {
         }
         let req = try request(p, model: model, key: key, prompt: prompt, image: image, json: json,
                               maxTokens: maxTokens, think: think)
-        guard let (data, resp) = await fetch(req, within: requestTimeout) else {
+        guard let (data, resp) = await send(req, within: requestTimeout) else {
             // 응답이 없으면 Groq 로 대신하도록 상태 코드 없이 던진다
             throw Failure(status: nil, errorDescription: "\(p.label) 가 \(Int(requestTimeout / 1_000_000_000))초 동안 응답하지 않았습니다")
         }

@@ -253,3 +253,21 @@ test('설명: 한국어 OCR 팩이 없고 글자가 깨졌으면 카드에 한 �
   await ok.ex.run();
   assert.equal(ok.cards[0].renders.at(-1).hint, undefined);
 });
+
+// ── 1.1.4: 글자 인식이 실패해도 설명은 계속 (맥 Explain.readText 는 던지지 않는다) ──
+test('글자 인식 실패: 설명·질문 모두 오류로 멈추지 않고 줄 없이 (①②③ 표시만 빠진다)', async () => {
+  const failing = async () => { throw new Error('ezrite-audio ocr: 0x80004005 오류'); };
+  const summaryOnly = JSON.stringify({ summary: '그림만 보고 한 설명', marks: [], visuals: [], scenes: [] });
+  const { ex, calls, cards, overlays } = rig({
+    replies: [content(summaryOnly), content('{"answer":"이렇게요"}')], ocr: failing,
+  });
+  await ex.run();
+  const card = cards[0];
+  assert.ok(!card.renders.some((r) => r.error), `오류만 뜸: ${JSON.stringify(card.renders.at(-1))}`);
+  assert.ok(JSON.stringify(card.renders.at(-1)).includes('그림만 보고 한 설명'));
+  assert.ok(!calls[0].messages[0].content[0].text.includes('MRS_A'), '읽은 줄이 없다');
+  assert.equal(overlays.length, 0, '표시할 줄이 없으면 표시 창도 없다');
+  assert.equal(card.renders.at(-1).hint, undefined, '한국어 팩 안내도 붙이지 않는다');
+  await ex.ask('뭐야?');
+  assert.deepEqual(card.answers[0], { answer: '이렇게요', marks: [], visuals: [] });
+});

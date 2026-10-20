@@ -36,7 +36,7 @@ final class Explainer: ObservableObject {
             screen = shot.screen
             card.show(on: shot.screen, avoid: AppDelegate.shared?.popupFrame)
             card.render(["loading": "화면을 읽는 중…"])
-            let lines = try await Task.detached { try Explain.readText(shot.image) }.value
+            let lines = await Task.detached { Explain.readText(shot.image) }.value
             card.render(["loading": "설명을 만드는 중…"])
             let jpeg = Self.jpeg(shot.image, maxWidth: 1280)   // 이미지 토큰은 크기와 상관없이 한 장에 약 1,800 (640·1024·1280 실측 같음)
 
@@ -121,7 +121,7 @@ final class Explainer: ObservableObject {
         guard let card, let ctx = context?() else { return }
         do {
             let shot = try await ScreenGrab.capture(on: screen)
-            let lines = try await Task.detached { try Explain.readText(shot.image) }.value
+            let lines = await Task.detached { Explain.readText(shot.image) }.value
             let prompt = GroqClient.questionPrompt(question, history: history, explanation: explanation,
                                                    lines: lines, transcript: ctx.transcript)
             var data: Data?
@@ -196,7 +196,7 @@ final class Explainer: ObservableObject {
                 guard zip(baseline, thumbs).contains(where: { Explain.changed($0, $1) }) else { continue }
                 baseline = thumbs                       // 화면이 그대로면 다음엔 글자를 다시 읽지 않는다
 
-                let lines = (try? await Task.detached { try Explain.readText(now.image, correct: false) }.value) ?? []
+                let lines = await Task.detached { Explain.readText(now.image, correct: false) }.value
                 guard !Task.isCancelled else { return }
                 guard let found = Explain.relocate(targets, in: lines) else {
                     if !hidden { overlay.orderOut(nil); hidden = true }

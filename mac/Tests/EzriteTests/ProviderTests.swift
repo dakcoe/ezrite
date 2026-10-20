@@ -30,6 +30,31 @@ struct ProviderTests {
         #expect(b["thinking"] == nil)
     }
 
+    @Test func disabled를_거절하고_between_tools로_끄라는_모델이면_바꿔_다시_보낸다() throws {
+        // claude-sonnet-5-5 가 실제로 돌려준 400 응답
+        let refusal = Data(#"{"type":"error","error":{"type":"invalid_request_error","message":"To turn thinking off on this model, send \"thinking\": {\"type\": \"between_tools\"} instead of {\"type\": \"disabled\"}."}}"#.utf8)
+        let off = try AI.request(.claude, model: "m", key: "k", prompt: "p", image: nil, json: false, maxTokens: 9, think: false)
+        let retry = try #require(AI.thinkingOffRetry(off, status: 400, body: refusal))
+        let body = try #require(JSONSerialization.jsonObject(with: retry.httpBody!) as? [String: Any])
+        #expect((body["thinking"] as? [String: Any])?["type"] as? String == "between_tools")
+        #expect(body["model"] as? String == "m")
+        #expect(retry.value(forHTTPHeaderField: "x-api-key") == "k")
+        // 다른 400 이나 생각을 켠 요청은 다시 보내지 않는다
+        #expect(AI.thinkingOffRetry(off, status: 400, body: Data(#"{"error":{"message":"bad"}}"#.utf8)) == nil)
+        let on = try AI.request(.claude, model: "m", key: "k", prompt: "p", image: nil, json: false, maxTokens: 9)
+        #expect(AI.thinkingOffRetry(on, status: 400, body: refusal) == nil)
+    }
+
+    @Test func disabled를_못_쓰는_모델은_adaptive와_낮은_effort로_다시_보낸다() throws {
+        // claude-opus-5-5 가 실제로 돌려준 400 응답
+        let refusal = Data(#"{"type":"error","error":{"type":"invalid_request_error","message":"\"thinking.type.disabled\" is not supported for this model. Use \"thinking.type.adaptive\" and \"output_config.effort\" to control thinking behavior."}}"#.utf8)
+        let off = try AI.request(.claude, model: "m", key: "k", prompt: "p", image: nil, json: false, maxTokens: 9, think: false)
+        let retry = try #require(AI.thinkingOffRetry(off, status: 400, body: refusal))
+        let body = try #require(JSONSerialization.jsonObject(with: retry.httpBody!) as? [String: Any])
+        #expect((body["thinking"] as? [String: Any])?["type"] as? String == "adaptive")
+        #expect((body["output_config"] as? [String: Any])?["effort"] as? String == "low")
+    }
+
     @Test func GPT와_Gemini는_같은_채팅_형식에_주소만_다르다() throws {
         let gpt = try AI.request(.openai, model: "m", key: "k", prompt: "p", image: Self.jpeg, json: true, maxTokens: 500)
         let gem = try AI.request(.gemini, model: "m", key: "k", prompt: "p", image: nil, json: false, maxTokens: 500)
@@ -61,6 +86,9 @@ struct ProviderTests {
         let claude = ["claude-opus-5-5", "claude-sonnet-4-6", "claude-sonnet-5-5", "claude-haiku-4-5-20251001", "claude-haiku-5-5"]
         #expect(AI.pick(claude, for: .explain) == "claude-sonnet-5-5")
         #expect(AI.pick(claude, for: .translate) == "claude-haiku-5-5")
+        // Opus 는 기본은 아니지만 화면 설명 목록에서 직접 고를 수 있다. 옛 버전(sonnet 4.6)은 보이지 않는다
+        #expect(AI.ranked(claude, for: .explain) == ["claude-sonnet-5-5", "claude-opus-5-5"])
+        #expect(AI.ranked(claude, for: .translate) == ["claude-haiku-5-5"])
         #expect(AI.pick([], for: .explain) == nil)
     }
 

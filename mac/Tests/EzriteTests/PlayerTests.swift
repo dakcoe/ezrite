@@ -114,3 +114,28 @@ struct PlayerTests {
         #expect(player.isPlaying)                         // 0.5초 예약 정지가 취소됐다
     }
 }
+
+/// 녹음을 끝내자마자 기록을 열면 소리 합치기가 아직 끝나지 않아 m4a 가 없다.
+/// 합치기가 끝나면 열려 있는 기록의 플레이어가 그 소리를 불러온다 (00:00 에 멈춰 있지 않게)
+@MainActor
+struct MergedAudioTests {
+    @Test func 합치기가_끝나면_열려_있는_기록의_소리를_불러온다() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("merge-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let txt = dir.appendingPathComponent("rec.txt")
+        try "x\n".write(to: txt, atomically: true, encoding: .utf8)
+        let model = PopoverModel()
+        model.open(txt)
+        #expect(model.player.duration == 0)
+
+        let audio = txt.deletingPathExtension().appendingPathExtension("m4a")
+        try FileManager.default.moveItem(at: try PlayerTests.silentFile(seconds: 2), to: audio)
+        model.audioMerged(audio)
+        #expect(abs(model.player.duration - 2) < 0.2)
+
+        // 다른 기록의 합치기는 지금 듣는 소리를 바꾸지 않는다
+        model.player.toggle()
+        model.audioMerged(dir.appendingPathComponent("other.m4a"))
+        #expect(model.player.isPlaying)
+    }
+}

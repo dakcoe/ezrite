@@ -30,6 +30,11 @@ test('✕ 를 누르면 지운다', () => {
   assert.equal(S.next(shown, { event: 'dismiss' }), null);
 });
 
+test('[기록 보기] 를 누르면 확인한 것이니 띠를 내린다 (맥 1.1.4: 설정 화면 등에서 다시 뜨지 않게)', () => {
+  const shown = S.next(null, { event: 'stop', written: FOLDERED });
+  assert.equal(S.next(shown, { event: 'open' }), null);
+});
+
 test('둘째 줄: "저장 폴더 이름 › 기록 폴더 이름", 예전 기록이면 파일 이름. 누르면 그것을 탐색기에서 고른다', () => {
   const a = S.banner(FOLDERED);
   assert.equal(a.place, 'autosave › 2026-10-18_09-00-00 1주차');

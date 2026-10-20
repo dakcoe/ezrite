@@ -10,7 +10,7 @@ use windows::Media::Ocr::OcrEngine;
 use windows::Storage::{FileAccessMode, StorageFile};
 use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
 
-use crate::ocr_box::{ocr_order, scale, shrink_factor, union, BoxF, OcrChoice};
+use crate::ocr_box::{attempts, ocr_order, scale, shrink_factor, union, Attempt, BoxF, OcrChoice};
 
 #[derive(Serialize)]
 struct LineOut {
@@ -47,25 +47,44 @@ pub fn ocr(path: &str, lang: Option<&str>) -> Result<()> {
     let decoder = BitmapDecoder::CreateAsync(&stream)?.get()?;
     let (width, height) = (decoder.PixelWidth()?, decoder.PixelHeight()?);
 
-    let max_dim = OcrEngine::MaxImageDimension()?;
-    let factor = shrink_factor(width, height, max_dim);
+    let engine = pick_engine(lang)?;
+    // 처음 읽기가 실패하면 작게·알파 없이 다시 그려 한 번 더 (ocr_box::attempts)
+    let [first, retry] = attempts(OcrEngine::MaxImageDimension()?);
+    let lines = match recognize(&decoder, &engine, width, height, first) {
+        Ok(lines) => lines,
+        Err(_) => recognize(&decoder, &engine, width, height, retry)?,
+    };
+
+    let out = OcrOut {
+        lang: engine.RecognizerLanguage()?.LanguageTag()?.to_string(),
+        ko_available: supported("ko"),
+        width,
+        height,
+        lines,
+    };
+    println!("{}", serde_json::to_string(&out).expect("직렬화 실패"));
+    Ok(())
+}
+
+/// 한 번 읽기: 시도 설정대로 다시 그려 인식하고, 줄 좌표를 원래 이미지 픽셀로 되돌린다
+fn recognize(decoder: &BitmapDecoder, engine: &OcrEngine, width: u32, height: u32, at: Attempt) -> Result<Vec<LineOut>> {
+    let factor = shrink_factor(width, height, at.max_dim);
     let transform = BitmapTransform::new()?;
     if factor > 1.0 {
         transform.SetScaledWidth((width as f32 / factor).floor() as u32)?;
         transform.SetScaledHeight((height as f32 / factor).floor() as u32)?;
         transform.SetInterpolationMode(BitmapInterpolationMode::Fant)?;
     }
+    let alpha = if at.ignore_alpha { BitmapAlphaMode::Ignore } else { BitmapAlphaMode::Premultiplied };
     let bitmap = decoder
         .GetSoftwareBitmapTransformedAsync(
             BitmapPixelFormat::Bgra8,
-            BitmapAlphaMode::Premultiplied,
+            alpha,
             &transform,
             ExifOrientationMode::IgnoreExifOrientation,
             ColorManagementMode::DoNotColorManage,
         )?
         .get()?;
-
-    let engine = pick_engine(lang)?;
     let result = engine.RecognizeAsync(&bitmap)?.get()?;
 
     let mut lines = Vec::new();
@@ -79,16 +98,7 @@ pub fn ocr(path: &str, lang: Option<&str>) -> Result<()> {
         let Some(rect) = union(&words) else { continue };
         lines.push(LineOut { text: line.Text()?.to_string(), rect: scale(rect, factor) });
     }
-
-    let out = OcrOut {
-        lang: engine.RecognizerLanguage()?.LanguageTag()?.to_string(),
-        ko_available: supported("ko"),
-        width,
-        height,
-        lines,
-    };
-    println!("{}", serde_json::to_string(&out).expect("직렬화 실패"));
-    Ok(())
+    Ok(lines)
 }
 
 fn supported(tag: &str) -> bool {

@@ -1,7 +1,8 @@
 'use strict';
 
 // "녹음 기록 저장됨" 띠 (맥 1.1.3 SavedBanner). 녹음을 끝낼 때 받아 적은 글이 있었으면(기록이 남았으면) 보이고,
-// 새 녹음을 시작하거나 ✕ 를 누르면 지운다 (맥 Transcriber: start 에서 savedSession = nil, stop 에서 = writer.url)
+// 새 녹음을 시작하거나 ✕·[기록 보기] 를 누르면 지운다 (맥 Transcriber: start 에서 savedSession = nil, stop 에서 = writer.url,
+// 1.1.4 MenuPopover [기록 보기] 에서 = nil)
 
 const path = require('node:path');
 const { isFoldered } = require('./notes');
@@ -20,9 +21,9 @@ function banner(txt) {
   };
 }
 
-/** 다음 띠 상태. event: 'start' | 'stop'(written: 이번 녹음의 기록 파일, 글이 없었으면 null) | 'dismiss' */
+/** 다음 띠 상태. event: 'start' | 'stop'(written: 이번 녹음의 기록 파일, 글이 없었으면 null) | 'dismiss'(✕) | 'open'([기록 보기]) */
 function next(current, { event, written = null }) {
-  if (event === 'start' || event === 'dismiss') return null;
+  if (event === 'start' || event === 'dismiss' || event === 'open') return null;
   if (event === 'stop') return written ? banner(written) : null;
   return current;
 }

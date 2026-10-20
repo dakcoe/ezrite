@@ -138,3 +138,45 @@ struct VisualsShapeTests {
         #expect(GroqClient.asVisualsObject(Data(obj.utf8)) == Data(obj.utf8))
     }
 }
+
+/// 글자 인식이 실패해도(다른 맥에서 "CRImageReaderError 1") 설명은 멈추지 않는다:
+/// 8비트 sRGB 로 다시 그려 한 번, 빠른 인식으로 한 번 더 해 보고, 그래도 안 되면 글자 없이 진행한다
+struct ReadTextFallbackTests {
+    struct Boom: Error {}
+
+    static func image(_ w: Int, _ h: Int) -> CGImage {
+        let c = CGContext(data: nil, width: w, height: h, bitsPerComponent: 16, bytesPerRow: 0,
+                          space: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!,
+                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.floatComponents.rawValue
+                            | CGBitmapInfo.byteOrder16Little.rawValue)!
+        return c.makeImage()!
+    }
+
+    @Test func 처음_인식이_실패하면_8비트_sRGB로_다시_그려_인식한다() throws {
+        var seen: [(bits: Int, fast: Bool)] = []
+        let lines = Explain.readText(Self.image(6000, 3000)) { img, fast in
+            seen.append((img.bitsPerComponent, fast))
+            if seen.count == 1 { throw Boom() }
+            return [Explain.Line(id: 0, text: "ok", box: .zero)]
+        }
+        #expect(lines.map(\.text) == ["ok"])
+        #expect(seen.count == 2)
+        #expect(seen.last?.bits == 8 && seen.last?.fast == false)
+    }
+
+    @Test func 다시_그린_그림은_긴_변이_4096을_넘지_않는다() throws {
+        let img = try #require(Explain.normalized(Self.image(6000, 3000)))
+        #expect(img.width == 4096 && img.height == 2048)
+        #expect(img.bitsPerComponent == 8)
+    }
+
+    @Test func 모두_실패하면_빠른_인식까지_해_보고_빈_목록으로_진행한다() {
+        var fastTried = false
+        let lines = Explain.readText(Self.image(100, 100)) { _, fast in
+            if fast { fastTried = true }
+            throw Boom()
+        }
+        #expect(lines.isEmpty)
+        #expect(fastTried)
+    }
+}

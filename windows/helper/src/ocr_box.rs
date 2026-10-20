@@ -38,6 +38,26 @@ pub fn shrink_factor(width: u32, height: u32, max_dim: u32) -> f32 {
     }
 }
 
+/// 처음 읽기에 실패했을 때 다시 그릴 긴 변 한도
+pub const RETRY_DIM: u32 = 2048;
+
+/// 한 번의 읽기 시도: 긴 변을 `max_dim` 이하로 줄이고(0 이면 그대로), 알파를 무시할지
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Attempt {
+    pub max_dim: u32,
+    pub ignore_alpha: bool,
+}
+
+/// 읽기 시도 순서 (맥 1.1.4 readText 와 같은 원칙): 처음엔 인식기 한도까지 그대로,
+/// 실패하면 더 작게(긴 변 2048 이하) 알파 없이 다시 그려 한 번 더. 그래도 안 되면 앱이 줄 없이 설명한다
+pub fn attempts(engine_max: u32) -> [Attempt; 2] {
+    let retry = if engine_max == 0 { RETRY_DIM } else { engine_max.min(RETRY_DIM) };
+    [
+        Attempt { max_dim: engine_max, ignore_alpha: false },
+        Attempt { max_dim: retry, ignore_alpha: true },
+    ]
+}
+
 /// 글자 인식 언어를 고르는 순서
 #[derive(Debug, Clone, PartialEq)]
 pub enum OcrChoice {
@@ -96,6 +116,19 @@ mod tests {
     #[test]
     fn 빈_목록은_none() {
         assert_eq!(union(&[]), None);
+    }
+
+    #[test]
+    fn 읽기_실패하면_작게_알파없이_한번_더() {
+        // 처음: 인식기 한도까지, 그대로. 실패하면: 긴 변 2048 이하, 알파 무시 (맥 1.1.4: 다시 그려 재시도)
+        assert_eq!(
+            attempts(2600),
+            [Attempt { max_dim: 2600, ignore_alpha: false }, Attempt { max_dim: RETRY_DIM, ignore_alpha: true }]
+        );
+        // 인식기 한도가 더 작으면 그 한도
+        assert_eq!(attempts(1500)[1], Attempt { max_dim: 1500, ignore_alpha: true });
+        // 한도를 모르면(0) 처음은 그대로, 다시 할 때만 2048
+        assert_eq!(attempts(0)[1].max_dim, RETRY_DIM);
     }
 
     #[test]

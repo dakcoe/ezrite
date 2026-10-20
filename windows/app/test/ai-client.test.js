@@ -134,3 +134,68 @@ test('firstWorking: 순위대로 최대 4개 불러 보고 처음 답하는 모�
   assert.equal(none.calls.length, 4);
   assert.deepEqual(await none.c.firstWorking('gemini', ['nano-banana'], 'translate'), { model: null, reason: '맞는 모델이 없습니다' });
 });
+
+// ── 1.1.4: Claude 생각 끄기 재전송 (맥 AI.swift thinkingOffRetry) ──
+// 모델 이름으로 정하지 않는다. disabled 로 보내고, 400 의 설명이 알려 주는 방식으로 한 번만 다시 보낸다
+const SONNET_400 = { type: 'error', error: { type: 'invalid_request_error', message: 'To turn thinking off on this model, send "thinking": {"type": "between_tools"} instead of {"type": "disabled"}.' } };
+const OPUS_400 = { type: 'error', error: { type: 'invalid_request_error', message: '"thinking.type.disabled" is not supported for this model. Use "thinking.type.adaptive" and "output_config.effort" to control thinking behavior.' } };
+const OK = { content: [{ type: 'text', text: 'OK' }], usage: { input_tokens: 3, output_tokens: 1 } };
+
+test('생각 끄기: haiku 처럼 disabled 가 되면 한 번만 보낸다', async () => {
+  const { c, calls } = client(() => respond(200, OK));
+  assert.equal(await c.complete('claude', { model: 'claude-haiku-5-5', prompt: 'p', maxTokens: 2000, think: false }), 'OK');
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].body.thinking, { type: 'disabled' });
+});
+
+test('생각 끄기: 400 "between_tools" (sonnet-5-5) → thinking 만 between_tools 로 바꿔 한 번 더', async () => {
+  const { c, calls, spent } = client((url, init, n) => (n === 1 ? respond(400, SONNET_400) : respond(200, OK)));
+  assert.equal(await c.complete('claude', { model: 'claude-sonnet-5-5', prompt: '번역', maxTokens: 2000, think: false }), 'OK');
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1].body.thinking, { type: 'between_tools' });
+  assert.equal(calls[1].body.output_config, undefined);
+  // 나머지는 그대로
+  assert.deepEqual({ ...calls[1].body, thinking: null }, { ...calls[0].body, thinking: null });
+  assert.equal(spent.length, 1);
+});
+
+test('생각 끄기: 400 "adaptive" (opus-5-5) → adaptive + output_config.effort low 로 한 번 더', async () => {
+  const { c, calls } = client((url, init, n) => (n === 1 ? respond(400, OPUS_400) : respond(200, OK)));
+  assert.equal(await c.complete('claude', { model: 'claude-opus-5-5', prompt: 'p', image: Buffer.from([1]), json: true, maxTokens: 3000, think: false }), 'OK');
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1].body.thinking, { type: 'adaptive' });
+  assert.deepEqual(calls[1].body.output_config, { effort: 'low' });
+});
+
+test('생각 끄기: 다른 400·두 번째 400·생각을 켠 요청·다른 서비스는 다시 보내지 않는다', async () => {
+  const other = client(() => respond(400, { error: { message: 'max_tokens: too large' } }));
+  await assert.rejects(other.c.complete('claude', { model: 'm', prompt: 'p', maxTokens: 9, think: false }), (e) => e.status === 400);
+  assert.equal(other.calls.length, 1);
+  // 설명에 "thinking" 이 없으면 "adaptive" 가 들어 있어도 다시 보내지 않는다 (맥과 같다)
+  const unrelated = client(() => respond(400, { error: { message: 'output_config.effort must be adaptive-compatible' } }));
+  await assert.rejects(unrelated.c.complete('claude', { model: 'm', prompt: 'p', maxTokens: 9, think: false }), (e) => e.status === 400);
+  assert.equal(unrelated.calls.length, 1);
+
+  const twice = client(() => respond(400, SONNET_400));
+  await assert.rejects(twice.c.complete('claude', { model: 'm', prompt: 'p', maxTokens: 9, think: false }), (e) => e.status === 400);
+  assert.equal(twice.calls.length, 2, '재전송은 한 번만');
+
+  const thinking = client(() => respond(400, OPUS_400));
+  await assert.rejects(thinking.c.complete('claude', { model: 'm', prompt: 'p', maxTokens: 9 }), (e) => e.status === 400);
+  assert.equal(thinking.calls.length, 1, '생각을 켠 요청(thinking 없음)은 그대로');
+
+  const gpt = client(() => respond(400, SONNET_400));
+  await assert.rejects(gpt.c.complete('openai', { model: 'gpt-5.5', prompt: 'p', maxTokens: 9, think: false }), (e) => e.status === 400);
+  assert.equal(gpt.calls.length, 1);
+});
+
+test('생각 끄기: 키 확인(check)도 같은 길 — sonnet·opus 가 "쓸 수 없음" 이 아니라 연결됨', async () => {
+  for (const [model, err, want] of [['claude-sonnet-5-5', SONNET_400, { type: 'between_tools' }], ['claude-opus-5-5', OPUS_400, { type: 'adaptive' }]]) {
+    const { c, calls } = client((url, init, n) => (n === 1 ? respond(400, err) : respond(200, OK)));
+    assert.equal(await c.check('claude', model), null, model);
+    assert.deepEqual(calls[1].body.thinking, want);
+    assert.equal(calls[1].body.max_tokens, 16);
+  }
+  const bad = client(() => respond(400, OPUS_400));
+  assert.match(await bad.c.check('claude', 'claude-opus-5-5'), /^400 /);
+});

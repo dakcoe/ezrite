@@ -128,9 +128,20 @@ enum Explain {
 
     /// 화면 글자와 위치. AI 는 좌표를 직접 못 짚어서, 여기서 찾은 줄 번호만 고르게 한다
     /// correct: 맞춤법 보정. 표시 자리만 다시 찾을 때는 꺼서 빠르게 한다 (복잡한 화면에서 약 40% 빠름)
-    static func readText(_ image: CGImage, correct: Bool = true) throws -> [Line] {
+    /// 인식이 실패하면(어떤 맥에서는 "CRImageReaderError 1") 8비트 sRGB 로 다시 그려 한 번, 빠른 인식으로 한 번 더 한다.
+    /// 그래도 안 되면 글자 없이 진행한다: AI 는 그림만 보고 설명하고 화면 표시만 빠진다
+    static func readText(_ image: CGImage, correct: Bool = true,
+                         recognize: ((CGImage, _ fast: Bool) throws -> [Line])? = nil) -> [Line] {
+        let run = recognize ?? { img, fast in try vision(img, fast: fast, correct: correct) }
+        if let lines = try? run(image, false) { return lines }
+        let plain = normalized(image) ?? image
+        if let lines = try? run(plain, false) { return lines }
+        return (try? run(plain, true)) ?? []
+    }
+
+    private static func vision(_ image: CGImage, fast: Bool, correct: Bool) throws -> [Line] {
         let req = VNRecognizeTextRequest()
-        req.recognitionLevel = .accurate
+        req.recognitionLevel = fast ? .fast : .accurate
         req.automaticallyDetectsLanguage = true
         req.usesLanguageCorrection = correct
         try VNImageRequestHandler(cgImage: image).perform([req])
@@ -138,6 +149,18 @@ enum Explain {
             guard let t = o.topCandidates(1).first?.string, !t.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
             return Line(id: i, text: t, box: topLeft(o.boundingBox))
         }
+    }
+
+    /// 8비트 sRGB, 긴 변 4096 이하로 다시 그린다. 줄 위치는 화면 비율이라 크기를 줄여도 그대로다
+    static func normalized(_ image: CGImage, maxSide: Int = 4096) -> CGImage? {
+        let s = min(1, Double(maxSide) / Double(max(image.width, image.height)))
+        let w = Int((Double(image.width) * s).rounded()), h = Int((Double(image.height) * s).rounded())
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+        ctx.interpolationQuality = .high
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage()
     }
 
     // MARK: 표시 자리가 바뀌었나

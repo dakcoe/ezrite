@@ -107,7 +107,8 @@
 </form>
 <script>
   const dark = matchMedia("(prefers-color-scheme: dark)").matches;
-  mermaid.initialize({ startOnLoad: false, theme: dark ? "dark" : "neutral", securityLevel: "strict",
+  // 오래된 macOS(Safari 16.4 전)는 mermaid 안의 정규식(lookbehind)을 못 읽어 mermaid 가 없다. 그래도 설명 글은 그린다
+  window.mermaid?.initialize({ startOnLoad: false, theme: dark ? "dark" : "neutral", securityLevel: "strict",
                        fontFamily: "-apple-system, 'Apple SD Gothic Neo', sans-serif",
                        // 주고받기 그림은 기본 간격이 넓어 카드 폭(420)에 맞추며 통째로 줄어 글씨가 작아진다.
                        // 참여자 상자와 간격을 좁혀 원래 크기에 가깝게 그리고, 글씨는 키운다
@@ -147,7 +148,7 @@
   // 긴 글이 줄바꿈 없이 오면 세 문장마다 문단을 나눈다 (모델이 문단 지시를 안 지킬 때)
   const paragraphs = t => {
     if (t.includes("\n") || t.length < 180) return t;
-    const s = t.split(/(?<=[.?!])\s+(?=\S)/);
+    const s = t.replace(/([.?!])\s+(?=\S)/g, "$1\u0000").split("\u0000");   // lookbehind 없이 (Safari 16.4 전)
     const out = [];
     for (let i = 0; i < s.length; i += 3) out.push(s.slice(i, i + 3).join(" "));
     return out.join("\n\n");

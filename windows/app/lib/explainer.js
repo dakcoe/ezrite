@@ -59,8 +59,17 @@ class Explainer extends EventEmitter {
     return this.card;
   }
 
+  /**
+   * 화면 글자 줄. 읽지 못하면(helper 오류) 빈 목록 — 설명·질문은 그림만으로 계속하고 ①②③ 표시만 빠진다 (맥 1.1.4 readText).
+   * helper 가 먼저 작게 다시 그려 한 번 더 읽어 본다 (win_ocr.rs)
+   */
   async lines(png) {
-    const ocr = await this.ocr(png);
+    let ocr = null;
+    try {
+      ocr = await this.ocr(png);
+    } catch {
+      // 오류로 멈추지 않는다
+    }
     this.lastOcr = ocr;
     return E.linesFromOcr(ocr);
   }
@@ -220,12 +229,7 @@ class Explainer extends EventEmitter {
         if (!thumbs.some((t, i) => E.changed(baseline[i] ?? [], t))) continue;
         baseline = thumbs; // 화면이 그대로면 다음엔 글자를 다시 읽지 않는다
 
-        let lines = [];
-        try {
-          lines = await this.lines(now.png());
-        } catch {
-          // 못 읽으면 못 찾은 것으로
-        }
+        const lines = await this.lines(now.png()); // 못 읽으면 빈 목록 → 못 찾은 것으로
         if (token.cancelled) return;
         const found = E.relocate(targets, lines);
         if (!found) {

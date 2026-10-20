@@ -1289,6 +1289,7 @@ function registerIpc() {
   ipcMain.handle('saved:open', () => {
     const p = state.saved?.path;
     if (!p) return;
+    setState({ saved: Saved.next(state.saved, { event: 'open' }) }); // 확인했으니 띠를 내린다 (맥 1.1.4)
     showMain('history');
     openNote(p);
   });

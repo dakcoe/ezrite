@@ -5,7 +5,9 @@ require('./guard'); // 오류가 나도 화면에 창을 띄우지 않고 종료
 // test/records-ui.test.js 가 부른다. 확인하는 것:
 //   녹음(일시정지·이어 하기 포함) → 저장 폴더/기록이름/ 안에 .txt·.m4a·.times.json 만, 녹음 원본 .pcm 은 m4a 로 바뀌고 없다
 //   "녹음 기록 저장됨" 띠가 팝업·전체 창 맨 위에, [기록 보기] 로 지난 기록에서 그 기록이 열리고 소리가 재생된다
-//   이름 바꾸기 → 폴더째 바뀌고 띠도 따라간다 · 재생 주소로 저장 폴더 밖(..)은 읽지 못한다
+//   1.1.4: [기록 보기] 를 누르면 띠가 두 창 모두에서 내려간다. 녹음을 끝내자마자(m4a 를 만들기 전에) 열어도
+//          m4a 가 생기면 플레이어가 다시 열려 길이가 00:00 이 아니고 줄마다 ▶ 가 생긴다 (맥 audioMerged)
+//   이름 바꾸기 → 폴더째 바뀐다 (내려간 띠는 다시 뜨지 않는다) · 재생 주소로 저장 폴더 밖(..)은 읽지 못한다
 //   새 녹음을 시작하면 띠가 사라지고, 글 없이 끝내면 띠가 뜨지 않는다
 // 지우기(휴지통)는 실제 휴지통을 쓰므로 여기서는 하지 않는다 (test/session-folder.test.js 가 대상을 본다)
 const fs = require('node:fs');
@@ -82,23 +84,20 @@ app.whenReady().then(async () => {
     await ipc('window.ezrite.stopRecord()');
     const folder = path.dirname(firstTxt);
     const name = path.basename(folder);
-    await until(() => fs.existsSync(path.join(folder, `${name}.m4a`)) && !fs.existsSync(path.join(folder, `${name}.pcm`)), 30000);
-    await wait(500);
-    r.root = list(notesDir);
-    r.folder = list(folder);
+    const m4a = path.join(folder, `${name}.m4a`);
     r.name = name;
-
-    r.popupBanner = await bannerOf(popup);
-    r.mainBanner = await bannerOf(main);
+    r.popupBanner = await until(() => bannerOf(popup), 5000);
+    r.mainBanner = await until(() => bannerOf(main), 5000);
 
     // 스크린샷 (EZRITE_RECORDS_SHOTS=<폴더> 일 때만): 저장됨 띠가 뜬 팝업과 전체 창, 바탕색 위에 불투명하게
-    if (process.env.EZRITE_RECORDS_SHOTS) {
+    const shots = Boolean(process.env.EZRITE_RECORDS_SHOTS);
+    if (shots) {
       const { flattenBGRA, hexColor } = require('../lib/png');
       const { themeColors } = require('../lib/ui');
       const { nativeImage } = require('electron');
       const theme = process.env.EZRITE_THEME || 'light';
       const c = themeColors(theme === 'dark');
-      for (const [name, wc, bg] of [['popover', popup, c.popup], ['live', main, c.win]]) {
+      for (const [shot, wc, bg] of [['popover', popup, c.popup], ['live', main, c.win]]) {
         // 숨긴 창은 다시 그리지 않아 마지막 그림이 찍힌다. 다시 그리게 하고 기다린다
         wc.setBackgroundThrottling(false);
         wc.invalidate();
@@ -106,13 +105,25 @@ app.whenReady().then(async () => {
         const img = await wc.capturePage();
         const { width, height } = img.getSize();
         const flat = nativeImage.createFromBitmap(flattenBGRA(img.toBitmap(), hexColor(bg)), { width, height });
-        fs.writeFileSync(path.join(process.env.EZRITE_RECORDS_SHOTS, `saved-${name}-${theme}.png`), flat.toPNG());
+        fs.writeFileSync(path.join(process.env.EZRITE_RECORDS_SHOTS, `saved-${shot}-${theme}.png`), flat.toPNG());
       }
     }
 
-    // [기록 보기] → 전체 창 지난 기록에서 그 기록, 소리 재생
+    // [기록 보기] 를 끝내자마자 누른다 (m4a 를 만드는 중일 때) → 전체 창 지난 기록에서 그 기록, 띠는 내려간다
+    r.m4aAtOpen = fs.existsSync(m4a);
     await popup.executeJavaScript("document.querySelector('.saved-banner .btn.primary').click()");
-    await wait(800);
+    await wait(300);
+    r.bannerAfterOpen = { popup: await bannerOf(popup), main: await bannerOf(main) };
+
+    await until(() => fs.existsSync(m4a) && !fs.existsSync(path.join(folder, `${name}.pcm`)), 30000);
+    await wait(500);
+    r.root = list(notesDir);
+    r.folder = list(folder);
+    // 플레이어가 m4a 로 다시 열렸는가: 길이(맨 끝 시계)가 00:00 이 아니고, 줄마다 ▶
+    const playerNow = () => main.executeJavaScript(`(() => { const c = [...document.querySelectorAll('.note-view .player .clock')];
+      return { duration: c.at(-1)?.textContent ?? null, linePlays: document.querySelectorAll('.note-view .line-play').length }; })()`);
+    r.player = await until(async () => { const v = await playerNow(); return v.duration && !/^0?0:00$/.test(v.duration) ? v : null; }, 10000) ?? await playerNow();
+
     // 기록 화면의 머리(.note-head)가 그 기록으로 열렸는지 본다. 재생기는 DOM 에 없는 <audio> 라서,
     // 소리 주소는 main 의 audioSrc 와 같은 규칙(저장 폴더 기준 상대 경로)으로 만든다
     r.history = await main.executeJavaScript(`({ tab: document.querySelector('.tab.on')?.textContent?.trim(),
@@ -126,7 +137,7 @@ app.whenReady().then(async () => {
       const a = new Audio('ezrite-note://audio/' + p); a.onloadedmetadata = () => res('READ ' + p); a.onerror = () => res('blocked');
       setTimeout(() => res('timeout'), 5000); })))`);
 
-    // 이름 바꾸기: 폴더째, 띠도 따라간다
+    // 이름 바꾸기: 폴더째. [기록 보기] 로 내린 띠는 다시 뜨지 않는다
     await main.executeJavaScript(`window.ezrite.history.rename(${JSON.stringify(firstTxt)}, '1주차')`);
     await wait(500);
     r.renamedRoot = list(notesDir);
@@ -144,8 +155,10 @@ app.whenReady().then(async () => {
     const want = [`${name}.m4a`, `${name}.times.json`, `${name}.txt`];
     r.ok = r.txtCreated && JSON.stringify(r.root) === JSON.stringify([name]) && JSON.stringify(r.folder) === JSON.stringify(want)
       && r.popupBanner?.text === '녹음 기록 저장됨' && r.popupBanner?.place === `autosave › ${name}` && Boolean(r.mainBanner)
+      && r.bannerAfterOpen.popup === null && r.bannerAfterOpen.main === null
+      && !/^0?0:00$/.test(r.player.duration ?? '0:00') && r.player.linePlays > 0 && (shots || r.m4aAtOpen === false)
       && r.play.ok && r.escape.every((x) => x === 'blocked')
-      && r.renamedFolder.length === 3 && r.bannerAfterRename?.place === `autosave › ${name} 1주차`
+      && r.renamedFolder.length === 3 && r.bannerAfterRename === null
       && r.bannerWhileRecording === null && r.bannerNoText === null;
   } catch (e) {
     r.error = e.stack;
