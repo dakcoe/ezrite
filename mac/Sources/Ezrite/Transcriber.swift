@@ -16,23 +16,36 @@ final class AudioPipeline {
     private let onLevel: (Float) -> Void
     private let startOffset: Double
     private var consumed = 0                    // VAD 가 지금까지 읽은 샘플 수
+    private let idleAfter: Double?
+    private let onIdle: (Bool) -> Void
+    private var quietSecs = 0.0
+    private var idle = false
+    private var skipped = 0                     // 쉬는 동안 녹음 파일에 쓰지 않은 샘플 수
+    private var recent: [Float] = []            // 쉬는 동안 버린 마지막 1초. 다시 말할 때 첫 음절 몫을 파일에 되살린다
 
     /// mixing: 앱 소리에 마이크를 섞는다. 그때 마이크는 pushMic, 앱 소리는 pushMain 으로 들어온다
     /// recorder: 섞은 소리를 그대로 원본 파일에 남긴다
     /// startOffset: 이 파이프라인이 시작할 때 녹음 파일에 이미 쌓인 초 (다시 연결·일시정지 뒤에도 시각이 이어지게)
     /// onUtterance(발화, 시작 초, 끝 초): 시각은 녹음 파일 안의 위치다
-    init(mixing: Bool, recorder: Notes.AudioRecorder?, startOffset: Double = 0,
-         onUtterance: @escaping ([Float], Double, Double) -> Void, onLevel: @escaping (Float) -> Void) {
+    /// idleAfter: 말소리가 이만큼(초) 없으면 쉰다(onIdle(true)). 쉬는 동안은 파일에 쓰지 않고, 말이 들리면 onIdle(false) 로 이어 간다
+    init(mixing: Bool, recorder: Notes.AudioRecorder?, startOffset: Double = 0, idleAfter: Double? = nil,
+         onUtterance: @escaping ([Float], Double, Double) -> Void, onLevel: @escaping (Float) -> Void,
+         onIdle: @escaping (Bool) -> Void = { _ in }) {
         self.mixing = mixing
         self.recorder = recorder
         self.startOffset = startOffset
+        self.idleAfter = idleAfter
         self.onUtterance = onUtterance
         self.onLevel = onLevel
+        self.onIdle = onIdle
     }
+
+    /// 앞서 넣은 일이 다 끝난 뒤에 부른다 (테스트용)
+    func sync(_ f: @escaping () -> Void) { q.async(execute: f) }
 
     /// 방금 끝난 발화의 녹음 파일 안 위치
     private func emit(_ u: [Float]) {
-        let end = startOffset + Double(consumed - vad.carried) / sampleRate
+        let end = startOffset + Double(consumed - skipped - vad.carried) / sampleRate
         onUtterance(u, end - Double(u.count) / sampleRate, end)
     }
 
@@ -51,6 +64,7 @@ final class AudioPipeline {
     /// 정지할 때 모으던 발화도 내보낸다
     func finish() {
         q.async {
+            if !self.idle { self.recorder?.write(self.pending) }   // 블록이 안 찬 꼬리
             if let u = self.vad.flush() { self.emit(u) }
             self.pending = []
             self.micBuf = []
@@ -65,7 +79,6 @@ final class AudioPipeline {
             for i in 0..<n { s[i] += micBuf[i] }
             micBuf.removeFirst(n)
         }
-        recorder?.write(s)
         pending += s
         var start = 0
         while pending.count - start >= VAD.blockSize {
@@ -77,7 +90,29 @@ final class AudioPipeline {
                 onLevel(VAD.rms(block))
             }
             consumed += VAD.blockSize
-            if let u = vad.feed(block) { emit(u) }
+            let u = vad.feed(block)
+            if idle {
+                recent += block
+                if recent.count > Int(sampleRate) { recent.removeFirst(recent.count - Int(sampleRate)) }
+                skipped += VAD.blockSize
+                if vad.inSpeech {                            // 다시 말한다: 발화 앞머리부터 파일에 이어 쓴다
+                    let back = min(vad.carried, recent.count)
+                    recorder?.write(Array(recent.suffix(back)))
+                    skipped -= back
+                    recent = []
+                    idle = false
+                    quietSecs = 0
+                    onIdle(false)
+                }
+            } else {
+                recorder?.write(block)
+                quietSecs = vad.inSpeech || u != nil ? 0 : quietSecs + VAD.blockSecs
+                if let limit = idleAfter, quietSecs >= limit {
+                    idle = true
+                    onIdle(true)
+                }
+            }
+            if let u { emit(u) }
         }
         pending.removeFirst(start)
     }
@@ -101,6 +136,8 @@ final class Transcriber {
     private var activity: NSObjectProtocol?
     private var restarts = 0
     private var pausedClock = ""
+    private var quietClock = ""
+    static let quietPauseSecs = 30.0
     private var untranslated: [UUID] = []       // 번역을 기다리는 줄
     private var times: [[Double]] = []          // 글 줄마다 녹음 위치 (.times.json)
     private var translating = false
@@ -160,6 +197,7 @@ final class Transcriber {
         guard state.listening else { return }
         state.listening = false
         state.paused = false
+        state.quietPaused = false
         state.startedAt = nil
         state.recordedBefore = 0
         stopCapture()
@@ -202,10 +240,26 @@ final class Transcriber {
         addGap("── \(Notes.timestamp()) 인식 언어 → \(state.language)")
     }
 
+    /// 말소리가 30초 없어 저절로 쉬거나(파일에 쓰지 않음, 시계 멈춤) 말이 다시 들려 이어 간다
+    private func quietChanged(_ quiet: Bool) {
+        guard state.listening, !state.paused else { return }
+        if quiet {
+            state.quietPaused = true
+            state.recordedBefore += state.startedAt.map { Date().timeIntervalSince($0) } ?? 0
+            state.startedAt = nil
+            quietClock = Notes.timestamp()
+        } else {
+            state.quietPaused = false
+            state.startedAt = Date()
+            addGap("── \(quietClock)–\(Notes.timestamp()) 말소리가 없어 자동 일시정지")
+        }
+    }
+
     /// 듣기만 멈춘다. 받아쓰기 파일과 소리 파일은 열어 둔 채라 이어 하면 같은 세션에 이어 쓴다
     func pause() {
         guard state.listening, !state.paused else { return }
         state.paused = true
+        state.quietPaused = false
         state.recordedBefore += state.startedAt.map { Date().timeIntervalSince($0) } ?? 0
         state.startedAt = nil
         pausedClock = Notes.timestamp()
@@ -238,13 +292,19 @@ final class Transcriber {
     }
 
     private func startCapture(source: AudioSource, mixMic: Bool) async throws {
+        // 새 파이프라인은 쉬지 않은 채 시작한다. 쉬던 중(출처 바꿈·다시 연결)이면 여기서 쉬기를 끝내야 시계가 다시 간다
+        if state.quietPaused { quietChanged(false) }
         let p = AudioPipeline(
             mixing: mixMic, recorder: recorder, startOffset: recorder?.seconds ?? 0,
+            idleAfter: state.autoPauseQuiet ? Self.quietPauseSecs : nil,
             // main 큐는 넣은 순서대로 돈다. Task 로 넘기면 발화 순서가 뒤바뀔 수 있다
             onUtterance: { [weak self] u, start, end in
                 DispatchQueue.main.async { MainActor.assumeIsolated { self?.enqueue(u, time: start...end) } }
             },
-            onLevel: { [weak self] l in Task { @MainActor in self?.state.level = l } })
+            onLevel: { [weak self] l in Task { @MainActor in self?.state.level = l } },
+            onIdle: { [weak self] quiet in
+                DispatchQueue.main.async { MainActor.assumeIsolated { self?.quietChanged(quiet) } }
+            })
         pipeline = p
 
         if DevFeed.file != nil {

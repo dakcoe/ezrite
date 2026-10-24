@@ -13,6 +13,7 @@ final class AppState: ObservableObject {
     @Published var budget = Budget.load()           // 하루 토큰·음성 시간 (앱이 직접 센다)
     @Published var explaining = false          // "설명해줘" 진행 중
     @Published var paused = false              // 세션은 열려 있고 듣기만 멈춘 상태
+    @Published var quietPaused = false         // 말소리가 없어 저절로 쉬는 중. 소리는 계속 듣다가 말이 들리면 이어 간다
     @Published var startedAt: Date?            // 지금 듣기를 시작한 때. 일시정지 중엔 nil
     @Published var recordedBefore: TimeInterval = 0   // 일시정지 전까지 들은 시간
     @Published var entries: [Entry] = []
@@ -130,6 +131,9 @@ final class AppState: ObservableObject {
     }
 
     /// 녹음 버튼을 누를 때마다 소리 출처·인식 언어를 먼저 고른다
+    @Published var autoPauseQuiet: Bool = defaults.object(forKey: "autoPauseQuiet") as? Bool ?? true {
+        didSet { Self.defaults.set(autoPauseQuiet, forKey: "autoPauseQuiet") }
+    }
     @Published var askBeforeRecord: Bool = defaults.object(forKey: "askBeforeRecord") as? Bool ?? true {
         didSet { Self.defaults.set(askBeforeRecord, forKey: "askBeforeRecord") }
     }

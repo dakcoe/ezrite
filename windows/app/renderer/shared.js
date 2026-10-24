@@ -89,19 +89,22 @@
     function update(s) {
       const recording = s.listening && !s.paused;
       explain.update(s);
-      dot.className = `dot${s.paused ? ' paused' : s.listening ? ' rec' : ''}`;
+      dot.className = `dot${s.paused || s.quietPaused ? ' paused' : s.listening ? ' rec' : ''}`;
       clearInterval(timer);
       const paint = () => {
         if (s.startedAt) {
           line1Text.textContent = `녹음 중 ${F.clock(s.recordedBefore + (Date.now() - s.startedAt) / 1000)}`;
         } else if (s.paused) {
           line1Text.textContent = `일시정지 ${F.clock(s.recordedBefore)}`;
+        } else if (s.quietPaused) {
+          // 조용해서 저절로 쉬는 중: 시계는 멈춰 있고, 말이 다시 들리면 이어 간다 (1.1.5)
+          line1Text.textContent = `조용함 · 자동 일시정지 ${F.clock(s.recordedBefore)}`;
         } else {
           line1Text.textContent = '대기 중';
         }
       };
       paint();
-      line1Text.className = s.startedAt || s.paused ? 'time' : '';
+      line1Text.className = s.startedAt || s.paused || s.quietPaused ? 'time' : '';
       if (s.startedAt) timer = setInterval(paint, 1000);
       line2.textContent = F.sourceLine({ sourceLabel: sourceOf(s)?.label, language: s.language, notice: s.notice });
       wave.classList.toggle('hidden', !recording);

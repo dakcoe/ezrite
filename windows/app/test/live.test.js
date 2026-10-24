@@ -53,7 +53,7 @@ function fakeGroq(texts = ['first sentence here', 'second sentence here', 'third
   };
 }
 
-function setup({ hasKey = true, texts, failOpen, language = 'en', restarter } = {}) {
+function setup({ hasKey = true, texts, failOpen, language = 'en', restarter, quietAfter, clock } = {}) {
   const groq = fakeGroq(texts);
   const transcriber = new Transcriber({ groq, language: () => language, clock: () => new Date(2026, 9, 17, 9, 30, 0) });
   const source = fakeSource({ failOpen });
@@ -64,6 +64,8 @@ function setup({ hasKey = true, texts, failOpen, language = 'en', restarter } = 
     hasKey: () => hasKey,
     now: () => t,
     restarter: restarter ?? new CaptureRestarter({ sleep: async () => {} }),
+    ...(quietAfter ? { quietAfter } : {}),
+    ...(clock ? { clock } : {}),
   });
   const notices = [];
   session.on('notice', (m) => notices.push(m));
@@ -301,4 +303,113 @@ test('[mac switchSource] 녹음 중에 "내 목소리도 함께"를 바꾸면 �
   const gaps = transcriber.entries.filter((e) => e.kind === 'gap').map((e) => e.original);
   assert.deepEqual(gaps, ['── 09:05:00 소리 출처 → chrome + 마이크', '── 09:05:00 소리 출처 → chrome']);
   s.stop();
+});
+
+// ── 1.1.5 조용하면 자동 일시정지 (맥 Transcriber.quietChanged) ──
+
+/** 시계를 손으로 돌리는 세션: 소리를 흘릴 때마다 그 길이만큼 시간도 간다 */
+function quietSetup(on = true) {
+  let wall = new Date(2026, 9, 24, 13, 2, 0).getTime();
+  const r = setup({ quietAfter: () => (on ? 30 : null), clock: () => new Date(wall) });
+  const recorded = [];
+  r.session.on('record', (b) => recorded.push(b));
+  const play = (buf) => {
+    for (let i = 0; i < buf.length; i += 3200) { // 0.1초씩
+      const part = buf.subarray(i, i + 3200);
+      r.advance(part.length / 2 / SR * 1000);
+      wall += part.length / 2 / SR * 1000;
+      r.source.last().cb.onData(part);
+    }
+  };
+  return { ...r, recorded, play, skip: (secs) => { wall += secs * 1000; }, fileSecs: () => Buffer.concat(recorded).length / 2 / SR };
+}
+
+test('말소리가 30초 없으면 쉰다: 시계가 멈추고, 말이 다시 들리면 이어 가며 쉰 자리를 남긴다', async () => {
+  const { session, transcriber, play, fileSecs } = quietSetup();
+  session.start({ pid: 1 });
+  play(Buffer.concat([silence(0.5), speech(2)]));
+  play(silence(33)); // 2.5초 뒤 발화가 끊기고(2초), 30초 더 → 34.5초에 쉰다
+  assert.equal(session.state.quietPaused, true);
+  assert.equal(session.state.startedAt, null);
+  assert.ok(Math.abs(session.state.recordedBefore - 34.5) < 0.2, `쉬기 전까지 ${session.state.recordedBefore}초`);
+  assert.equal(session.state.paused, false, '수동 일시정지와 다르다');
+  const quietAt = session.state.recordedBefore;
+
+  play(silence(180)); // 3분 더 조용
+  assert.equal(session.state.quietPaused, true);
+  assert.equal(session.state.recordedBefore, quietAt, '쉬는 동안 시계는 그대로');
+
+  play(Buffer.concat([speech(2), silence(2.5)]));
+  assert.equal(session.state.quietPaused, false);
+  assert.ok(session.state.startedAt != null, '시계가 다시 간다');
+  await transcriber.idle();
+  const gaps = transcriber.entries.filter((e) => e.kind === 'gap').map((e) => e.original);
+  assert.equal(gaps.length, 1);
+  assert.match(gaps[0], /^── 13:02:3[45]–13:05:3[56] 말소리가 없어 자동 일시정지$/);
+  assert.equal(transcriber.entries.filter((e) => e.kind === 'text').length, 2);
+  // 파일: 쉬기 전 34.5초 + 다시 말한 0.3초 앞부터 끝까지
+  assert.ok(Math.abs(fileSecs() - (34.5 + 0.21 + 4.5)) < 0.2, `파일 ${fileSecs()}초`);
+  // 기록의 시각은 파일 위치: 두 번째 줄은 쉬기 직전 자리 바로 뒤
+  const second = transcriber.times[1];
+  assert.ok(second[0] > 34.4 && second[0] < 34.7, `두 번째 줄 ${second[0]}초`);
+  session.stop();
+  assert.equal(session.state.quietPaused, false);
+});
+
+test('자동 일시정지를 끄면 조용해도 쉬지 않는다 (지금과 같다)', () => {
+  const { session, play, fileSecs } = quietSetup(false);
+  session.start({ pid: 1 });
+  play(Buffer.concat([silence(0.5), speech(2), silence(40)]));
+  assert.equal(session.state.quietPaused, false);
+  assert.ok(session.state.startedAt != null);
+  assert.ok(Math.abs(fileSecs() - 42.5) < 0.05);
+  session.stop();
+});
+
+test('쉬는 중에 ⏸ 를 누르면 수동 일시정지가 되고, 이어 해도 자동 일시정지 줄은 남기지 않는다', async () => {
+  const { session, transcriber, play, source } = quietSetup();
+  session.start({ pid: 1 });
+  play(Buffer.concat([silence(0.5), speech(2), silence(33)]));
+  assert.equal(session.state.quietPaused, true);
+  session.pause();
+  assert.equal(session.state.quietPaused, false);
+  assert.equal(session.state.paused, true);
+  session.resume();
+  assert.equal(source.opened.length, 2);
+  play(silence(1));
+  await transcriber.idle();
+  const gaps = transcriber.entries.filter((e) => e.kind === 'gap').map((e) => e.original);
+  assert.equal(gaps.length, 1);
+  assert.match(gaps[0], /일시정지 후 이어서 녹음$/);
+  session.stop();
+});
+
+test('쉬는 중에 소리가 끊겨 다시 붙이면 쉬던 것을 거기서 끝낸다 (시계가 다시 간다)', async () => {
+  const { session, transcriber, play, source } = quietSetup();
+  session.start({ pid: 1 });
+  play(Buffer.concat([silence(0.5), speech(2), silence(33)]));
+  assert.equal(session.state.quietPaused, true);
+  await source.last().cb.onEnd('장치 빠짐');
+  assert.equal(session.state.quietPaused, false);
+  assert.ok(session.state.startedAt != null);
+  const gaps = transcriber.entries.filter((e) => e.kind === 'gap').map((e) => e.original);
+  assert.equal(gaps.length, 3);
+  assert.match(gaps[0], /말소리가 없어 자동 일시정지$/);
+  assert.match(gaps[1], /소리가 끊겼습니다/);
+  assert.match(gaps[2], /다시 연결됨$/);
+  session.stop();
+});
+
+test('녹음 중 설정을 끄면 쉬던 것을 바로 이어 간다', () => {
+  let on = true;
+  const r = setup({ quietAfter: () => (on ? 30 : null) });
+  r.session.start({ pid: 1 });
+  r.source.last().cb.onData(Buffer.concat([silence(0.5), speech(2), silence(33)]));
+  assert.equal(r.session.state.quietPaused, true);
+  on = false;
+  r.session.quietSettingChanged();
+  assert.equal(r.session.state.quietPaused, false);
+  r.source.last().cb.onData(silence(40));
+  assert.equal(r.session.state.quietPaused, false);
+  r.session.stop();
 });

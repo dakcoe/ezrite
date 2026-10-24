@@ -173,27 +173,67 @@ Object.assign(VAD, {
  *
  * onUtterance({ samples, start, end }): 시각(초)은 녹음 파일 안의 위치다
  * onLevel(rms): 90ms 마다 파형 갱신용
+ * onRecord(s16le Buffer): 녹음 파일에 쓸 소리. 받은 그대로 블록마다 내보내되, 쉬는 동안은 내보내지 않는다
+ * onIdle(true/false): 조용해서 쉬기 시작함 / 말이 다시 들려 이어 감
+ * idleAfter: 말소리가 이만큼(초) 없으면 쉰다 (1.1.5 조용하면 자동 일시정지). null 이면 쉬지 않는다
  * startOffset: 이 스트림이 시작할 때 녹음 파일에 이미 쌓인 초 (다시 연결·일시정지 뒤에도 시각이 이어지게)
  *
  * 맥의 마이크 섞기(pushMic)는 옮기지 않았다. Windows helper 는 한 번에 소스 하나만 받는다.
  */
 class VadStream {
-  constructor({ onUtterance = () => {}, onLevel = () => {}, startOffset = 0 } = {}) {
+  constructor({
+    onUtterance = () => {}, onLevel = () => {}, onRecord = () => {}, onIdle = () => {}, idleAfter = null, startOffset = 0,
+  } = {}) {
     this.vad = new VAD();
     this.onUtterance = onUtterance;
     this.onLevel = onLevel;
+    this.onRecord = onRecord;
+    this.onIdle = onIdle;
+    this.idleAfter = idleAfter;
     this.startOffset = startOffset;
     this.carry = Buffer.alloc(0); // 홀수 바이트로 끊긴 나머지
     this.pending = new Float32Array(BLOCK_SIZE);
     this.pendingLen = 0;
     this.blocksSinceLevel = 0;
     this.consumed = 0; // VAD 가 지금까지 읽은 샘플 수
+    this.written = 0; // 녹음 파일에 내보낸 샘플 수
+    // 쉬기: 말소리 없이 지난 초, 쉬면서 파일에 안 쓴 샘플 수, 쉬는 동안 마지막 1초 (말이 다시 시작될 때 앞머리를 살린다)
+    this.idle = false;
+    this.quietSecs = 0;
+    this.skipped = 0;
+    this.recent = new Float32Array(0);
   }
 
   emit(samples) {
-    // 강제 끊김 뒤 VAD 가 아직 들고 있는(다음 발화로 넘긴) 샘플만큼 끝이 앞당겨진다
-    const end = this.startOffset + (this.consumed - this.vad.heldSamples) / SAMPLE_RATE;
+    // 강제 끊김 뒤 VAD 가 아직 들고 있는(다음 발화로 넘긴) 샘플만큼 끝이 앞당겨진다. 쉬면서 안 쓴 샘플은 파일에 없다
+    const end = this.startOffset + (this.consumed - this.skipped - this.vad.heldSamples) / SAMPLE_RATE;
     this.onUtterance({ samples, start: end - samples.length / SAMPLE_RATE, end });
+  }
+
+  record(samples) {
+    if (samples.length === 0) return;
+    const b = Buffer.alloc(samples.length * 2);
+    // samples 는 s16 / 32768 이라 곱하면 받은 값 그대로다
+    for (let i = 0; i < samples.length; i++) b.writeInt16LE(Math.round(samples[i] * 32768), i * 2);
+    this.written += samples.length;
+    this.onRecord(b);
+  }
+
+  /** 녹음 중에 설정을 바꿨을 때. 끄면 쉬던 것을 바로 이어 간다 (그동안 안 쓴 소리는 되살리지 않는다) */
+  setIdleAfter(secs) {
+    this.idleAfter = secs;
+    this.quietSecs = 0;
+    if (secs == null && this.idle) this.wake(0);
+  }
+
+  /** 쉬기를 끝낸다. 파일에는 쉬는 동안 받은 마지막 back 샘플부터 다시 쓴다 */
+  wake(back) {
+    this.record(this.recent.subarray(this.recent.length - back));
+    this.skipped -= back;
+    this.recent = new Float32Array(0);
+    this.idle = false;
+    this.quietSecs = 0;
+    this.onIdle(false);
   }
 
   /** s16le 바이트 조각을 넣는다 */
@@ -219,13 +259,31 @@ class VadStream {
     }
     this.consumed += BLOCK_SIZE;
     const u = this.vad.feed(block);
+    if (this.idle) {
+      const keep = Math.min(SAMPLE_RATE, this.recent.length + BLOCK_SIZE);
+      const recent = new Float32Array(keep);
+      recent.set(this.recent.subarray(this.recent.length - (keep - BLOCK_SIZE)));
+      recent.set(block, keep - BLOCK_SIZE);
+      this.recent = recent;
+      this.skipped += BLOCK_SIZE;
+      // 말이 시작되면 VAD 가 들고 있는 앞머리(약 0.3초)부터 다시 쓴다. 첫 음절이 잘리지 않게
+      if (this.vad.inSpeech) this.wake(Math.min(this.vad.heldSamples, this.recent.length));
+    } else {
+      this.record(block);
+      this.quietSecs = this.vad.inSpeech || u ? 0 : this.quietSecs + BLOCK_SECS;
+      if (this.idleAfter != null && this.quietSecs >= this.idleAfter) {
+        this.idle = true;
+        this.onIdle(true);
+      }
+    }
     if (u) this.emit(u);
   }
 
-  /** 정지할 때 모으던 발화도 내보낸다. 블록이 안 된 나머지는 버린다 (맥과 같다) */
+  /** 정지할 때 모으던 발화도 내보낸다. 블록이 안 된 나머지는 VAD 에 넣지 않고 녹음 파일에만 쓴다 (쉬는 중이면 안 쓴다. 맥과 같다) */
   finish() {
     const u = this.vad.flush();
     if (u) this.emit(u);
+    if (!this.idle) this.record(this.pending.subarray(0, this.pendingLen));
     this.pendingLen = 0;
     this.carry = Buffer.alloc(0);
   }

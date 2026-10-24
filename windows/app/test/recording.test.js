@@ -89,11 +89,20 @@ test('parseRange: bytes=a-b, a-, -n 과 범위 밖', () => {
 test('설정: 없으면 기본값, 저장한 값은 다음에 그대로', () => {
   const file = path.join(tempDir(), 'Ezrite', 'settings.json');
   assert.deepEqual(Settings.load(file), Settings.DEFAULTS);
-  Settings.save(file, { ...Settings.DEFAULTS, language: 'English', notesFolder: 'D:\\수업', options: { autoTranslate: false, askBeforeRecord: true, includeMic: true } });
+  Settings.save(file, { ...Settings.DEFAULTS, language: 'English', notesFolder: 'D:\\수업', options: { autoTranslate: false, askBeforeRecord: true, includeMic: true, autoPauseQuiet: false } });
   const s = Settings.load(file);
   assert.equal(s.language, 'English');
   assert.equal(s.notesFolder, 'D:\\수업');
-  assert.deepEqual(s.options, { autoTranslate: false, askBeforeRecord: true, includeMic: true });
+  assert.deepEqual(s.options, { autoTranslate: false, askBeforeRecord: true, includeMic: true, autoPauseQuiet: false });
+});
+
+test('설정: 조용하면 자동 일시정지(1.1.5)는 기본 켜짐. 전에 저장한 설정 파일에 없어도 켜짐', () => {
+  assert.equal(Settings.DEFAULTS.options.autoPauseQuiet, true);
+  const file = path.join(tempDir(), 'settings.json');
+  fs.writeFileSync(file, JSON.stringify({ options: { autoTranslate: false, askBeforeRecord: false, includeMic: false } }));
+  assert.deepEqual(Settings.load(file).options, { autoTranslate: false, askBeforeRecord: false, includeMic: false, autoPauseQuiet: true });
+  fs.writeFileSync(file, JSON.stringify({ options: { autoPauseQuiet: 'no' } }));
+  assert.equal(Settings.load(file).options.autoPauseQuiet, true, '참/거짓이 아니면 기본값');
 });
 
 test('설정: AI 지침은 글 그대로 남기고, 글이 아니면 빈 글, 너무 길면 자른다', () => {

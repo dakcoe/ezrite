@@ -413,6 +413,10 @@ struct StatusHeader<Extra: View>: View {
                                 .font(.system(size: 13.5, weight: .semibold)).monospacedDigit()
                                 .fixedSize()
                         }
+                    } else if state.quietPaused {
+                        Text("조용함 · 자동 일시정지 " + Self.clock(state.recordedBefore))
+                            .font(.system(size: 13.5, weight: .semibold)).monospacedDigit()
+                            .help("말소리가 30초 동안 없어 잠시 멈췄습니다. 말이 다시 들리면 이어서 녹음합니다")
                     } else if state.paused {
                         Text("일시정지 " + Self.clock(state.recordedBefore))
                             .font(.system(size: 13.5, weight: .semibold)).monospacedDigit()
@@ -599,6 +603,9 @@ private struct SettingsPage: View {
                 ToggleCard(icon: "globe", title: "자동 번역",
                            detail: "영어·일본어 강의를 한국어로 옮겨 아래 줄에 붙입니다. 쓰는 AI 는 아래 기능별 AI 에서 고릅니다.",
                            isOn: $state.autoTranslate)
+                ToggleCard(icon: "pause.circle", title: "조용하면 자동 일시정지",
+                           detail: "말소리가 30초 동안 없으면 잠시 멈추고, 다시 들리면 같은 기록에 이어서 녹음합니다. 쉬는 동안은 녹음 파일에 넣지 않습니다.",
+                           isOn: $state.autoPauseQuiet)
                 ToggleCard(icon: "slider.horizontal.3", title: "녹음할 때마다 묻기",
                            detail: "녹음 버튼을 누르면 소리 출처와 인식 언어를 먼저 고릅니다.",
                            isOn: $state.askBeforeRecord)

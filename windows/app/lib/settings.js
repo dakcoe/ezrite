@@ -52,7 +52,8 @@ const DEFAULTS = Object.freeze({
   userGuide: '', // AI 지침: ✨ 설명과 질문 답에 함께 들어간다 (맥 userGuide)
   theme: 'system',
   welcomed: false, // 처음 한 번 팝업과 사용 가이드를 보여줬나 (맥 welcomed)
-  options: Object.freeze({ autoTranslate: true, askBeforeRecord: true, includeMic: false }),
+  // autoPauseQuiet: 말소리가 30초 없으면 녹음을 저절로 쉬고, 다시 들리면 이어 간다 (1.1.5, 맥 autoPauseQuiet)
+  options: Object.freeze({ autoTranslate: true, askBeforeRecord: true, includeMic: false, autoPauseQuiet: true }),
   ai: AI_DEFAULTS,
 });
 

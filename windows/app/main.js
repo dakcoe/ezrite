@@ -87,11 +87,12 @@ const state = {
   languages: ['한국어', 'English', '日本語'],
   listening: false,
   paused: false,
+  quietPaused: false, // 조용해서 저절로 쉬는 중 (1.1.5). 수동 일시정지(paused)와 따로
   startedAt: null,
   recordedBefore: 0,
   notice: null,
   error: null,
-  options: { autoTranslate: true, askBeforeRecord: true, includeMic: false },
+  options: { autoTranslate: true, askBeforeRecord: true, includeMic: false, autoPauseQuiet: true },
   compact: false,
   page: 'live',
   entries: [],
@@ -385,7 +386,12 @@ if (dev.demoScript) {
   }
 }
 
-const session = new LiveSession({ transcriber, openSource: openSourceFor(), hasKey });
+// 조용하면 자동 일시정지 (1.1.5): 말소리가 30초 없으면 쉰다. 시연 대본은 소리가 무음이라 쓰지 않는다
+const QUIET_SECS = 30;
+const session = new LiveSession({
+  transcriber, openSource: openSourceFor(), hasKey,
+  quietAfter: () => (state.options.autoPauseQuiet && !dev.demoScript ? QUIET_SECS : null),
+});
 session.on('start', () => demo?.reset());
 session.on('change', (patch) => setState(patch));
 session.on('notice', (message) => showNotice(message));
@@ -452,7 +458,8 @@ session.on('start', () => {
   }
   setState({ liveSession: null });
 });
-session.on('pcm', (chunk) => pcmFile?.write(chunk));
+// 받은 조각 그대로이되, 조용해서 쉬는 동안은 오지 않는다 (LiveSession 'record')
+session.on('record', (chunk) => pcmFile?.write(chunk));
 session.on('stop', () => {
   // 받아 적은 글이 있을 때만 (없으면 기록이 남지 않는다) — 맥 Transcriber.stop 의 savedSession = writer.url
   setState({ saved: Saved.next(state.saved, { event: 'stop', written: writer?.path ?? null }) });
@@ -910,6 +917,7 @@ function applyPatch(patch) {
   }
   const sourceChanged = next.sourceId && next.sourceId !== state.sourceId;
   const includeMicBefore = state.options.includeMic;
+  const quietBefore = state.options.autoPauseQuiet;
   const languageChanged = next.language && next.language !== state.language;
   setState(next);
   if (next.sourceId || next.language || next.options || next.userGuide != null || next.theme) persistSettings();
@@ -932,6 +940,8 @@ function applyPatch(patch) {
     }
   }
   if (languageChanged) session.languageChanged(state.language);
+  // 녹음 중에 끄면 쉬던 것을 바로 이어 가고, 켜면 그때부터 30초를 센다
+  if (next.options && next.options.autoPauseQuiet !== quietBefore) session.quietSettingChanged();
   if (typeof next.compact === 'boolean') resizePopup();
 }
 

@@ -7,8 +7,12 @@
 // openSource(args, { onData(chunk: s16le Buffer), onEnd(message) }) → { stop() }
 //   onEnd 는 출처가 저절로 끝났을 때만 부른다 (stop() 으로 멈춘 때는 부르지 않는다).
 //
-// 이벤트: change(바뀐 상태 일부) · notice(위쪽 줄에 잠깐 띄울 글) · pcm(받은 조각 — 소리 크기 막대·녹음 파일용)
+// 이벤트: change(바뀐 상태 일부) · notice(위쪽 줄에 잠깐 띄울 글) · pcm(받은 조각 — 소리 크기 막대용)
+//         record(녹음 파일에 쓸 조각 — 조용해서 쉬는 동안은 오지 않는다)
 //         start · stop (녹음 하나의 처음과 끝 — 기록 파일을 만들고 소리 파일을 마무리하는 자리)
+//
+// quietAfter(): 말소리가 이만큼(초) 없으면 저절로 쉰다 (1.1.5 조용하면 자동 일시정지). null 이면 쉬지 않는다.
+//   쉬는 동안(state.quietPaused) 시계가 멈추고 파일에 쓰지 않는다. 수동 일시정지(paused)와는 따로다
 
 const { EventEmitter } = require('node:events');
 const { VadStream } = require('./vad');
@@ -33,21 +37,25 @@ function usageFooter(usage, budget = new Budget(), now = Date.now(), paid = {}) 
 }
 
 class LiveSession extends EventEmitter {
-  constructor({ transcriber, openSource, hasKey, restarter = new CaptureRestarter(), now = () => Date.now(), clock = () => new Date() }) {
+  constructor({
+    transcriber, openSource, hasKey, restarter = new CaptureRestarter(), quietAfter = () => null, now = () => Date.now(), clock = () => new Date(),
+  }) {
     super();
     this.transcriber = transcriber;
     this.openSource = openSource;
     this.hasKey = hasKey;
     this.restarter = restarter;
+    this.quietAfter = quietAfter;
     this.now = now;
     this.clock = clock;
     this.state = {
-      listening: false, paused: false, startedAt: null, recordedBefore: 0, entries: [], inflight: 0, error: null,
+      listening: false, paused: false, quietPaused: false, startedAt: null, recordedBefore: 0, entries: [], inflight: 0, error: null,
     };
     this.args = null;
     this.capture = null; // { handle, vad } — 지금 열려 있는 출처
     this.offset = 0; // 녹음 파일 안 위치(초). 다시 붙이거나 이어 해도 시각이 이어지게
     this.pausedClock = '';
+    this.quietClock = '';
 
     const entries = () => this.set({ entries: viewEntries(transcriber.entries) });
     transcriber.on('entry', entries);
@@ -75,7 +83,7 @@ class LiveSession extends EventEmitter {
     this.args = args;
     this.offset = 0;
     this.set({
-      listening: true, paused: false, startedAt: this.now(), recordedBefore: 0, entries: [], inflight: 0, error: null,
+      listening: true, paused: false, quietPaused: false, startedAt: this.now(), recordedBefore: 0, entries: [], inflight: 0, error: null,
     });
     this.emit('start');
     try {
@@ -92,7 +100,7 @@ class LiveSession extends EventEmitter {
   stop() {
     if (!this.state.listening) return;
     this.close();
-    this.set({ listening: false, paused: false, startedAt: null, recordedBefore: 0 });
+    this.set({ listening: false, paused: false, quietPaused: false, startedAt: null, recordedBefore: 0 });
     this.emit('stop');
   }
 
@@ -102,7 +110,25 @@ class LiveSession extends EventEmitter {
     const ran = this.state.startedAt == null ? 0 : (this.now() - this.state.startedAt) / 1000;
     this.pausedClock = timestamp(this.clock());
     this.close();
-    this.set({ paused: true, startedAt: null, recordedBefore: this.state.recordedBefore + ran });
+    this.set({ paused: true, quietPaused: false, startedAt: null, recordedBefore: this.state.recordedBefore + ran });
+  }
+
+  /** 조용해서 쉬기 시작함(true) / 말이 다시 들려 이어 감(false). 맥 Transcriber.quietChanged */
+  quietChanged(quiet) {
+    if (!this.state.listening || this.state.paused || quiet === this.state.quietPaused) return;
+    if (quiet) {
+      const ran = this.state.startedAt == null ? 0 : (this.now() - this.state.startedAt) / 1000;
+      this.quietClock = timestamp(this.clock());
+      this.set({ quietPaused: true, startedAt: null, recordedBefore: this.state.recordedBefore + ran });
+    } else {
+      this.set({ quietPaused: false, startedAt: this.now() });
+      this.transcriber.addGap(gap.quietPaused(this.quietClock, this.clock()));
+    }
+  }
+
+  /** 녹음 중에 설정을 바꿨을 때: 지금 스트림에 바로 반영한다 (끄면 쉬던 것을 이어 간다) */
+  quietSettingChanged() {
+    this.capture?.vad.setIdleAfter(this.quietAfter());
   }
 
   resume(args) {
@@ -140,11 +166,17 @@ class LiveSession extends EventEmitter {
   }
 
   open() {
+    // 쉬던 중에 출처를 다시 붙이면 새 스트림은 쓰면서 시작한다. 쉰 자리는 여기서 끝낸다
+    this.quietChanged(false);
+    const capture = { vad: null, handle: null };
     const vad = new VadStream({
       startOffset: this.offset,
+      idleAfter: this.quietAfter(),
       onUtterance: (u) => { this.transcriber.enqueue(u.samples, { start: u.start, end: u.end }); },
+      onRecord: (b) => { if (this.capture === capture) this.emit('record', b); },
+      onIdle: (quiet) => { if (this.capture === capture) this.quietChanged(quiet); },
     });
-    const capture = { vad, handle: null };
+    capture.vad = vad;
     capture.handle = this.openSource(this.args, {
       onData: (chunk) => {
         if (this.capture !== capture) return;
@@ -159,15 +191,17 @@ class LiveSession extends EventEmitter {
   close() {
     const c = this.capture;
     if (!c) return;
-    this.capture = null;
     c.handle?.stop();
+    // 블록이 안 된 마지막 나머지도 record 로 파일에 쓴다 (쉬는 중이면 쓰지 않는다). 그래서 capture 를 비우기 전에
     c.vad.finish();
-    this.offset = c.vad.startOffset + c.vad.consumed / SAMPLE_RATE;
+    this.capture = null;
+    this.offset = c.vad.startOffset + c.vad.written / SAMPLE_RATE;
   }
 
   /** 출처가 저절로 끊겼다: 끊김 자리를 남기고 몇 번 다시 붙여 본다 (맥 Transcriber.reconnect) */
   async lost(message) {
     this.close();
+    this.quietChanged(false);
     this.transcriber.addGap(gap.disconnected(this.clock(), message));
     const ok = await this.restarter.run({
       isActive: () => this.state.listening && !this.state.paused && !this.capture,

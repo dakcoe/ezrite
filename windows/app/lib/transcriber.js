@@ -67,6 +67,7 @@ const gap = Object.freeze({
   sourceChanged: (d, label, withMic) => `── ${timestamp(d)} 소리 출처 → ${label}${withMic ? ' + 마이크' : ''}`,
   languageChanged: (d, label) => `── ${timestamp(d)} 인식 언어 → ${label}`,
   resumed: (pausedClock, d) => `── ${pausedClock}–${timestamp(d)} 일시정지 후 이어서 녹음`,
+  quietPaused: (quietClock, d) => `── ${quietClock}–${timestamp(d)} 말소리가 없어 자동 일시정지`,
   disconnected: (d, message) => `── ${timestamp(d)} 소리가 끊겼습니다 (${message})`,
   reconnected: (d) => `── ${timestamp(d)} 다시 연결됨`,
   recognitionFailed: (d, message) => `── ${timestamp(d)} 인식 실패: ${message}`,

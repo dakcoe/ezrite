@@ -116,7 +116,7 @@
       paintFooter(s);
     }
     const last = [...s.entries].reverse().find((e) => e.kind !== 'gap');
-    cDot.className = `dot${s.paused ? ' paused' : s.listening ? ' rec' : ''}`;
+    cDot.className = `dot${s.paused || s.quietPaused ? ' paused' : s.listening ? ' rec' : ''}`;
     cOrig.textContent = last?.original ?? (s.listening ? '듣고 있어요…' : '녹음하고 있지 않아요');
     cTr.textContent = last?.translation ?? ' ';
   });
