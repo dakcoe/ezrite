@@ -134,6 +134,13 @@ final class AppState: ObservableObject {
     @Published var autoPauseQuiet: Bool = defaults.object(forKey: "autoPauseQuiet") as? Bool ?? true {
         didSet { Self.defaults.set(autoPauseQuiet, forKey: "autoPauseQuiet") }
     }
+    /// 설명할 때 화면 나누기 (WindowDock). 켤 때 손쉬운 사용 권한이 없으면 시스템 안내 창을 띄운다
+    @Published var splitScreen: Bool = defaults.object(forKey: "splitScreen") as? Bool ?? false {
+        didSet {
+            Self.defaults.set(splitScreen, forKey: "splitScreen")
+            if splitScreen { _ = WindowDock.trusted(ask: true) }
+        }
+    }
     @Published var askBeforeRecord: Bool = defaults.object(forKey: "askBeforeRecord") as? Bool ?? true {
         didSet { Self.defaults.set(askBeforeRecord, forKey: "askBeforeRecord") }
     }
@@ -285,7 +292,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        MainActor.assumeIsolated { transcriber.stop() }
+        MainActor.assumeIsolated { transcriber.stop(); WindowDock.shared.restore() }
         // 녹음 조각을 하나로 합치는 중이면 끝날 때까지 기다린다 (2시간 녹음도 10초 안쪽). 못 기다려도 다음 실행 때 합친다
         Notes.AudioRecorder.waitForMerges()
     }
@@ -308,7 +315,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         state.explaining = true
         Task { @MainActor in
             await explainer.run(transcript: Array(recent), provider: state.explainProvider, model: state.explainModel,
-                                onNotice: { [weak self] in self?.state.notice = $0 })
+                                split: state.splitScreen, onNotice: { [weak self] in self?.state.notice = $0 })
             state.explaining = false
         }
     }

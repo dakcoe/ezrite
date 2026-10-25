@@ -357,7 +357,8 @@ extension GroqClient {
         speech, follow the screen's logical order). Each scene: {"say":"1-2 Korean sentences that teach this step (meaning and reason, not just what is on screen)", \
         "focus":[screen line ids to highlight, 0-2], "arrow":{"from":line id,"to":line id} or null (connect two \
         related lines on screen), "visual":index into visuals or null (show that visual beside the screen), \
-        "reveal":how many items/rows of that steps/table visual to show so far, or null}. Build visuals up gradually \
+        "reveal":how many items/rows of that steps/table visual to show so far, or for an anim visual how many frames \
+        have played (1 = first frame), or null}. Build visuals up gradually \
         across scenes. Every scene says something new — never repeat an earlier scene. Use only line ids from the list.
         """
     static let visualsGuide = """
@@ -369,6 +370,22 @@ extension GroqClient {
         definition, key formula, glossary
         - {"type":"mermaid","title":"...","code":"..."}  relationships, cause and effect, hierarchy, cycle, \
         interaction between actors. Use flowchart TD/LR or sequenceDiagram. Put every node label in double quotes.
+        - {"type":"anim","title":"...","layout":"row|column|cycle|layers|grid|graph","items":[{"id":"short id","label":"1-4 words or a number",\
+        "note":"tiny text under it or null"}],"frames":[{"show":[ids to add],"focus":[ids highlighted now],\
+        "links":[{"from":id,"to":id,"label":"1-3 words or null"}],"order":[all shown ids in new order] or null,\
+        "set":[{"id":id,"label":"new label"}],"caption":"one short Korean sentence"}]}  animated diagram for anything that \
+        CHANGES or MOVES: a process unfolding, values updating, items reordered or swapped, signals passing between parts, \
+        cause leading to effect. Frames apply one after another (each only adds or changes). Items are placed \
+        automatically — never give screen coordinates. 3-12 items, 3-6 frames; every id in frames must be defined in items. \
+        Messages passing between parts: the parts are items and each message is a link labelled with it — never make a \
+        message an item. Reordering or swapping: use "order", not links. A value that changes: "set" on the same item.
+          Other layouts (extra fields; put null in fields a layout does not use):
+          "layers": each item has "layer" 0,1,2… drawn as columns left to right — neural networks, trees (layer = depth), \
+        pipelines that branch. "grid": "cols" = number of columns; items fill the grid row by row in item order — \
+        matrices, tables of values, memory cells, DP tables; change cell values with "set". \
+          "graph": "axes":{"x":"name","y":"name"}; a curve item has "points":[[x,y],…] (2 points = straight line), a point \
+        item has "at":[x,y]; these are data values on any scale, not screen positions. Move them with "set" giving new \
+        "points" (same count) or "at" — shifting curves, a moving equilibrium, descent along a curve.
         Rules: stay faithful to the screen and the speech, do not invent facts; check any calculation step by step; \
         keep text short; formulas only in the card "formula" field.
         """
@@ -466,7 +483,7 @@ extension GroqClient {
         ]
     }
 
-    /// 네 가지 그림 틀. strict 모드는 모든 칸이 required 여야 해서, 빠질 수 있는 칸은 null 을 허용한다
+    /// 다섯 가지 그림 틀. strict 모드는 모든 칸이 required 여야 해서, 빠질 수 있는 칸은 null 을 허용한다
     static let visualsSchema: [String: Any] = {
         func obj(_ props: [String: Any]) -> [String: Any] {
             ["type": "object", "additionalProperties": false, "required": Array(props.keys).sorted(), "properties": props]
@@ -474,12 +491,28 @@ extension GroqClient {
         let str: [String: Any] = ["type": "string"]
         let strs: [String: Any] = ["type": "array", "items": str]
         let kind = { (k: String) -> [String: Any] in ["type": "string", "enum": [k]] }
+        let point: [String: Any] = ["type": "array", "items": ["type": "number"]]
+        let nullPoint: [String: Any] = ["type": ["array", "null"], "items": ["type": "number"]]
+        let nullPoints: [String: Any] = ["type": ["array", "null"], "items": point]
         let items: [[String: Any]] = [
             obj(["type": kind("steps"), "title": str, "items": strs]),
             obj(["type": kind("table"), "title": str, "headers": strs, "rows": ["type": "array", "items": strs]]),
             obj(["type": kind("card"), "title": str, "formula": ["type": ["string", "null"]],
                  "body": ["type": ["string", "null"]], "terms": ["type": "array", "items": strs]]),
             obj(["type": kind("mermaid"), "title": str, "code": str]),
+            obj(["type": kind("anim"), "title": str,
+                 "layout": ["type": "string", "enum": ["row", "column", "cycle", "layers", "grid", "graph"]],
+                 "cols": ["type": ["integer", "null"]],
+                 "axes": ["anyOf": [obj(["x": str, "y": str]), ["type": "null"]]],
+                 "items": ["type": "array", "items": obj(["id": str, "label": str, "note": ["type": ["string", "null"]],
+                                                          "layer": ["type": ["integer", "null"]], "at": nullPoint, "points": nullPoints])],
+                 "frames": ["type": "array", "items": obj([
+                     "show": strs, "focus": strs,
+                     "links": ["type": "array", "items": obj(["from": str, "to": str, "label": ["type": ["string", "null"]]])],
+                     "order": ["type": ["array", "null"], "items": str],
+                     "set": ["type": "array", "items": obj(["id": str, "label": ["type": ["string", "null"]],
+                                                            "at": nullPoint, "points": nullPoints])],
+                     "caption": str])]]),
         ]
         let int: [String: Any] = ["type": "integer"]
         let nullInt: [String: Any] = ["type": ["integer", "null"]]

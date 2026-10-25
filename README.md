@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dakcoe/ezrite/releases/download/v1.1.5/Ezrite-1.1.5.dmg"><img src="docs/download-mac.svg" width="280" alt="macOS 다운로드 (1.1.5 DMG)"></a>
+  <a href="https://github.com/dakcoe/ezrite/releases/download/v1.2.0/Ezrite-1.2.0.dmg"><img src="docs/download-mac.svg" width="280" alt="macOS 다운로드 (1.2.0 DMG)"></a>
   &nbsp;&nbsp;
   <a href="https://github.com/dakcoe/ezrite/releases/download/v1.1.5/Ezrite-Setup-1.1.5.exe"><img src="docs/download-windows.svg" width="280" alt="Windows 다운로드 (1.1.5 설치 파일)"></a>
 </p>

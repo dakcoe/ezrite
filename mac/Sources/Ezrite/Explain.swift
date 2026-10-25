@@ -393,6 +393,7 @@ enum Explain {
             case "table": return !((v["rows"] as? [[Any]]) ?? []).isEmpty && !((v["headers"] as? [String]) ?? []).isEmpty
             case "card": return v["formula"] is String || v["body"] is String || !((v["terms"] as? [[String]]) ?? []).isEmpty
             case "mermaid": return !((v["code"] as? String) ?? "").isEmpty
+            case "anim": return !((v["items"] as? [Any]) ?? []).isEmpty && !((v["frames"] as? [Any]) ?? []).isEmpty
             default: return false
             }
         }

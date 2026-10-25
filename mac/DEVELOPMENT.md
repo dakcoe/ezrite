@@ -37,8 +37,10 @@ open -a "Ezrite"
 ## 설명해줘 (화면 위 표시 + 설명 카드)
 
 - 흐름: ScreenCaptureKit 스크린샷(우리 앱 창 제외) → Vision 글자 인식 → Groq 두 요청을 동시에 (`qwen3.8-27b` 이미지+글자로 짚을 줄 번호, `gpt-oss-120b` 글자로 요약·그림) → 투명 창에 ①②③, 설명 카드(WKWebView `Resources/web/explain.html`).
+- 화면 나누기(설정 토글, `Dock.swift`): 켜져 있으면 찍기 전에 그 화면의 모든 창을 손쉬운 사용 API 로 같은 비율(가로 s 배)로 왼쪽에 줄여 넣고 카드를 오른쪽 기둥에 붙인다. 픽셀을 누르는 공개 API 는 없어 창 자리·크기만 바꾼다. 줄인 뒤 찍어서 표시 자리가 맞는다. 카드를 닫거나 앱이 끝나면 원래 자리·크기로 돌린다. 전체 화면 창·권한 없음이면 예전처럼 떠 있는 카드.
+- 움직이는 그림(anim) 배치: row·column·cycle·layers(층=열)·grid(cols 칸)·graph(자료 값 좌표의 곡선·점, set 으로 옮기면 미끄러진다).
 - AI 가 화면 좌표를 직접 말하게 하면 빗나간다. 글자 인식으로 찾은 줄 번호만 고르게 한다.
-- 그림 형식은 과목을 가리지 않는 steps · table · card(KaTeX) · mermaid 네 가지. mermaid·KaTeX 는 `Resources/web` 에 넣어 두어 인터넷 없이 그린다.
+- 그림 형식은 과목을 가리지 않는 steps · table · card(KaTeX) · mermaid · anim 다섯 가지. anim 은 물체(items)를 id 로 정의하고 단계(frames)마다 나타나기·강조·잇기·자리 바꾸기·글 바꾸기만 지시하는 움직이는 그림이다. 자리는 explain.html 이 layout(row·column·cycle)으로 계산한다 — AI 에게 좌표를 맡기지 않는다. mermaid·KaTeX 는 `Resources/web` 에 넣어 두어 인터넷 없이 그린다.
 
 ## 데이터 위치 (`~/Library/Application Support/Ezrite/`)
 

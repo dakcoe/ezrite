@@ -19,7 +19,8 @@ final class Explainer: ObservableObject {
 
     /// transcript: 최근 받아 적은 문장(오래된 것부터). provider 가 Groq 가 아니면 그 서비스에 한 번에 묻고,
     /// 실패하면(키 오류 제외) Groq 로 대신한다. onNotice: 대신 처리했다는 알림
-    func run(transcript: [String], provider: Provider = .groq, model: String = "",
+    /// split: 화면 나누기 — 보던 창을 왼쪽으로 줄이고 카드를 오른쪽에 붙인 뒤 찍는다 (줄인 뒤 화면이라 표시 자리가 맞는다)
+    func run(transcript: [String], provider: Provider = .groq, model: String = "", split: Bool = false,
              onNotice: @escaping (String) -> Void = { _ in }) async {
         guard !busy else { return }
         busy = true
@@ -32,9 +33,16 @@ final class Explainer: ObservableObject {
         card.onAsk = { [weak self] q in Task { @MainActor in await self?.ask(q) } }
 
         do {
-            let shot = try await ScreenGrab.capture()
+            let mouse = NSEvent.mouseLocation
+            let target = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main
+            var docked = false
+            if split, let target, WindowDock.shared.dock(on: target) {
+                docked = true
+                try? await Task.sleep(nanoseconds: 350_000_000)      // 창이 줄고 내용이 다시 그려질 때까지
+            }
+            let shot = try await ScreenGrab.capture(on: target)
             screen = shot.screen
-            card.show(on: shot.screen, avoid: AppDelegate.shared?.popupFrame)
+            card.show(on: shot.screen, avoid: AppDelegate.shared?.popupFrame, docked: docked)
             card.render(["loading": "화면을 읽는 중…"])
             let lines = await Task.detached { Explain.readText(shot.image) }.value
             card.render(["loading": "설명을 만드는 중…"])
@@ -219,9 +227,10 @@ final class Explainer: ObservableObject {
         model = nil
     }
 
-    /// 카드를 닫으면 화면 표시도 지운다
+    /// 카드를 닫으면 화면 표시도 지우고, 줄였던 창을 원래대로
     func clear() {
         hideMarks()
+        WindowDock.shared.restore()
         card?.close()
         card = nil
     }
@@ -408,6 +417,8 @@ final class ExplainCard: NSObject, NSWindowDelegate {
     private var sizeLocked = false
     /// 직접 닫기 전까지 1초마다 카드가 보이는지 확인한다
     private var keepAlive: Timer?
+    /// 화면 나누기로 오른쪽에 붙은 상태: 높이를 화면에 맞춰 두고 내용 길이로 바꾸지 않는다
+    private var docked = false
 
     init(onClose: @escaping () -> Void) {
         self.onClose = onClose
@@ -438,8 +449,13 @@ final class ExplainCard: NSObject, NSWindowDelegate {
 
     /// 처음 한 번만 화면 오른쪽에 놓는다. 그 뒤로는 사용자가 옮긴 자리를 지킨다
     /// avoid: 녹음 팝업 자리. 처음 뜰 때 오른쪽 위에 놓되 팝업과 겹치면 그 왼쪽에 놓는다
-    func show(on screen: NSScreen, avoid: NSRect?) {
-        if !panel.isVisible {
+    func show(on screen: NSScreen, avoid: NSRect?, docked: Bool = false) {
+        self.docked = docked
+        if docked {
+            var frame = WindowDock.cardFrame(on: screen)
+            if let avoid, frame.intersects(avoid) { frame.size.height = max(300, avoid.minY - 8 - frame.minY) }  // 녹음 팝업 아래로
+            panel.setFrame(frame, display: true)
+        } else if !panel.isVisible {
             let f = screen.visibleFrame
             let h: CGFloat = 150                            // 로딩 중엔 작게. 내용이 오면 그 길이만큼 늘어난다 (fit)
             var frame = NSRect(x: f.maxX - 440, y: f.maxY - h - 20, width: 420, height: h)
@@ -477,7 +493,7 @@ final class ExplainCard: NSObject, NSWindowDelegate {
 
     /// 질문을 시작하면 카드를 최대 높이로 늘린 뒤 고정한다 (답이 길어도 카드가 들쭉날쭉하지 않게)
     fileprivate func asked(_ q: String) {
-        if !sizeLocked, let screen = panel.screen ?? NSScreen.main {
+        if !sizeLocked, !docked, let screen = panel.screen ?? NSScreen.main {
             let visible = screen.visibleFrame
             var f = panel.frame
             let top = f.maxY, h = visible.height * 0.75
@@ -509,7 +525,7 @@ final class ExplainCard: NSObject, NSWindowDelegate {
 
     /// 내용 높이에 맞춰 카드를 늘리거나 줄인다. 위쪽 가장자리는 그대로 두고, 화면 높이를 넘지 않는다
     fileprivate func fit(contentHeight: CGFloat) {
-        guard !sizeLocked, let screen = panel.screen ?? NSScreen.main else { return }
+        guard !sizeLocked, !docked, let screen = panel.screen ?? NSScreen.main else { return }
         let visible = screen.visibleFrame
         let chrome = panel.frame.height - panel.contentLayoutRect.height     // 제목 막대
         let h = min(max(contentHeight + chrome, 110), visible.height * 0.75)

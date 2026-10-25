@@ -46,7 +46,10 @@
   @keyframes s { to { transform: rotate(360deg); } }
   .error { color: #d70015; background: #ffebee; border-radius: 10px; padding: 12px; }
   @media (prefers-color-scheme: dark) { .error { background: #3a1d1f; color: #ff6961; } }
-  .summary { font-size: 15px; margin: 2px 0 14px; }
+  .summary { font-size: 15px; margin: 2px 0 14px; display: grid; gap: 7px; }
+  .summary p { margin: 0; line-height: 1.55; word-break: keep-all; }
+  .summary .lead { font-weight: 650; font-size: 15.5px; }
+  .a { line-height: 1.6; word-break: keep-all; }
   .marks { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 8px; }
   .marks li { display: flex; gap: 10px; align-items: flex-start; }
   .badge { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff;
@@ -97,6 +100,40 @@
   .diagram svg text.actor, .diagram svg text.actor > tspan { font-size: 17px !important; font-weight: 600; }
   .diagram svg .messageText { font-size: 13.5px !important; }
   .diagram svg .noteText, .diagram svg .noteText > tspan { font-size: 13px !important; }
+  /* 움직이는 그림: 물체는 자리를 옮길 때 미끄러지고, 강조되면 주황으로 떠오른다 */
+  .anim { position: relative; margin: 4px 0 2px; transition: height .4s; }
+  .anim svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+  .aitem { position: absolute; left: 0; top: 0; box-sizing: border-box; display: grid; place-content: center; text-align: center;
+           border: 1.5px solid var(--line); background: var(--soft); border-radius: 10px; padding: 4px 6px;
+           transition: transform .5s cubic-bezier(.2,.8,.2,1), width .5s, opacity .35s, background .3s, border-color .3s, box-shadow .3s; }
+  .aitem b { font-size: 15px; line-height: 1.25; font-weight: 650; word-break: keep-all; overflow-wrap: anywhere; }
+  .aitem.narrow b { font-size: 13px; } .aitem.narrow small { font-size: 10.5px; }
+  .aitem small { font-size: 11.5px; line-height: 1.3; color: var(--muted); margin-top: 2px; }
+  .aitem.off { opacity: 0; }
+  .aitem.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 2px 10px rgba(255,107,44,.25); }
+  .aitem.changed b { animation: pop .5s; }
+  @keyframes pop { 40% { color: var(--accent); transform: scale(1.18); } }
+  .anim path { fill: none; stroke-width: 2.2; stroke-linecap: round; }
+  .anim path.old { stroke: var(--muted); opacity: .45; stroke-width: 1.6; }
+  .anim path.new { stroke: var(--accent); }
+  .anim text { font-size: 12px; font-weight: 600; text-anchor: middle; dominant-baseline: central;
+               paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
+  .anim text.old { fill: var(--muted); } .anim text.new { fill: #c2410c; }     /* 작은 주황 글씨는 흰 바탕에서 흐려 더 짙게 */
+  @media (prefers-color-scheme: dark) { .anim text.new { fill: var(--accent); } }
+  .anim circle { fill: var(--accent); }
+  .graph .axis { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+  .graph .curve { stroke: var(--fg); opacity: .5; stroke-width: 2.2; fill: none; }
+  .graph .curve.on { stroke: var(--accent); opacity: 1; stroke-width: 3; }
+  .graph .guide { stroke: var(--muted); stroke-dasharray: 3 4; stroke-width: 1.2; fill: none; opacity: .7; }
+  .graph .guide.on { stroke: var(--accent); opacity: 1; }
+  .graph .pt { fill: var(--fg); } .graph .pt.on { fill: var(--accent); }
+  .graph text.axname { fill: var(--muted); font-weight: 500; }
+  .graph text.gl { fill: var(--fg); } .graph text.gl.on { fill: #c2410c; }
+  @media (prefers-color-scheme: dark) { .graph text.gl.on { fill: var(--accent); } }
+  .acap { display: flex; align-items: center; gap: 8px; min-height: 22px; margin: 6px 0 0; font-size: 13.5px; color: var(--muted); }
+  .acap span { flex: 1; transition: opacity .25s; }
+  .acap button { border: 0; background: var(--soft); color: var(--fg); border-radius: 11px; font-size: 12px; padding: 3px 9px; cursor: pointer; }
+  @media (prefers-reduced-motion: reduce) { .aitem, .anim { transition: none; } .aitem.changed b { animation: none; } }
 </style>
 </head>
 <body>
@@ -146,12 +183,20 @@
   const fixText = t => String(t).replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
                                 .replace(/\\n/g, "\n");
   // 긴 글이 줄바꿈 없이 오면 세 문장마다 문단을 나눈다 (모델이 문단 지시를 안 지킬 때)
-  const paragraphs = t => {
-    if (t.includes("\n") || t.length < 180) return t;
-    const s = t.replace(/([.?!])\s+(?=\S)/g, "$1\u0000").split("\u0000");   // lookbehind 없이 (Safari 16.4 전)
-    const out = [];
-    for (let i = 0; i < s.length; i += 3) out.push(s.slice(i, i + 3).join(" "));
+  // 문장 끝(. ? !) 뒤 빈칸에서 자른다. 0.5 처럼 숫자 사이 점은 빈칸이 없어 자르지 않는다 (lookbehind 없이 — Safari 16.4 전)
+  const sentences = t => t.replace(/([.?!])\s+(?=\S)/g, "$1\u0000").split("\u0000").map(x => x.trim()).filter(Boolean);
+  // 긴 문단은 두 문장씩 나눈다 (모델이 문단을 나눴어도 한 문단이 길면 다시 나눈다)
+  const paragraphs = t => t.split(/\n{2,}/).map(par => {
+    if (par.includes("\n") || par.length < 140) return par;
+    const s = sentences(par), out = [];
+    for (let i = 0; i < s.length; i += 2) out.push(s.slice(i, i + 2).join(" "));
     return out.join("\n\n");
+  }).join("\n\n");
+  // 요약: 한 문장에 한 줄. 첫 문장은 굵게 (무엇인지), 나머지는 그 아래로
+  const summaryBlock = t => {
+    const box = el("div", "summary");
+    t.split(/\n+/).flatMap(sentences).forEach((x, i) => box.append(rich("p", i ? null : "lead", x)));
+    return box;
   };
 
   // 앱이 카드 높이를 내용에 맞추도록 그린 뒤 높이를 알린다
@@ -187,7 +232,7 @@
       const l = el("div", "loading"); l.append(el("div", "spin"), el("span", null, d.loading)); root.append(l); return;
     }
     if (d.error) { root.append(el("div", "error", d.error)); }
-    if (d.summary) root.append(rich("p", "summary", fixText(d.summary)));
+    if (d.summary) root.append(summaryBlock(fixText(d.summary)));
     if (d.marks && d.marks.length) {
       const ul = el("ul", "marks");
       d.marks.forEach((m, i) => {
@@ -208,7 +253,7 @@
     for (const v of d.visuals || []) { const box = await visual(v); boxes.push(box); root.append(box); }
     if (!d.loading) { document.getElementById("ask").classList.add("on"); }
     if (d.scenes && d.scenes.length) startPlayer(d, root, boxes);
-    else post("scene", -1);
+    else { post("scene", -1); boxes.forEach(b => b._anim?.play()); }
   }
 
   const post = (name, v) => window.webkit?.messageHandlers?.[name]?.postMessage(v);
@@ -245,8 +290,315 @@
         g.innerHTML = svg;
         centerActorText(g);
       } catch { g.append(el("p", "fail", "그림을 그리지 못했습니다.")); }
+    } else if (v.type === "anim") {
+      anim(box, v);
     }
     return box;
+  }
+
+  // 움직이는 그림. 물체(items)는 id 로 한 번 만들고, 단계(frames)마다 나타나기·강조·잇기·자리 바꾸기·글 바꾸기만 한다.
+  // 자리는 layout(row·column·cycle)으로 여기서 계산한다 — AI 에게 좌표를 맡기면 겹치고 빗나간다.
+  // box._anim.go(k): k 단계까지 본 모습으로 (장면 재생기가 부른다), play(): 혼자 처음부터 재생
+  const NS = "http://www.w3.org/2000/svg";
+
+  // k 단계까지 차례로 적용한 모습. 모르는 id 는 버린다. sets[id]: 바뀐 글(label)·자리(at)·곡선(points)
+  function animState(frames, items, k) {
+    const s = { shown: [], focus: [], links: [], sets: {}, caption: "" };
+    frames.slice(0, k).forEach((f, i) => {
+      const last = i === k - 1;
+      for (const id of f.show || []) if (items.has(id) && !s.shown.includes(id)) s.shown.push(id);
+      // 자리 바꾸기: 지금 보이는 물체를 빠짐없이 다시 늘어놓은 순서만 받는다
+      const o = (f.order || []).filter(id => s.shown.includes(id));
+      if (o.length === s.shown.length && new Set(o).size === o.length) s.shown = o;
+      s.focus = (f.focus || []).filter(id => items.has(id));
+      s.links.forEach(l => l.fresh = false);
+      for (const l of f.links || []) if (l && items.has(l.from) && items.has(l.to) && l.from !== l.to)
+        s.links.push({ from: l.from, to: l.to, label: l.label, fresh: last });
+      for (const x of f.set || []) if (x && items.has(x.id)) {
+        const m = s.sets[x.id] = { ...s.sets[x.id] };
+        if (x.label != null) m.label = String(x.label);
+        if (validPt(x.at)) m.at = x.at;
+        if (validPts(x.points)) m.points = x.points;
+      }
+      s.caption = f.caption || "";
+    });
+    for (const id of s.focus) if (!s.shown.includes(id)) s.shown.push(id);
+    return s;
+  }
+  const validPt = p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite);
+  const validPts = ps => Array.isArray(ps) && ps.length >= 2 && ps.every(validPt);
+
+  // 다시 보기 단추와 장면 재생기 연결 (상자 그림·그래프 공용)
+  function animControls(box, again, frames, go) {
+    let autoplay = null;
+    function play() {
+      clearInterval(autoplay);
+      let k = 1; go(0, false); go(1);
+      autoplay = setInterval(() => { if (++k > frames.length) return clearInterval(autoplay); go(k); }, 1900);
+    }
+    again.onclick = play;
+    box._anim = { go: k => { clearInterval(autoplay); go(k); }, play, count: frames.length };
+  }
+
+  // 좌표 그래프: 곡선(points)과 점(at)은 자료 값으로 받고, 화면 자리는 범위를 재서 여기서 정한다.
+  // set 으로 곡선·점을 옮기면 이전 자리에서 미끄러지듯 바뀐다 (점 개수가 같을 때)
+  function graph(box, v) {
+    const stage = el("div", "anim graph"), svg = document.createElementNS(NS, "svg");
+    const cap = el("p", "acap"), capText = el("span"), again = el("button", null, "↻ 다시");
+    cap.append(capText, again);
+    stage.append(svg);
+    box.append(stage, cap);
+    const frames = (v.frames || []).filter(f => f && typeof f === "object");
+    const items = new Map();
+    for (const it of v.items || []) {
+      if (!it || it.id == null || items.has(it.id)) continue;
+      const kind = validPts(it.points) ? "curve" : validPt(it.at) ? "point" : null;
+      if (kind) items.set(it.id, { kind, label: String(it.label ?? ""), base: kind === "curve" ? it.points : it.at, now: null });
+    }
+    // 범위: 처음 모습과 모든 단계의 바뀐 자리를 함께 잰다
+    const all = [];
+    items.forEach(it => it.kind === "curve" ? all.push(...it.base) : all.push(it.base));
+    for (const f of frames) for (const x of f.set || []) { if (validPts(x?.points)) all.push(...x.points); if (validPt(x?.at)) all.push(x.at); }
+    const span = (vals) => { let lo = Math.min(...vals), hi = Math.max(...vals); if (lo === hi) { lo -= 1; hi += 1; }
+                             const pad = (hi - lo) * 0.08; return [lo - pad, hi + pad]; };
+    const [x0, x1] = all.length ? span(all.map(p => p[0])) : [0, 1], [y0, y1] = all.length ? span(all.map(p => p[1])) : [0, 1];
+    const M = { l: 30, r: 16, t: 16, b: 30 };
+    let W = 360, H = 240;
+    const sx = x => M.l + (x - x0) / (x1 - x0) * (W - M.l - M.r), sy = y => H - M.b - (y - y0) / (y1 - y0) * (H - M.t - M.b);
+    // 점이 셋 이상이면 부드러운 곡선(Catmull-Rom), 둘이면 직선
+    const pathOf = pts => {
+      const q = pts.map(p => [sx(p[0]), sy(p[1])]);
+      if (q.length < 3) return `M${q[0]} L${q[1]}`;
+      let d = `M${q[0]}`;
+      for (let i = 0; i < q.length - 1; i++) {
+        const a = q[i - 1] || q[i], b = q[i], c = q[i + 1], e = q[i + 2] || c;
+        d += ` C${b[0] + (c[0] - a[0]) / 6},${b[1] + (c[1] - a[1]) / 6} ${c[0] - (e[0] - b[0]) / 6},${c[1] - (e[1] - b[1]) / 6} ${c[0]},${c[1]}`;
+      }
+      return d;
+    };
+    const axes = v.axes || {};
+    let cur = -1, raf = 0;
+    function draw(s, t, from) {
+      // t: 0→1 옮겨 가는 정도. from: 옮기기 전 자리
+      svg.replaceChildren();
+      const ax = document.createElementNS(NS, "path");
+      ax.setAttribute("class", "axis"); ax.setAttribute("d", `M${M.l},${M.t - 6} L${M.l},${H - M.b} L${W - M.r + 6},${H - M.b}`);
+      svg.append(ax);
+      const label = (x, y, text, cls, anchor) => { const e = document.createElementNS(NS, "text");
+        e.setAttribute("x", x); e.setAttribute("y", y); e.setAttribute("class", cls); e.style.textAnchor = anchor;
+        e.textContent = fixText(text); svg.append(e); };
+      if (axes.x) label(W - M.r, H - 10, axes.x, "axname", "end");
+      if (axes.y) label(M.l + 6, M.t - 4, axes.y, "axname", "start");
+      const mix = (a, b) => a.map((p, i) => [p[0] + (b[i][0] - p[0]) * t, p[1] + (b[i][1] - p[1]) * t]);
+      items.forEach((it, id) => {
+        if (!s.shown.includes(id)) return;
+        const on = s.focus.includes(id) ? " on" : "";
+        const target = it.kind === "curve" ? (s.sets[id]?.points ?? it.base) : [s.sets[id]?.at ?? it.base];
+        const prev = from?.[id];
+        const pts = prev && prev.length === target.length ? mix(prev, target) : target;
+        it.now = pts;
+        const name = s.sets[id]?.label ?? it.label;
+        if (it.kind === "curve") {
+          const c = document.createElementNS(NS, "path"); c.setAttribute("class", "curve" + on); c.setAttribute("d", pathOf(pts)); svg.append(c);
+          const end = pts.reduce((a, b) => sx(b[0]) > sx(a[0]) ? b : a);
+          if (name) label(Math.min(sx(end[0]) + 4, W - 4), sy(end[1]) - 8, name, "gl" + on, "end");
+        } else {
+          const [px, py] = [sx(pts[0][0]), sy(pts[0][1])];
+          const g = document.createElementNS(NS, "path"); g.setAttribute("class", "guide" + on);
+          g.setAttribute("d", `M${M.l},${py} L${px},${py} L${px},${H - M.b}`); svg.append(g);
+          const c = document.createElementNS(NS, "circle"); c.setAttribute("class", "pt" + on);
+          c.setAttribute("cx", px); c.setAttribute("cy", py); c.setAttribute("r", on ? 6 : 4.5); svg.append(c);
+          if (name) label(px + 8, py - 10, name, "gl" + on, "start");
+        }
+      });
+    }
+    function go(k, animate = true) {
+      k = Math.max(0, Math.min(frames.length, k ?? frames.length));
+      W = stage.clientWidth || 360; H = Math.min(260, Math.round(W * 0.62));
+      stage.style.height = H + "px";
+      svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+      const s = animState(frames, items, k);
+      const from = {}; items.forEach((it, id) => { if (it.now) from[id] = it.now; });
+      cancelAnimationFrame(raf);
+      const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (!animate || reduce) draw(s, 1, null);
+      else {
+        const t0 = performance.now(), ease = t => 1 - Math.pow(1 - t, 3);
+        const step = now => { const t = Math.min(1, (now - t0) / 700); draw(s, ease(t), from); if (t < 1) raf = requestAnimationFrame(step); };
+        raf = requestAnimationFrame(step);
+      }
+      capText.replaceChildren(); withMath(capText, fixText(s.caption));
+      cur = k;
+      requestAnimationFrame(reportHeight);
+    }
+    animControls(box, again, frames, go);
+    let lastW = 0;
+    new ResizeObserver(() => { const w = stage.clientWidth; if (w && w !== lastW && cur >= 0) { lastW = w; go(cur, false); } }).observe(stage);
+    go(frames.length, false);
+  }
+
+  function anim(box, v) {
+    if (v.layout === "graph") return graph(box, v);
+    const stage = el("div", "anim"), svg = document.createElementNS(NS, "svg");
+    const cap = el("p", "acap"), capText = el("span"), again = el("button", null, "↻ 다시");
+    cap.append(capText, again);
+    svg.innerHTML = `<defs>${["new", "old"].map(c => `<marker id="ah-${c}-${mermaidN}" viewBox="0 0 10 10" refX="9" refY="5"
+      markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9" class="${c}" style="fill:none;stroke-width:2"/></marker>`).join("")}</defs><g></g>`;
+    const tag = mermaidN++, links = svg.querySelector("g");
+    stage.append(svg);
+    box.append(stage, cap);
+    const items = new Map();
+    for (const it of v.items || []) {
+      if (!it || it.id == null || items.has(it.id)) continue;
+      const n = el("div", "aitem off"), b = el("b"); withMath(b, fixText(it.label ?? it.id)); n.append(b);
+      if (it.note) n.append(withMath(el("small"), fixText(it.note)));
+      stage.append(n);
+      items.set(it.id, { n, b, label: String(it.label ?? it.id) });
+    }
+    const frames = (v.frames || []).filter(f => f && typeof f === "object");
+    const layout = ["row", "column", "cycle", "layers", "grid"].includes(v.layout) ? v.layout : "row";
+    const index = new Map([...items.keys()].map((id, i) => [id, i]));
+    const layerOf = new Map((v.items || []).filter(it => it && items.has(it.id)).map(it => [it.id, Number.isInteger(it.layer) ? it.layer : 0]));
+
+    const state = k => animState(frames, items, k);
+
+    // 보이는 물체 자리 (stage 안 px). 물체가 늘면 다시 나눠 앉아서, 나타날 때 옆 물체가 비켜 준다
+    function place(shown) {
+      const W = stage.clientWidth || 360, n = Math.max(shown.length, 1), gap = 22, pos = {};
+      const hasNote = shown.some(id => items.get(id).n.querySelector("small"));
+      const h = hasNote ? 66 : 50;
+      let H;
+      if (layout === "layers") {
+        // 층마다 한 열 (왼쪽부터). 열 안에서는 보이는 물체만 위아래 가운데 맞춤
+        const layers = [...new Set(layerOf.values())].sort((a, b) => a - b);
+        const cw = W / layers.length, w = Math.min(100, cw * 0.62), lh = hasNote ? 56 : 40, vg = 14;
+        const stacks = layers.map(L => shown.filter(id => layerOf.get(id) === L));
+        const most = Math.max(1, ...stacks.map(st => st.length));
+        H = most * (lh + vg) - vg + 24;
+        stacks.forEach((st, c) => st.forEach((id, i) =>
+          pos[id] = { x: c * cw + (cw - w) / 2, y: 12 + (H - 24 - (st.length * (lh + vg) - vg)) / 2 + i * (lh + vg), w, h: lh }));
+        return { pos, H };
+      }
+      if (layout === "grid") {
+        // 칸 자리는 물체 순서로 고정 (나타나도 옆 칸이 움직이지 않는다)
+        const total = items.size, cols = Math.max(1, Math.min(10, Number.isInteger(v.cols) ? v.cols : Math.ceil(Math.sqrt(total))));
+        const rows = Math.ceil(total / cols), g = 6, w = Math.min(72, (W - g * (cols - 1)) / cols), ch = 40;
+        const left = (W - (cols * w + g * (cols - 1))) / 2;
+        shown.forEach(id => { const i = index.get(id);
+          pos[id] = { x: left + (i % cols) * (w + g), y: 10 + Math.floor(i / cols) * (ch + g), w, h: ch }; });
+        return { pos, H: 20 + rows * (ch + g) - g };
+      }
+      if (layout === "column") {
+        const w = Math.min(240, W * 0.62), step = h + 30;
+        shown.forEach((id, i) => pos[id] = { x: (W - w) / 2, y: 14 + i * step, w, h });
+        H = 28 + n * step - 30;
+      } else if (layout === "cycle" && n > 2) {
+        const w = Math.min(104, W / 3.4), r = Math.min(W / 2 - w / 2 - 8, 70 + n * 12);
+        shown.forEach((id, i) => {
+          const a = -Math.PI / 2 + i * 2 * Math.PI / n;
+          pos[id] = { x: W / 2 + r * Math.cos(a) - w / 2, y: r + 12 + r * Math.sin(a), w, h };
+        });
+        H = 2 * r + h + 24;
+      } else {
+        const w = Math.min(120, (W - gap * (n - 1)) / n), left = (W - (n * w + gap * (n - 1))) / 2, top = 58;
+        shown.forEach((id, i) => pos[id] = { x: left + i * (w + gap), y: top, w, h });
+        H = top * 2 + h;
+      }
+      return { pos, H };
+    }
+
+    // 상자 가장자리에서 끊는 곡선. 같은 두 물체 사이 선이 여럿이면 위아래로 번갈아 휘고, 사이에 물체가 있으면 크게 돌아간다
+    function curve(a, b, bend) {
+      const ca = { x: a.x + a.w / 2, y: a.y + a.h / 2 }, cb = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+      const dx = cb.x - ca.x, dy = cb.y - ca.y, len = Math.hypot(dx, dy) || 1;
+      const c = { x: (ca.x + cb.x) / 2 - dy / len * bend, y: (ca.y + cb.y) / 2 + dx / len * bend };
+      const edge = (r, ctr, t) => {
+        const ex = t.x - ctr.x, ey = t.y - ctr.y;
+        const s = Math.min(ex ? (r.w / 2 + 3) / Math.abs(ex) : Infinity, ey ? (r.h / 2 + 3) / Math.abs(ey) : Infinity);
+        return { x: ctr.x + ex * s, y: ctr.y + ey * s };
+      };
+      const p = edge(a, ca, c), q = edge(b, cb, c);
+      return { d: `M${p.x},${p.y} Q${c.x},${c.y} ${q.x},${q.y}`,
+               mid: { x: (p.x + 2 * c.x + q.x) / 4, y: (p.y + 2 * c.y + q.y) / 4 } };
+    }
+
+    // 줄·열 배치: 사이 틈이 좁아 곧은 화살표는 안 보인다. 상자 위(열이면 오른쪽)로 넘어가는 호로 잇는다.
+    // 같은 두 물체 사이 선이 여럿이면 위·아래로 번갈아, 멀리 떨어질수록 높게 넘어간다
+    function arc(a, b, o, apart) {
+      const side = o % 2 ? 1 : -1, lift = 24 + 10 * (apart - 1) + 14 * Math.floor(o / 2);
+      let p, q, c;
+      if (layout === "column") {
+        const x = r => side < 0 ? r.x + r.w + 3 : r.x - 3, sx = side < 0 ? 1 : -1;
+        p = { x: x(a), y: a.y + a.h / 2 }; q = { x: x(b), y: b.y + b.h / 2 };
+        c = { x: p.x + sx * lift * 2, y: (p.y + q.y) / 2 };
+      } else {
+        const y = r => side < 0 ? r.y - 3 : r.y + r.h + 3;
+        p = { x: a.x + a.w / 2, y: y(a) }; q = { x: b.x + b.w / 2, y: y(b) };
+        c = { x: (p.x + q.x) / 2, y: p.y + side * lift * 2 };
+      }
+      return { d: `M${p.x},${p.y} Q${c.x},${c.y} ${q.x},${q.y}`,
+               mid: { x: (p.x + 2 * c.x + q.x) / 4, y: (p.y + 2 * c.y + q.y) / 4 } };
+    }
+
+    let cur = -1;
+    function go(k, animate = true) {
+      k = Math.max(0, Math.min(frames.length, k ?? frames.length));
+      const s = state(k), { pos, H } = place(s.shown);
+      stage.style.height = H + "px";
+      items.forEach((it, id) => {
+        const p = pos[id];
+        it.n.classList.toggle("off", !p);
+        it.n.classList.toggle("on", s.focus.includes(id));
+        if (p) { it.n.classList.toggle("narrow", p.w < 80); it.n.style.width = p.w + "px"; it.n.style.height = p.h + "px";
+                 it.n.style.transform = `translate(${p.x}px,${p.y}px) scale(${s.focus.includes(id) ? 1.06 : 1})`; }
+        const label = s.sets[id]?.label ?? it.label;
+        if (it.b.dataset.t !== label) {
+          const first = it.b.dataset.t == null;
+          it.b.dataset.t = label; it.b.replaceChildren(); withMath(it.b, fixText(label));
+          if (!first && animate) { it.n.classList.remove("changed"); void it.n.offsetWidth; it.n.classList.add("changed"); }
+        }
+      });
+      links.replaceChildren();
+      const seen = {}, order = s.shown;
+      for (const l of s.links) {
+        const a = pos[l.from], b = pos[l.to];
+        if (!a || !b) continue;
+        const key = [l.from, l.to].sort().join("\u0000"), o = seen[key] = (seen[key] ?? -1) + 1;
+        const apart = Math.abs(order.indexOf(l.from) - order.indexOf(l.to));
+        const { d, mid } = layout === "layers" || layout === "grid" ? curve(a, b, o ? (o % 2 ? 1 : -1) * 12 * o : 0)
+          : layout === "cycle" && order.length > 2 ? curve(a, b, (o % 2 ? 1 : -1) * 10 * (1 + o)) : arc(a, b, o, apart);
+        const cls = l.fresh ? "new" : "old";
+        const path = document.createElementNS(NS, "path");
+        path.setAttribute("d", d); path.setAttribute("class", cls);
+        path.setAttribute("marker-end", `url(#ah-${cls}-${tag})`);
+        links.append(path);
+        if (l.label) {
+          const t = document.createElementNS(NS, "text");
+          t.setAttribute("x", mid.x); t.setAttribute("y", mid.y); t.setAttribute("class", cls); t.textContent = fixText(l.label);
+          links.append(t);
+        }
+        // 이번 단계에 생긴 선: 그려지듯 나타나고 점 하나가 따라 흐른다 (물체가 자리를 옮긴 뒤에)
+        if (l.fresh && animate && k > cur) {
+          const len = path.getTotalLength();
+          path.style.strokeDasharray = len; path.style.strokeDashoffset = len;
+          path.animate([{ strokeDashoffset: len }, { strokeDashoffset: 0 }], { duration: 650, delay: 250, easing: "ease-out", fill: "forwards" });
+          const dot = document.createElementNS(NS, "circle"); dot.setAttribute("r", 4.5); dot.style.opacity = 0;
+          links.append(dot);
+          const steps = 24, kf = [...Array(steps + 1)].map((_, i) => {
+            const pt = path.getPointAtLength(len * i / steps);
+            return { transform: `translate(${pt.x}px,${pt.y}px)`, opacity: i === steps ? 0 : 1 };
+          });
+          dot.animate(kf, { duration: 650, delay: 250, easing: "ease-out", fill: "forwards" });
+        }
+      }
+      capText.replaceChildren(); withMath(capText, fixText(s.caption));
+      cur = k;
+      requestAnimationFrame(reportHeight);
+    }
+    animControls(box, again, frames, go);
+    let lastW = 0;           // 폭이 바뀔 때만 다시 놓는다 (높이는 go 가 바꾼다)
+    new ResizeObserver(() => { const w = stage.clientWidth; if (w && w !== lastW && cur >= 0) { lastW = w; go(cur, false); } }).observe(stage);
+    go(frames.length, false);
   }
 
   // 질문과 답: 보내면 내 질문과 "생각하는 중"을 붙이고, 앱이 answer() 로 답을 채운다
@@ -280,7 +632,7 @@
       });
       qa.append(ul);
     }
-    for (const v of d.visuals || []) qa.append(await visual(v));
+    for (const v of d.visuals || []) { const box = await visual(v); qa.append(box); box._anim?.play(); }
     pendingQA = null; send.disabled = false; q.focus();
   }
   send.onclick = ask;
@@ -330,6 +682,7 @@
         const items = b.querySelectorAll(".steps li, table tr:not(:first-child)");
         const r = k === curV ? scenes[i].reveal : null;
         items.forEach((it, j) => it.classList.toggle("hidden", r != null && j >= r));
+        if (b._anim && k === curV) b._anim.go(r ?? b._anim.count);
       });
       extras.forEach(e => e.classList.add("hidden"));
     }
@@ -364,7 +717,7 @@
       say.replaceChildren(document.createTextNode("전체 보기 — 짚은 곳과 그림을 모두 보여줍니다"));
       dotEls.forEach(b => b.classList.remove("on"));
       play.textContent = "▶"; next.disabled = true; prev.disabled = false;
-      boxes.forEach(b => { b.classList.remove("hidden", "dim"); b.querySelectorAll(".hidden").forEach(x => x.classList.remove("hidden")); });
+      boxes.forEach(b => { b.classList.remove("hidden", "dim"); b.querySelectorAll(".hidden").forEach(x => x.classList.remove("hidden")); b._anim?.go(b._anim.count); });
       extras.forEach(e => e.classList.remove("hidden"));
       fill.style.width = "100%";
       cur = scenes.length;
