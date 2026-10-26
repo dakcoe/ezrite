@@ -69,7 +69,7 @@ struct ExplainTests {
 
 /// Groq gpt-oss 의 그림·요약 요청은 형식을 스키마로 고정한다 (칸 이름이 틀려 그림이 조용히 빠지는 일을 막는다)
 struct VisualsSchemaTests {
-    @Test func 그림_요청은_다섯_가지_틀을_엄격한_스키마로_고정한다() throws {
+    @Test func 그림_요청은_네_가지_틀을_엄격한_스키마로_고정한다() throws {
         let body = GroqClient.visualsBody(prompt: "p")
         let format = try #require(body["response_format"] as? [String: Any])
         #expect(format["type"] as? String == "json_schema")
@@ -80,7 +80,15 @@ struct VisualsSchemaTests {
         let kinds = (items["anyOf"] as? [[String: Any]] ?? []).compactMap {
             (($0["properties"] as? [String: Any])?["type"] as? [String: Any])?["enum"] as? [String]
         }.flatMap { $0 }
-        #expect(kinds == ["steps", "table", "card", "mermaid", "anim"])
+        #expect(kinds == ["steps", "table", "card", "mermaid"])
+    }
+
+    @Test func 움직이는_그림_안내는_Groq_가_아닌_서비스에만_준다() {
+        let lines = [Explain.Line(id: 0, text: "x", box: .zero)]
+        #expect(!GroqClient.unifiedPrompt(lines: lines, transcript: []).contains(#""type":"anim""#))
+        #expect(GroqClient.unifiedPrompt(lines: lines, transcript: [], rich: true).contains(#""type":"anim""#))
+        #expect(!GroqClient.visualsPrompt(lines: lines, transcript: []).contains(#""type":"anim""#))
+        #expect(!GroqClient.questionPrompt("q", history: [], explanation: "", lines: lines, transcript: []).contains(#""type":"anim""#))
     }
 
     @Test func 움직이는_그림은_물체와_단계가_있어야_남는다() {

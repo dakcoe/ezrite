@@ -316,7 +316,7 @@ extension GroqClient {
 
     /// 설명 카드에서 이어 묻는 질문. 답은 글(answer) + 화면 짚기(marks, path) + 그림(visuals)
     static func questionPrompt(_ question: String, history: [(q: String, a: String)], explanation: String,
-                               lines: [Explain.Line], transcript: [String]) -> String {
+                               lines: [Explain.Line], transcript: [String], rich: Bool = false) -> String {
         let past = history.map { "Q: \($0.q)\nA: \($0.a)" }.joined(separator: "\n\n")
         return """
             \(audience)
@@ -331,7 +331,7 @@ extension GroqClient {
             and work through any formula or calculation step by step. Point at the screen lines your answer refers to.
             Return JSON only: {"answer":"Korean answer, paragraphs separated by \\n", \(marksShape),
             "visuals":[0 to 2 items]}
-            \(visualsGuide)
+            \(visualsGuide(rich: rich))
             """
     }
 
@@ -361,7 +361,10 @@ extension GroqClient {
         have played (1 = first frame), or null}. Build visuals up gradually \
         across scenes. Every scene says something new — never repeat an earlier scene. Use only line ids from the list.
         """
-    static let visualsGuide = """
+    /// 그림 틀 안내. rich: 움직이는 그림(anim)까지 — Claude·Gemini·GPT 만. Groq 무료 한도(특히 qwen 분당 출력 1000)에서는
+    /// 대본이 길어 막히기 쉬워 네 가지 틀만 준다
+    static func visualsGuide(rich: Bool) -> String { baseKinds + (rich ? animKind : "") + visualRules }
+    static let baseKinds = """
         Visual item types — pick only what genuinely helps, or none:
         - {"type":"steps","title":"...","items":["...", "..."]}  ordered process, procedure, argument, derivation, \
         calculation, sequence of events
@@ -370,6 +373,8 @@ extension GroqClient {
         definition, key formula, glossary
         - {"type":"mermaid","title":"...","code":"..."}  relationships, cause and effect, hierarchy, cycle, \
         interaction between actors. Use flowchart TD/LR or sequenceDiagram. Put every node label in double quotes.
+        """
+    static let animKind = """
         - {"type":"anim","title":"...","layout":"row|column|cycle|layers|grid|graph","items":[{"id":"short id","label":"1-4 words or a number",\
         "note":"tiny text under it or null"}],"frames":[{"show":[ids to add],"focus":[ids highlighted now],\
         "links":[{"from":id,"to":id,"label":"1-3 words or null"}],"order":[all shown ids in new order] or null,\
@@ -386,6 +391,8 @@ extension GroqClient {
           "graph": "axes":{"x":"name","y":"name"}; a curve item has "points":[[x,y],…] (2 points = straight line), a point \
         item has "at":[x,y]; these are data values on any scale, not screen positions. Move them with "set" giving new \
         "points" (same count) or "at" — shifting curves, a moving equilibrium, descent along a curve.
+        """
+    static let visualRules = """
         Rules: stay faithful to the screen and the speech, do not invent facts; check any calculation step by step; \
         keep text short; formulas only in the card "formula" field.
         """
@@ -407,13 +414,13 @@ extension GroqClient {
 
     static func visualsPrompt(lines: [Explain.Line], transcript: [String]) -> String {
         "\(audience)\n\(context(lines: lines, transcript: transcript))\n\n\(visualsTask)\n" +
-            "Return JSON only: {\(visualsShape)}\n\(visualsGuide)\n\(scenesGuide)"
+            "Return JSON only: {\(visualsShape)}\n\(visualsGuide(rich: false))\n\(scenesGuide)"
     }
 
     /// Claude·Gemini·GPT: 화면 이미지와 글자를 보고 표시·요약·그림을 한 번에
-    static func unifiedPrompt(lines: [Explain.Line], transcript: [String]) -> String {
+    static func unifiedPrompt(lines: [Explain.Line], transcript: [String], rich: Bool = false) -> String {
         "\(audience)\n\(context(lines: lines, transcript: transcript))\n\nDo two things.\n1. \(marksTask)\n" +
-            "2. \(visualsTask)\nReturn ONE JSON object only: {\(marksShape),\n\(visualsShape)}\n\(visualsGuide)\n" +
+            "2. \(visualsTask)\nReturn ONE JSON object only: {\(marksShape),\n\(visualsShape)}\n\(visualsGuide(rich: rich))\n" +
             scenesGuide
     }
 
@@ -483,7 +490,7 @@ extension GroqClient {
         ]
     }
 
-    /// 다섯 가지 그림 틀. strict 모드는 모든 칸이 required 여야 해서, 빠질 수 있는 칸은 null 을 허용한다
+    /// 네 가지 그림 틀 (Groq 는 움직이는 그림을 쓰지 않는다). strict 모드는 모든 칸이 required 여야 해서, 빠질 수 있는 칸은 null 을 허용한다
     static let visualsSchema: [String: Any] = {
         func obj(_ props: [String: Any]) -> [String: Any] {
             ["type": "object", "additionalProperties": false, "required": Array(props.keys).sorted(), "properties": props]
@@ -491,28 +498,12 @@ extension GroqClient {
         let str: [String: Any] = ["type": "string"]
         let strs: [String: Any] = ["type": "array", "items": str]
         let kind = { (k: String) -> [String: Any] in ["type": "string", "enum": [k]] }
-        let point: [String: Any] = ["type": "array", "items": ["type": "number"]]
-        let nullPoint: [String: Any] = ["type": ["array", "null"], "items": ["type": "number"]]
-        let nullPoints: [String: Any] = ["type": ["array", "null"], "items": point]
         let items: [[String: Any]] = [
             obj(["type": kind("steps"), "title": str, "items": strs]),
             obj(["type": kind("table"), "title": str, "headers": strs, "rows": ["type": "array", "items": strs]]),
             obj(["type": kind("card"), "title": str, "formula": ["type": ["string", "null"]],
                  "body": ["type": ["string", "null"]], "terms": ["type": "array", "items": strs]]),
             obj(["type": kind("mermaid"), "title": str, "code": str]),
-            obj(["type": kind("anim"), "title": str,
-                 "layout": ["type": "string", "enum": ["row", "column", "cycle", "layers", "grid", "graph"]],
-                 "cols": ["type": ["integer", "null"]],
-                 "axes": ["anyOf": [obj(["x": str, "y": str]), ["type": "null"]]],
-                 "items": ["type": "array", "items": obj(["id": str, "label": str, "note": ["type": ["string", "null"]],
-                                                          "layer": ["type": ["integer", "null"]], "at": nullPoint, "points": nullPoints])],
-                 "frames": ["type": "array", "items": obj([
-                     "show": strs, "focus": strs,
-                     "links": ["type": "array", "items": obj(["from": str, "to": str, "label": ["type": ["string", "null"]]])],
-                     "order": ["type": ["array", "null"], "items": str],
-                     "set": ["type": "array", "items": obj(["id": str, "label": ["type": ["string", "null"]],
-                                                            "at": nullPoint, "points": nullPoints])],
-                     "caption": str])]]),
         ]
         let int: [String: Any] = ["type": "integer"]
         let nullInt: [String: Any] = ["type": ["integer", "null"]]

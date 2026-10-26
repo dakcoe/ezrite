@@ -51,7 +51,7 @@ final class Explainer: ObservableObject {
             if provider != .groq, !model.isEmpty {
                 do {
                     let text = try await AI.complete(provider, model: model,
-                                                     prompt: GroqClient.unifiedPrompt(lines: lines, transcript: transcript),
+                                                     prompt: GroqClient.unifiedPrompt(lines: lines, transcript: transcript, rich: true),
                                                      image: jpeg, json: true, maxTokens: 3000)
                     let data = Data(text.utf8)
                     return present(card: card, lines: lines, shot: shot, marks: data, visuals: .success(data))
@@ -130,8 +130,10 @@ final class Explainer: ObservableObject {
         do {
             let shot = try await ScreenGrab.capture(on: screen)
             let lines = await Task.detached { Explain.readText(shot.image) }.value
-            let prompt = GroqClient.questionPrompt(question, history: history, explanation: explanation,
-                                                   lines: lines, transcript: ctx.transcript)
+            // Groq 로 묻거나 대신할 때는 움직이는 그림 안내를 뺀 가벼운 질문 (한도에 덜 걸리게)
+            let ask = { (rich: Bool) in GroqClient.questionPrompt(question, history: self.history, explanation: self.explanation,
+                                                                lines: lines, transcript: ctx.transcript, rich: rich) }
+            let prompt = ask(true)
             var data: Data?
             if ctx.provider != .groq, !ctx.model.isEmpty {
                 // 답을 읽지 못하면 저절로 한 번 더 묻는다. 두 번째는 생각 단계를 꺼서 토큰이 모자라 답이 잘리는 일을 막는다
@@ -152,7 +154,7 @@ final class Explainer: ObservableObject {
                 }
             }
             if data == nil {
-                data = try await groq.answer(prompt, jpeg: Self.jpeg(shot.image, maxWidth: 1280), lines: lines, transcript: ctx.transcript)
+                data = try await groq.answer(ask(false), jpeg: Self.jpeg(shot.image, maxWidth: 1280), lines: lines, transcript: ctx.transcript)
             }
             guard let data, let text = Explain.answer(from: data) else {
                 return card.answer(["error": "답을 읽지 못했습니다. 다시 물어봐 주세요."])
