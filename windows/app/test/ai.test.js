@@ -147,11 +147,12 @@ const BUILD = {
     model, key: KEY, prompt: `${GroqClient.TRANSLATE_PROMPT}\n\n${translationInput(['So kernel PCA lets us do PCA.', 'We center the kernel matrix.'], ['Last time we covered PCA.'])}`,
     image: null, json: false, maxTokens: AI.TRANSLATE_MAX_TOKENS, think: false,
   }),
+  // Claude·Gemini·GPT 는 움직이는 그림 안내까지 (rich, 1.2.1~). 맥 1.2.2 는 세 덩이를 줄바꿈으로 잇는다
   explain: (p, model) => AI.request(p, {
-    model, key: KEY, prompt: G.unifiedPrompt(LINES, TRANSCRIPT), image: SLIDE, json: true, maxTokens: AI.EXPLAIN_MAX_TOKENS,
+    model, key: KEY, prompt: G.unifiedPrompt(LINES, TRANSCRIPT, '', true), image: SLIDE, json: true, maxTokens: AI.EXPLAIN_MAX_TOKENS,
   }),
   'ask-retry-nothink': (p, model) => AI.request(p, {
-    model, key: KEY, prompt: G.questionPrompt('H 가 왜 필요해?', [], '커널 행렬을 중심화합니다.', LINES, TRANSCRIPT),
+    model, key: KEY, prompt: G.questionPrompt('H 가 왜 필요해?', [], '커널 행렬을 중심화합니다.', LINES, TRANSCRIPT, '', true),
     image: SLIDE, json: true, maxTokens: AI.EXPLAIN_MAX_TOKENS, think: false,
   }),
   check: (p, model) => AI.checkRequest(p, model, KEY),

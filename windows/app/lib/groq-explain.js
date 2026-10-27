@@ -66,7 +66,8 @@ const ANIM_KIND = [
   '  Other layouts (extra fields; put null in fields a layout does not use):',
   '  "layers": each item has "layer" 0,1,2… drawn as columns left to right — neural networks, trees (layer = depth), '
     + 'pipelines that branch. "grid": "cols" = number of columns; items fill the grid row by row in item order — '
-    + 'matrices, tables of values, memory cells, DP tables; change cell values with "set". '
+    // 맥 원문은 여러 줄 글 이음 뒤 들여쓰기 2칸이 남아 여기가 세 칸이다. 요청을 맥과 글자까지 같게 둔다
+    + 'matrices, tables of values, memory cells, DP tables; change cell values with "set".   '
     + '"graph": "axes":{"x":"name","y":"name"}; a curve item has "points":[[x,y],…] (2 points = straight line), a point '
     + 'item has "at":[x,y]; these are data values on any scale, not screen positions. Move them with "set" giving new '
     + '"points" (same count) or "at" — shifting curves, a moving equilibrium, descent along a curve.',

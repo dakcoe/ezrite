@@ -15,6 +15,7 @@
   화면 설명을 Claude·Gemini·GPT 로 고르면 움직이는 그림(상자가 나타나고 자리를 바꾸고 화살표로 흐르는 그림, 층·칸·좌표 그래프)도 그립니다.
   요약은 문장마다 한 줄로 보여 줍니다. "설명할 때 화면 나누기"(기본 꺼짐)를 켜면 보던 창을 왼쪽으로 줄이고 카드를 오른쪽에 붙였다가, 카드를 닫으면 되돌립니다.
   설정 → AI 지침에 원하는 설명 방식을 적어 두면 함께 보냅니다. 설명 카드와 화면 표시는 녹화·화면 공유에 찍히지 않습니다.
+  다른 가상 데스크톱으로 넘어가면 카드는 따라오고, ①②③ 표시는 설명한 데스크톱에서만 보입니다.
 - **기록** — 받아 적은 글(.txt)과 녹음 소리(.m4a)를 저절로 저장합니다. 지난 기록 탭에서 열어 이름 붙이기, 전체 듣기와 줄마다 듣기,
   복사·내보내기·폴더에서 보기·휴지통으로 지우기. 저장 위치를 바꿀 수 있고, 기본 위치의 기록은 30일 뒤 지웁니다.
 - **남은 한도** — 팝업 아래 막대 세 개(받아쓰기·번역·화면 설명)가 Groq 무료 한도(호출 수와 하루 토큰·음성 시간 중 적게 남은 쪽)를 보여 주고,
@@ -38,6 +39,7 @@
     16kHz mono s16le 를 stdout 으로 흘립니다
   - `ocr <그림> [--lang]` Windows.Media.Ocr 로 글자와 줄 상자 (언어를 안 정하면 한국어 → 사용자 언어 → 영어 순서로 설치된 것) · `encode --in pcm --out m4a` (Media Foundation AAC) · `corner --hwnd` (둥근 모서리)
   - `windows` 보이는 최상위 창 목록(물리 픽셀, 맨 앞부터) · `place --json <목록>` 창 자리·크기 바꾸기 (설명할 때 화면 나누기)
+  - `desktop-watch --hwnd <후보,…>` 후보 가운데 가상 데스크톱이 정해진 첫 창의 데스크톱이 지금 보이는지, 바뀔 때마다 JSON 한 줄 (IVirtualDesktopManager)
 - `app/` — Electron 앱
   - `main.js` 창·트레이·IPC, `explain-ui.js` 설명 카드·화면 표시 창·화면 찍기
   - `lib/` Electron 없이 시험하는 부분: VAD(`vad.js`), 받아쓰기·번역(`transcriber.js`, `groq.js`), 녹음 흐름(`live.js`, `mixer.js`),
@@ -94,7 +96,7 @@ npm run lint           # cargo clippy -D warnings + node --check
 | `EZRITE_EXPLAIN=<초>` · `EZRITE_ASK=<질문>` | 그 시간 뒤 "설명해줘"를 누른다 · 설명이 뜬 6초 뒤 그 질문을 묻는다 |
 | `EZRITE_CARD=<json 또는 파일>` | AI 없이 설명 카드에 그 내용을 띄운다 (`EZRITE_SHOT` 과 함께면 카드를 찍는다) |
 | `EZRITE_CAPTURABLE=1` | 설명 카드·화면 표시를 화면 캡처에 보이게 둔다 |
-| `EZRITE_DOCK_ONLY=<pid,…>` | 화면 나누기 시험용: 그 프로세스들의 창만 줄였다 되돌린다 (`app/scripts/check-split.js`) |
+| `EZRITE_DOCK_ONLY=<pid,…>` | 화면 나누기·가상 데스크톱 시험용: 그 프로세스들의 창만 줄였다 되돌리고 기준 창으로 삼는다 (`app/scripts/check-split.js`, `check-desktops.js`) |
 | `EZRITE_UPDATE_JSON=<json 또는 파일>` | GitHub 대신 그 릴리스 JSON 으로 "새 버전" 띠를 띄운다 |
 
 ```
@@ -102,6 +104,8 @@ cd app
 node scripts/shots.js --out <폴더> --scale 1 --themes light,dark   # 화면마다 스크린샷 (맥과 같은 논리 크기)
 npx electron scripts/make-tray-icon.js                              # assets/tray-*.ico
 python scripts/make-app-icon.py <맥 AppIcon.icns>                   # assets/app.ico
+npx electron scripts/measure-cpu.js [초]                             # 녹음 중 CPU (창 닫음·팝업·작은 창·전체 창, 시험 창이 화면에 뜬다)
+npx electron scripts/check-desktops.js                              # 가상 데스크톱을 실제로 바꿔 본다 (새 데스크톱을 만들었다 지운다)
 ```
 
 ## 설치 파일 만들기

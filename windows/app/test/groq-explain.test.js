@@ -192,6 +192,8 @@ test('[mac ExplainTests] 움직이는_그림_안내는_Groq_가_아닌_서비스
   assert.equal(G.visualsGuide(true), `${G.BASE_KINDS}\n${G.ANIM_KIND}\n${G.VISUAL_RULES}`);
   assert.ok(G.ANIM_KIND.includes('"layers": each item has "layer" 0,1,2… drawn as columns left to right'));
   assert.ok(G.ANIM_KIND.includes('Move them with "set" giving new "points" (same count) or "at"'));
+  // 맥 1.2.2 Groq.swift 와 글자까지 같다: 여러 줄 글의 이음(\) 다음 줄 들여쓰기 2칸이 남아 "set". 뒤가 세 칸이다
+  assert.ok(G.ANIM_KIND.includes('change cell values with "set".   "graph": "axes"'));
   // 장면 reveal 은 움직이는 그림이면 재생한 단계 수
   assert.ok(G.SCENES_GUIDE.includes('or for an anim visual how many frames have played (1 = first frame), or null}'));
 });

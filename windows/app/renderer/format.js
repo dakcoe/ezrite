@@ -80,5 +80,15 @@
     }
   }
 
-  return { paintWaves, sessionDate, clock, playClock, waveHeights, sourceLine, atBottom, usageCaption, paidCaption, captionScale };
+  /**
+   * 크기(level)가 올 때(약 10번/초)만 막대를 한 번 그리는 함수 (1.2.2, 맥과 같다). 예전에는 화면 주사율로 계속 그려서
+   * 녹음 중 팝업만 열어 둬도 CPU 를 18% 가까이 썼다. 페이지가 안 보이면(숨김·다른 가상 데스크톱) 그리지 않는다
+   */
+  function levelPainter(waves, { visible, now }) {
+    return (level) => {
+      if (visible()) paintWaves(waves, waveHeights(level, now() / 1000));
+    };
+  }
+
+  return { paintWaves, levelPainter, sessionDate, clock, playClock, waveHeights, sourceLine, atBottom, usageCaption, paidCaption, captionScale };
 });

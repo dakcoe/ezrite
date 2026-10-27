@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('ezrite', {
     ipcRenderer.invoke('state:get').then(fn);
   },
   onLevel: (fn) => ipcRenderer.on('level', (_e, v) => fn(v)),
+  /** 이 창이 화면에 그려지는지 (document.visibilityState). 안 보이는 창에는 소리 크기를 보내지 않는다 */
+  shown: (v) => ipcRenderer.send('window:shown', Boolean(v)),
   /** sourceId · language · page · compact · options{...} 일부를 바꾼다 */
   set: (patch) => ipcRenderer.invoke('state:set', patch),
   refresh: () => ipcRenderer.invoke('sources:refresh'),

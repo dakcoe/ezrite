@@ -45,7 +45,7 @@ function parseDevEnv(env) {
     capturable: ['1', 'true'].includes(norm(env.EZRITE_CAPTURABLE)),
     shotScroll: Number.isInteger(scroll) && scroll > 0 ? scroll : 0, // EZRITE_SHOT 전에 내용을 이만큼(px) 내린다
     updateJSON: updateJSON || null, // GitHub 대신 이 릴리스 JSON(글 또는 파일 경로)으로 새 버전 띠를 띄운다 (맥과 같다)
-    // 화면 나누기 시험용: 이 pid 들의 창만 줄였다 되돌린다 (사용자의 다른 창은 건드리지 않게)
+    // 화면 나누기·가상 데스크톱 시험용: 이 pid 들의 창만 줄였다 되돌리고 기준 창으로 삼는다 (사용자의 다른 창은 건드리지 않게)
     dockOnly: dockOnly.length ? dockOnly : null,
   };
 }
@@ -230,9 +230,13 @@ function sourceArgs(dev, sourceId, sources) {
   return captureArgsFor(sourceId, sources);
 }
 
-/** 소리 크기를 보낼 창: 보이는 팝업·전체 창 모두 (숨기면 빼고, 다시 열면 다시 받는다) */
+/**
+ * 소리 크기를 보낼 창: 보이는 팝업·전체 창 모두 (숨기면 빼고, 다시 열면 다시 받는다).
+ * 1.2.2: 창 안 페이지가 안 보인다고 알려 온 창(ezShown === false: 다른 가상 데스크톱·가려짐·최소화)도 뺀다.
+ * 다른 데스크톱의 창은 숨긴 게 아니라 cloaked 라 isVisible() 이 true 다
+ */
 function levelTargets(wins) {
-  return wins.filter((w) => w && !w.isDestroyed() && w.isVisible());
+  return wins.filter((w) => w && !w.isDestroyed() && w.isVisible() && w.ezShown !== false);
 }
 
 /** Electron 44+ 의 clipboard.writeText 는 Promise. 끝난 뒤에만 알리고, 실패는 안내 문구로 바꾼다 */

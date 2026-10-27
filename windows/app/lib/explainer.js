@@ -8,6 +8,9 @@
 //   createCard({ onClose, onAsk, onScene }) → { show(display, avoid), render(p), answer(p), devAsk(q), close() }
 //   createOverlay(display, model) → { update(model), hide(), show(), close() }
 //   dock: 화면 나누기 (1.2.1, 맥 WindowDock). dock() → 창을 줄인 화면(display) 또는 null(전체 화면·실패), restore()
+//   desktop: 가상 데스크톱 (1.2.2). watch(display, onChange) → { stop() } 또는 null(알 수 없음).
+//     onChange(on): 설명한 화면(그때 앞에 있던 창)의 데스크톱이 지금 보이는지. 카드·표시 창은 작업 표시줄에 없는 창이라
+//     Windows 가 모든 데스크톱에 보인다 — 카드는 그대로 두고(따라온다), 표시만 원래 데스크톱에서 보이게 한다
 
 const { EventEmitter } = require('node:events');
 const E = require('./explain');
@@ -25,10 +28,13 @@ class Explainer extends EventEmitter {
   // ai: Claude·Gemini·GPT 호출 (lib/ai.js AIClient). context() 의 provider·model 이 Groq 가 아니면 그쪽에 묻는다
   constructor({ groq, ai = null, onNotice = () => {}, grab, ocr, createCard, createOverlay, context, popupFrame = () => null,
     sleep = (ms) => new Promise((r) => setTimeout(r, ms)), devQuestion = null, askDelay = 6000, onUsed = () => {}, watch = true,
-    dock = null }) {
+    dock = null, desktop = null }) {
     super();
     // watch=false: 표시를 그린 뒤 화면을 지켜보지 않는다 (EZRITE_CAPTURABLE 녹화용 — 찍을 때마다 카드·표시를 빼서 깜박인다)
-    Object.assign(this, { groq, ai, onNotice, grab, ocr, createCard, createOverlay, context, popupFrame, sleep, devQuestion, askDelay, onUsed, watch, dock });
+    Object.assign(this, { groq, ai, onNotice, grab, ocr, createCard, createOverlay, context, popupFrame, sleep, devQuestion, askDelay, onUsed, watch, dock, desktop });
+    this.away = false; // 설명한 화면의 데스크톱을 떠나 있다 (1.2.2)
+    this.marksHidden = false; // 지켜보기가 짚은 글자를 못 찾아 표시를 숨겼다
+    this.deskWatch = null;
     this.busy = false;
     this.card = null;
     this.overlay = null;
@@ -91,6 +97,7 @@ class Explainer extends EventEmitter {
         const docked = split && this.dock ? await this.dock.dock().catch(() => null) : null;
         const shot = await this.grab({ display: docked, full: true });
         this.display = shot.display;
+        this.followDesktop(shot.display);
         card.show(shot.display, this.popupFrame(), docked != null);
         card.render({ loading: LOADING_READ });
         const lines = await this.lines(shot.png());
@@ -159,6 +166,7 @@ class Explainer extends EventEmitter {
     if (!card) return;
     try {
       const shot = await this.grab({ display: this.display, full: true });
+      this.followDesktop(shot.display); // 질문한 그때 화면이 기준
       const lines = await this.lines(shot.png());
       const { transcript, guide, provider, model } = this.context();
       // Groq 로 묻거나 대신할 때는 움직이는 그림 안내를 뺀 가벼운 질문 (한도에 덜 걸리게, 맥 1.2.1)
@@ -205,24 +213,60 @@ class Explainer extends EventEmitter {
 
   showMarks(shot, model) {
     this.model = model;
+    this.marksHidden = false;
     this.overlay = this.createOverlay(shot.display, model);
+    if (this.away) this.overlay.hide(); // 다른 데스크톱에 가 있으면 보이기 전에 숨겨 둔다
     if (this.watch) this.watchMarks(shot);
+  }
+
+  /**
+   * 가상 데스크톱 (1.2.2): 이 화면을 설명한 데스크톱이 지금 보이는지 지켜본다. 앞의 지켜보기는 끝낸다.
+   * 기다리지 않는다 (창 목록을 읽는 동안 설명을 늦추지 않게). 알 수 없으면(null·오류) 예전처럼 늘 보인다고 친다
+   */
+  followDesktop(display) {
+    this.stopDesktop();
+    if (!this.desktop) return;
+    const token = {};
+    this.deskToken = token;
+    Promise.resolve()
+      .then(() => this.desktop.watch(display, (on) => { if (this.deskToken === token) this.onDesktop(on); }))
+      .then((w) => {
+        if (this.deskToken === token) this.deskWatch = w;
+        else w?.stop();
+      }, () => {});
+  }
+
+  stopDesktop() {
+    this.deskToken = null;
+    this.deskWatch?.stop();
+    this.deskWatch = null;
+    this.onDesktop(true);
+  }
+
+  /** 떠나면 표시를 숨기고, 돌아오면 되살린다 (지켜보기가 글자를 못 찾아 숨긴 표시는 그대로) */
+  onDesktop(on) {
+    if (this.away === !on) return;
+    this.away = !on;
+    if (!this.overlay) return;
+    if (this.away) this.overlay.hide();
+    else if (!this.marksHidden) this.overlay.show();
   }
 
   /**
    * 0.4초마다 표시 자리만 작게 찍어 지난번 모습과 비교한다. 달라졌으면 글자를 다시 읽어서 짚었던 글자가
    * 있으면 표시를 새 자리로 옮기고(스크롤, 창 이동), 하나도 없으면 숨긴다(슬라이드 넘김, 다른 창).
-   * 숨긴 동안에는 0.6초마다 살펴 다시 보이면 되살린다. 모두 이 PC 안에서 하고 AI 로는 보내지 않는다
+   * 숨긴 동안에는 0.6초마다 살펴 다시 보이면 되살린다. 모두 이 PC 안에서 하고 AI 로는 보내지 않는다.
+   * 다른 가상 데스크톱에 가 있는 동안은 찍지 않는다 (그 화면을 읽을 까닭이 없다, 1.2.2)
    */
   watchMarks(shot) {
     const token = { cancelled: false };
     this.watchToken = token;
     this.watching = (async () => {
       let baseline = E.allLines(this.model).map((l) => E.thumbnail(shot.bitmap, l.box));
-      let hidden = false;
       while (!token.cancelled) {
-        await this.sleep(hidden ? WATCH_HIDDEN_MS : WATCH_MS);
+        await this.sleep(this.marksHidden || this.away ? WATCH_HIDDEN_MS : WATCH_MS);
         if (token.cancelled || !this.model || !this.overlay) return;
+        if (this.away) continue;
         const targets = E.allLines(this.model);
         let now;
         try {
@@ -239,9 +283,9 @@ class Explainer extends EventEmitter {
         if (token.cancelled) return;
         const found = E.relocate(targets, lines);
         if (!found) {
-          if (!hidden) {
+          if (!this.marksHidden) {
             this.overlay.hide();
-            hidden = true;
+            this.marksHidden = true;
           }
           continue;
         }
@@ -251,9 +295,9 @@ class Explainer extends EventEmitter {
         this.model = { ...E.moveModel(this.model, boxes), missing: targets.map((l) => l.id).filter((id) => !ids.has(id)) };
         baseline = E.allLines(this.model).map((l) => E.thumbnail(now.bitmap, l.box));
         this.overlay.update(this.model);
-        if (hidden) {
-          this.overlay.show();
-          hidden = false;
+        if (this.marksHidden) {
+          this.marksHidden = false;
+          if (!this.away) this.overlay.show();
         }
       }
     })();
@@ -274,6 +318,7 @@ class Explainer extends EventEmitter {
    */
   clear({ closeCard = true } = {}) {
     this.hideMarks();
+    this.stopDesktop();
     const restored = this.dock ? this.dock.restore().catch(() => {}) : Promise.resolve();
     const card = this.card;
     this.card = null;

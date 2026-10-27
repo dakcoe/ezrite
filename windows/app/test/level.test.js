@@ -104,3 +104,31 @@ test('크기는 보이는 팝업과 전체 창 둘 다에 보내고, 팝업을 �
   main.destroyed = true;
   assert.deepEqual(levelTargets([popup, main, null]), [popup]);
 });
+
+test('[1.2.2] 화면이 그 창을 그리지 않으면(다른 가상 데스크톱·가려짐·최소화) 크기를 보내지 않는다', () => {
+  const { levelTargets } = require('../lib/ui');
+  // ezShown: 창 안 페이지가 알려 온 document.visibilityState === 'visible'. 아직 모르면(undefined) 보낸다
+  const win = (ezShown) => ({ ezShown, isVisible: () => true, isDestroyed: () => false });
+  const popup = win(undefined);
+  const main = win(true);
+  assert.deepEqual(levelTargets([popup, main]), [popup, main]);
+  main.ezShown = false; // 다른 데스크톱으로 넘어감 (isVisible() 은 그대로 true)
+  assert.deepEqual(levelTargets([popup, main]), [popup]);
+  popup.ezShown = false;
+  assert.deepEqual(levelTargets([popup, main]), []);
+});
+
+test('[1.2.2] 막대는 크기가 올 때만 한 번 그린다 — 페이지가 안 보이면 그리지 않는다', () => {
+  const bar = () => ({ style: {} });
+  const w = { isConnected: true, children: [bar(), bar(), bar(), bar(), bar()] };
+  let visible = true;
+  const paint = F.levelPainter(new Set([w]), { visible: () => visible, now: () => 0 });
+  paint(0);
+  assert.equal(w.children[0].style.height, '3.0px');
+  visible = false;
+  paint(1);
+  assert.equal(w.children[0].style.height, '3.0px', '안 보이는 동안은 그대로');
+  visible = true;
+  paint(1);
+  assert.ok(parseFloat(w.children[0].style.height) > 3, '다시 보이면 그린다');
+});

@@ -14,7 +14,7 @@ const content = (text) => json({ choices: [{ message: { content: text } }], usag
 const OCR = { width: 100, height: 100, lines: [{ text: '제목', x: 10, y: 5, w: 30, h: 5 }, { text: 'MRS_A = MRS_B', x: 20, y: 50, w: 40, h: 6 }] };
 const bitmap = (v) => ({ width: 100, height: 100, data: Buffer.alloc(100 * 100 * 4, v) });
 
-function rig({ replies = [], grab, ocr, context, devQuestion = null, sleep, watch } = {}) {
+function rig({ replies = [], grab, ocr, context, devQuestion = null, sleep, watch, desktop } = {}) {
   const calls = [];
   const fetch = async (_url, init) => {
     calls.push(JSON.parse(init.body));
@@ -58,9 +58,22 @@ function rig({ replies = [], grab, ocr, context, devQuestion = null, sleep, watc
     devQuestion,
     askDelay: 0,
     ...(watch === undefined ? {} : { watch }),
+    ...(desktop === undefined ? {} : { desktop }),
   });
   return { ex, calls, grabs, cards, overlays };
 }
+
+/** 가짜 가상 데스크톱 지켜보기: watch(display, onChange) 를 부를 때마다 기록하고, 테스트가 onChange 를 직접 부른다 */
+function fakeDesktop() {
+  const d = { watches: [] };
+  d.watch = async (display, onChange) => {
+    const w = { display, onChange, stopped: false, stop() { w.stopped = true; } };
+    d.watches.push(w);
+    return w;
+  };
+  return d;
+}
+const flush = async () => { for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r)); };
 
 const unified = JSON.stringify({ summary: '파레토 효율 설명', marks: [{ id: 1, note: '조건' }], visuals: [], scenes: [] });
 
@@ -232,6 +245,112 @@ test('지켜보기 끔(EZRITE_CAPTURABLE 녹화용): 표시를 그린 뒤 화면
   assert.equal(ticks, 0);
   assert.equal(overlays.length, 1);
   assert.equal(overlays[0].hidden, 0);
+});
+
+test('[1.2.2] 가상 데스크톱: 설명한 화면의 데스크톱을 떠나면 ①②③ 표시를 숨기고, 돌아오면 되살린다 (카드는 그대로)', async () => {
+  const desk = fakeDesktop();
+  const { ex, overlays, cards } = rig({ replies: [content(unified)], desktop: desk });
+  await ex.run();
+  await flush();
+  assert.equal(desk.watches.length, 1);
+  assert.equal(desk.watches[0].display, 'D1', '설명한 화면을 기준으로');
+  const o = overlays[0];
+  desk.watches[0].onChange(false);
+  assert.equal(o.hidden, 1);
+  assert.equal(o.shown, 0);
+  desk.watches[0].onChange(false); // 같은 값은 다시 하지 않는다
+  assert.equal(o.hidden, 1);
+  desk.watches[0].onChange(true);
+  assert.equal(o.shown, 1);
+  // 카드는 작업 표시줄에 없는 창이라 Windows 가 모든 데스크톱에 보인다 — 건드리지 않는다
+  assert.equal(cards[0].shows.length, 1);
+  assert.equal(cards[0].closed, false);
+  ex.clear();
+  assert.equal(desk.watches[0].stopped, true, '카드를 닫으면 지켜보기도 끝');
+});
+
+test('[1.2.2] 답이 오기 전에 다른 데스크톱으로 넘어갔으면 표시를 띄우지 않고, 돌아오면 띄운다', async () => {
+  const desk = fakeDesktop();
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const { ex, overlays } = rig({ replies: [content(unified)], desktop: desk, ocr: async () => { await gate; return OCR; } });
+  const running = ex.run();
+  await flush();
+  desk.watches[0].onChange(false);
+  release();
+  await running;
+  const o = overlays[0];
+  assert.equal(o.hidden, 1, '만들자마자 숨긴다 (보이기 전에)');
+  assert.equal(o.shown, 0);
+  desk.watches[0].onChange(true);
+  assert.equal(o.shown, 1);
+  ex.clear();
+});
+
+test('[1.2.2] 다른 데스크톱에 있는 동안은 화면을 다시 찍지 않는다 (다른 데스크톱 화면을 읽지 않게)', async () => {
+  const desk = fakeDesktop();
+  let ticks = 0;
+  const r = rig({
+    replies: [content(unified)], desktop: desk,
+    sleep: async () => {
+      ticks++;
+      if (ticks === 1) desk.watches[0].onChange(false);
+      if (ticks > 5) r.ex.clear();
+      await new Promise((res) => setImmediate(res));
+    },
+  });
+  await r.ex.run();
+  await r.ex.watching;
+  assert.ok(ticks > 5);
+  assert.equal(r.grabs.length, 1, '설명할 때 한 번만');
+});
+
+test('[1.2.2] 지켜보기가 숨긴 표시(슬라이드 넘김)는 데스크톱에 돌아와도 되살리지 않는다', async () => {
+  const desk = fakeDesktop();
+  const other = { width: 100, height: 100, lines: [{ text: '다른 슬라이드', x: 0, y: 0, w: 50, h: 5 }] };
+  let shot = 0;
+  let ticks = 0;
+  const r = rig({
+    replies: [content(unified)], desktop: desk,
+    grab: async () => {
+      const s = shot++ === 0 ? { v: 0, ocr: OCR } : { v: 255, ocr: other };
+      return { display: 'D1', bitmap: bitmap(s.v), png: () => s, jpeg: () => Buffer.from('j') };
+    },
+    ocr: async (png) => png.ocr,
+    sleep: async () => { ticks++; if (ticks > 1) await new Promise(() => {}); },
+  });
+  await r.ex.run();
+  await flush();
+  const o = r.overlays[0];
+  assert.equal(o.hidden, 1, '지켜보기가 숨김');
+  desk.watches[0].onChange(false);
+  desk.watches[0].onChange(true);
+  assert.equal(o.shown, 0);
+  r.ex.clear();
+});
+
+test('[1.2.2] 질문하면 그때 화면을 기준으로 다시 지켜본다', async () => {
+  const desk = fakeDesktop();
+  const answer = JSON.stringify({ answer: '답', marks: [{ id: 0, note: 'n' }] });
+  const { ex } = rig({ replies: [content(unified), content(answer)], desktop: desk });
+  await ex.run();
+  await flush();
+  await ex.ask('왜요?');
+  await flush();
+  assert.equal(desk.watches.length, 2);
+  assert.equal(desk.watches[0].stopped, true);
+  assert.equal(desk.watches[1].stopped, false);
+  ex.clear();
+});
+
+test('[1.2.2] 데스크톱을 알 수 없으면(기준 창 없음·helper 오류) 예전처럼 표시한다', async () => {
+  for (const desktop of [{ watch: async () => null }, { watch: async () => { throw new Error('helper 없음'); } }]) {
+    const { ex, overlays } = rig({ replies: [content(unified)], desktop });
+    await ex.run();
+    await flush();
+    assert.equal(overlays[0].hidden, 0);
+    ex.clear();
+  }
 });
 
 test('지켜보기 기본값은 켬', async () => {

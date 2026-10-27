@@ -50,6 +50,7 @@ const E = require('./lib/explain');
 const { Explainer } = require('./lib/explainer');
 const ExplainUI = require('./explain-ui');
 const { WindowDock, CARD_WIDTH: DOCK_CARD, GAP: DOCK_GAP } = require('./lib/dock');
+const { DesktopWatch } = require('./lib/desktop');
 
 // 녹음 듣기용 주소 ezrite-note://audio/<기록이름>.m4a 또는 /<기록 폴더>/<기록이름>.m4a.
 // 저장 폴더 안 이 앱 기록의 .m4a 만 내준다 (renderer 가 아무 파일이나 읽지 못하게, notes.audioFile)
@@ -236,7 +237,8 @@ async function refreshSources() {
 }
 
 function sendLevel(v) {
-  for (const w of levelTargets([popup, mainWin])) w.webContents.send('level', v);
+  // 작은 창에는 막대가 없다
+  for (const w of levelTargets([state.compact ? null : popup, mainWin])) w.webContents.send('level', v);
 }
 
 // ── 받아쓰기: 소리 출처 → VAD → Transcriber (lib/live.js) ──
@@ -525,14 +527,41 @@ function physical(r) {
 }
 
 // 설명할 때 화면 나누기 (1.2.1, 맥 WindowDock). 창 목록·옮기기는 helper (windows·place)
+async function listWindows() {
+  const list = JSON.parse(await runHelper(['windows'], 10_000));
+  if (dev.dockOnly) list.windows = list.windows.filter((w) => dev.dockOnly.includes(w.pid));
+  return list;
+}
+
 const windowDock = new WindowDock({
   me: process.pid,
-  list: async () => {
-    const list = JSON.parse(await runHelper(['windows'], 10_000));
-    if (dev.dockOnly) list.windows = list.windows.filter((w) => dev.dockOnly.includes(w.pid));
-    return list;
-  },
+  list: listWindows,
   place: (items) => runHelper(['place', '--json', JSON.stringify(items)], 10_000),
+});
+
+/** 오래 도는 helper (desktop-watch): stdout 한 줄마다 onLine. 실패해도 조용히 (표시는 예전처럼 보인다) */
+function helperLines(args, onLine) {
+  let child;
+  try {
+    child = spawn(helperPath(), args, { windowsHide: true });
+  } catch {
+    return { kill() {} };
+  }
+  let rest = '';
+  child.stdout.on('data', (d) => {
+    const parts = (rest + d.toString()).split(/\r?\n/);
+    rest = parts.pop();
+    for (const line of parts) onLine(line);
+  });
+  child.on('error', () => {});
+  return { kill: () => child.kill() };
+}
+
+// 가상 데스크톱 (1.2.2): 설명한 화면의 데스크톱을 떠나면 ①②③ 표시를 숨긴다 (lib/desktop.js)
+const desktopWatch = new DesktopWatch({
+  me: process.pid,
+  list: listWindows,
+  spawn: helperLines,
 });
 
 const explainer = new Explainer({
@@ -560,6 +589,7 @@ const explainer = new Explainer({
     },
     restore: () => windowDock.restore(),
   },
+  desktop: { watch: (display, onChange) => desktopWatch.watch(physical(display.bounds), onChange) },
   popupFrame: () => (popup && !popup.isDestroyed() && popup.isVisible() ? popup.getBounds() : null),
   createCard: (hooks) => ExplainUI.createCard(hooks, { capturable: dev.capturable }),
   createOverlay: (display, model) => ExplainUI.createOverlay(display, model, {
@@ -1319,6 +1349,11 @@ function registerIpc() {
   ipcMain.handle('record:start', () => startRecord());
   ipcMain.handle('record:stop', () => stopRecord());
   ipcMain.handle('record:pause', () => togglePause());
+  // 창이 화면에 그려지는지 (levelTargets 가 본다)
+  ipcMain.on('window:shown', (e, v) => {
+    const w = BrowserWindow.fromWebContents(e.sender);
+    if (w) w.ezShown = v === true;
+  });
   ipcMain.handle('window:main', (_e, page) => showMain(page));
   ipcMain.handle('window:onboarding', () => showOnboarding());
   ipcMain.handle('key:save', (_e, provider, key) => saveKey(provider, key));

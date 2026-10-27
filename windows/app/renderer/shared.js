@@ -35,16 +35,16 @@
 
   const sourceOf = (s) => s.sources.find((x) => x.id === s.sourceId);
 
-  // ── 소리 크기 막대: level 이벤트는 자주 오므로 마지막 값만 두고 화면 갱신 때 그린다 ──
-  let level = 0;
+  // ── 소리 크기 막대: 크기가 올 때만 그린다 (1.2.2. 예전엔 화면 주사율로 계속 그렸다) ──
+  // 화면에 붙기 전·작은 창으로 잠시 떨어진 막대도 버리지 않는다 (예전엔 버려서 다시 붙어도 안 움직였다)
   const waves = new Set();
-  window.ezrite.onLevel((v) => { level = v.level; });
-  function tick(now) {
-    // 화면에 붙기 전·작은 창으로 잠시 떨어진 막대도 버리지 않는다 (예전엔 버려서 다시 붙어도 안 움직였다)
-    F.paintWaves(waves, F.waveHeights(level, now / 1000));
-    requestAnimationFrame(tick);
-  }
-  requestAnimationFrame(tick);
+  const shown = () => document.visibilityState === 'visible';
+  const paintLevel = F.levelPainter(waves, { visible: shown, now: () => performance.now() });
+  window.ezrite.onLevel((v) => paintLevel(v.level));
+  // 이 창이 화면에 그려지는지 알린다 (숨김·최소화·가려짐·다른 가상 데스크톱이면 hidden). 안 보이는 창에는 크기를 보내지 않는다
+  const reportShown = () => window.ezrite.shown(shown());
+  document.addEventListener('visibilitychange', reportShown);
+  reportShown();
 
   // ── 상태 머리 ──
   /** place: 'popup' | 'window'. extra: 오른쪽 끝 버튼 (톱니) */
