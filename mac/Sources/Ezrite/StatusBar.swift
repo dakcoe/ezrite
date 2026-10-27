@@ -148,8 +148,21 @@ struct WindowDragArea: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { DragView() }
     func updateNSView(_ nsView: NSView, context: Context) {}
 
+    /// performDrag 는 시스템이 끌기를 맡아, 화면 위 가장자리에 놓으면 타일링(전체 채우기)으로 여기고 창을 가운데로 옮긴다.
+    /// 직접 옮겨서 놓은 자리에 그대로 둔다
     final class DragView: NSView {
-        override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+        private var grab: NSPoint?               // 창 원점에서 잡은 곳까지 거리
+        override func mouseDown(with event: NSEvent) {
+            guard let origin = window?.frame.origin else { return }
+            let p = NSEvent.mouseLocation
+            grab = NSPoint(x: p.x - origin.x, y: p.y - origin.y)
+        }
+        override func mouseDragged(with event: NSEvent) {
+            guard let grab else { return }
+            let p = NSEvent.mouseLocation
+            window?.setFrameOrigin(NSPoint(x: p.x - grab.x, y: p.y - grab.y))
+        }
+        override func mouseUp(with event: NSEvent) { grab = nil }
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     }
 }
