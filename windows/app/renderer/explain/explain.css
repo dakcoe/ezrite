@@ -40,7 +40,10 @@ main { padding: 16px 18px 12px; }
 @keyframes s { to { transform: rotate(360deg); } }
 .error { color: #d70015; background: #ffebee; border-radius: 10px; padding: 12px; }
 @media (prefers-color-scheme: dark) { .error { background: #3a1d1f; color: #ff6961; } }
-.summary { font-size: 15px; margin: 2px 0 14px; }
+.summary { font-size: 15px; margin: 2px 0 14px; display: grid; gap: 7px; }
+.summary p { margin: 0; line-height: 1.55; word-break: keep-all; }
+.summary .lead { font-weight: 650; font-size: 15.5px; }
+.a { line-height: 1.6; word-break: keep-all; }
 .marks { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 8px; }
 .marks li { display: flex; gap: 10px; align-items: flex-start; }
 .badge { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff;
@@ -94,3 +97,37 @@ dt { font-weight: 600; } dd { margin: 0; color: var(--muted); }
 /* Windows: ⏸ ▶ 가 색 이모지로 그려지지 않게 기호 글꼴로 (맥은 글자 모양) */
 .ctrl button { font-family: "Segoe UI Symbol", "Segoe UI", sans-serif; }
 .hint { margin: 0 0 10px; font-size: 12px; color: var(--secondary, #6e6e73); background: rgba(127,127,127,.12); border-radius: 8px; padding: 7px 10px; }
+/* 움직이는 그림: 물체는 자리를 옮길 때 미끄러지고, 강조되면 주황으로 떠오른다 */
+.anim { position: relative; margin: 4px 0 2px; transition: height .4s; }
+.anim svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.aitem { position: absolute; left: 0; top: 0; box-sizing: border-box; display: grid; place-content: center; text-align: center;
+         border: 1.5px solid var(--line); background: var(--soft); border-radius: 10px; padding: 4px 6px;
+         transition: transform .5s cubic-bezier(.2,.8,.2,1), width .5s, opacity .35s, background .3s, border-color .3s, box-shadow .3s; }
+.aitem b { font-size: 15px; line-height: 1.25; font-weight: 650; word-break: keep-all; overflow-wrap: anywhere; }
+.aitem.narrow b { font-size: 13px; } .aitem.narrow small { font-size: 10.5px; }
+.aitem small { font-size: 11.5px; line-height: 1.3; color: var(--muted); margin-top: 2px; }
+.aitem.off { opacity: 0; }
+.aitem.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 2px 10px rgba(255,107,44,.25); }
+.aitem.changed b { animation: pop .5s; }
+@keyframes pop { 40% { color: var(--accent); transform: scale(1.18); } }
+.anim path { fill: none; stroke-width: 2.2; stroke-linecap: round; }
+.anim path.old { stroke: var(--muted); opacity: .45; stroke-width: 1.6; }
+.anim path.new { stroke: var(--accent); }
+.anim text { font-size: 12px; font-weight: 600; text-anchor: middle; dominant-baseline: central;
+             paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
+.anim text.old { fill: var(--muted); } .anim text.new { fill: #c2410c; }     /* 작은 주황 글씨는 흰 바탕에서 흐려 더 짙게 */
+@media (prefers-color-scheme: dark) { .anim text.new { fill: var(--accent); } }
+.anim circle { fill: var(--accent); }
+.graph .axis { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+.graph .curve { stroke: var(--fg); opacity: .5; stroke-width: 2.2; fill: none; }
+.graph .curve.on { stroke: var(--accent); opacity: 1; stroke-width: 3; }
+.graph .guide { stroke: var(--muted); stroke-dasharray: 3 4; stroke-width: 1.2; fill: none; opacity: .7; }
+.graph .guide.on { stroke: var(--accent); opacity: 1; }
+.graph .pt { fill: var(--fg); } .graph .pt.on { fill: var(--accent); }
+.graph text.axname { fill: var(--muted); font-weight: 500; }
+.graph text.gl { fill: var(--fg); } .graph text.gl.on { fill: #c2410c; }
+@media (prefers-color-scheme: dark) { .graph text.gl.on { fill: var(--accent); } }
+.acap { display: flex; align-items: center; gap: 8px; min-height: 22px; margin: 6px 0 0; font-size: 13.5px; color: var(--muted); }
+.acap span { flex: 1; transition: opacity .25s; }
+.acap button { border: 0; background: var(--soft); color: var(--fg); border-radius: 11px; font-size: 12px; padding: 3px 9px; cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .aitem, .anim { transition: none; } .aitem.changed b { animation: none; } }

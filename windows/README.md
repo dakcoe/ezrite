@@ -12,6 +12,8 @@
 - **번역** — 인식 언어가 한국어가 아니면 줄마다 한국어 번역을 아래에 붙입니다 (설정 → 자동 번역).
 - **✨ 설명해줘** — 마우스가 있는 화면을 찍어 글자를 읽고(Windows OCR), 화면 사진·글자·최근 강의 말을 Groq 에 보내 설명을 받습니다.
   화면 위에 ①②③ 로 짚고, 오른쪽 설명 카드에서 장면별로 보여 주며 그림(단계·표·공식·관계도)을 그립니다. 카드 아래 칸에서 이어 묻기.
+  화면 설명을 Claude·Gemini·GPT 로 고르면 움직이는 그림(상자가 나타나고 자리를 바꾸고 화살표로 흐르는 그림, 층·칸·좌표 그래프)도 그립니다.
+  요약은 문장마다 한 줄로 보여 줍니다. "설명할 때 화면 나누기"(기본 꺼짐)를 켜면 보던 창을 왼쪽으로 줄이고 카드를 오른쪽에 붙였다가, 카드를 닫으면 되돌립니다.
   설정 → AI 지침에 원하는 설명 방식을 적어 두면 함께 보냅니다. 설명 카드와 화면 표시는 녹화·화면 공유에 찍히지 않습니다.
 - **기록** — 받아 적은 글(.txt)과 녹음 소리(.m4a)를 저절로 저장합니다. 지난 기록 탭에서 열어 이름 붙이기, 전체 듣기와 줄마다 듣기,
   복사·내보내기·폴더에서 보기·휴지통으로 지우기. 저장 위치를 바꿀 수 있고, 기본 위치의 기록은 30일 뒤 지웁니다.
@@ -35,6 +37,7 @@
   - `capture --pid N` 그 프로그램(과 하위 프로세스)의 소리만 받기 (WASAPI process loopback, Windows 10 Build 20348 이상 = Windows 11) · `capture --mic <id>`.
     16kHz mono s16le 를 stdout 으로 흘립니다
   - `ocr <그림> [--lang]` Windows.Media.Ocr 로 글자와 줄 상자 (언어를 안 정하면 한국어 → 사용자 언어 → 영어 순서로 설치된 것) · `encode --in pcm --out m4a` (Media Foundation AAC) · `corner --hwnd` (둥근 모서리)
+  - `windows` 보이는 최상위 창 목록(물리 픽셀, 맨 앞부터) · `place --json <목록>` 창 자리·크기 바꾸기 (설명할 때 화면 나누기)
 - `app/` — Electron 앱
   - `main.js` 창·트레이·IPC, `explain-ui.js` 설명 카드·화면 표시 창·화면 찍기
   - `lib/` Electron 없이 시험하는 부분: VAD(`vad.js`), 받아쓰기·번역(`transcriber.js`, `groq.js`), 녹음 흐름(`live.js`, `mixer.js`),
@@ -91,6 +94,7 @@ npm run lint           # cargo clippy -D warnings + node --check
 | `EZRITE_EXPLAIN=<초>` · `EZRITE_ASK=<질문>` | 그 시간 뒤 "설명해줘"를 누른다 · 설명이 뜬 6초 뒤 그 질문을 묻는다 |
 | `EZRITE_CARD=<json 또는 파일>` | AI 없이 설명 카드에 그 내용을 띄운다 (`EZRITE_SHOT` 과 함께면 카드를 찍는다) |
 | `EZRITE_CAPTURABLE=1` | 설명 카드·화면 표시를 화면 캡처에 보이게 둔다 |
+| `EZRITE_DOCK_ONLY=<pid,…>` | 화면 나누기 시험용: 그 프로세스들의 창만 줄였다 되돌린다 (`app/scripts/check-split.js`) |
 | `EZRITE_UPDATE_JSON=<json 또는 파일>` | GitHub 대신 그 릴리스 JSON 으로 "새 버전" 띠를 띄운다 |
 
 ```

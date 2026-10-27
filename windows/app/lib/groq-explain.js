@@ -36,10 +36,12 @@ const SCENES_GUIDE = 'Scenes play like a short explainer video, in the order the
   + "speech, follow the screen's logical order). Each scene: {\"say\":\"1-2 Korean sentences that teach this step (meaning and reason, not just what is on screen)\", "
   + '"focus":[screen line ids to highlight, 0-2], "arrow":{"from":line id,"to":line id} or null (connect two '
   + 'related lines on screen), "visual":index into visuals or null (show that visual beside the screen), '
-  + '"reveal":how many items/rows of that steps/table visual to show so far, or null}. Build visuals up gradually '
+  + '"reveal":how many items/rows of that steps/table visual to show so far, or for an anim visual how many frames '
+  + 'have played (1 = first frame), or null}. Build visuals up gradually '
   + 'across scenes. Every scene says something new — never repeat an earlier scene. Use only line ids from the list.';
 
-const VISUALS_GUIDE = [
+/** 네 가지 그림 틀 (Groq 도 쓰는 것) */
+const BASE_KINDS = [
   'Visual item types — pick only what genuinely helps, or none:',
   '- {"type":"steps","title":"...","items":["...", "..."]}  ordered process, procedure, argument, derivation, '
     + 'calculation, sequence of events',
@@ -48,9 +50,36 @@ const VISUALS_GUIDE = [
     + 'definition, key formula, glossary',
   '- {"type":"mermaid","title":"...","code":"..."}  relationships, cause and effect, hierarchy, cycle, '
     + 'interaction between actors. Use flowchart TD/LR or sequenceDiagram. Put every node label in double quotes.',
-  'Rules: stay faithful to the screen and the speech, do not invent facts; check any calculation step by step; '
-    + 'keep text short; formulas only in the card "formula" field.',
 ].join('\n');
+
+/** 움직이는 그림 (1.2.0, 맥 animKind). AI 는 물체와 단계만 쓰고, 자리는 카드가 layout 으로 계산한다 */
+const ANIM_KIND = [
+  '- {"type":"anim","title":"...","layout":"row|column|cycle|layers|grid|graph","items":[{"id":"short id","label":"1-4 words or a number",'
+    + '"note":"tiny text under it or null"}],"frames":[{"show":[ids to add],"focus":[ids highlighted now],'
+    + '"links":[{"from":id,"to":id,"label":"1-3 words or null"}],"order":[all shown ids in new order] or null,'
+    + '"set":[{"id":id,"label":"new label"}],"caption":"one short Korean sentence"}]}  animated diagram for anything that '
+    + 'CHANGES or MOVES: a process unfolding, values updating, items reordered or swapped, signals passing between parts, '
+    + 'cause leading to effect. Frames apply one after another (each only adds or changes). Items are placed '
+    + 'automatically — never give screen coordinates. 3-12 items, 3-6 frames; every id in frames must be defined in items. '
+    + 'Messages passing between parts: the parts are items and each message is a link labelled with it — never make a '
+    + 'message an item. Reordering or swapping: use "order", not links. A value that changes: "set" on the same item.',
+  '  Other layouts (extra fields; put null in fields a layout does not use):',
+  '  "layers": each item has "layer" 0,1,2… drawn as columns left to right — neural networks, trees (layer = depth), '
+    + 'pipelines that branch. "grid": "cols" = number of columns; items fill the grid row by row in item order — '
+    + 'matrices, tables of values, memory cells, DP tables; change cell values with "set". '
+    + '"graph": "axes":{"x":"name","y":"name"}; a curve item has "points":[[x,y],…] (2 points = straight line), a point '
+    + 'item has "at":[x,y]; these are data values on any scale, not screen positions. Move them with "set" giving new '
+    + '"points" (same count) or "at" — shifting curves, a moving equilibrium, descent along a curve.',
+].join('\n');
+
+const VISUAL_RULES = 'Rules: stay faithful to the screen and the speech, do not invent facts; check any calculation step by step; '
+  + 'keep text short; formulas only in the card "formula" field.';
+
+/**
+ * 그림 틀 안내. rich: 움직이는 그림까지 — Claude·Gemini·GPT 만 (1.2.1). Groq 무료 한도(특히 qwen 분당 출력 1000)에서는
+ * 대본이 길어 막히기 쉬워 네 가지 틀만 준다
+ */
+const visualsGuide = (rich) => [BASE_KINDS, ...(rich ? [ANIM_KIND] : []), VISUAL_RULES].join('\n');
 
 /** Groq 모델에만 붙인다: qwen 은 줄 번호("5번 줄")를 그대로 말하고, 답 글에 LaTeX 를 써서 카드에 기호가 그대로 보인다 */
 const GROQ_RULES = '\nLine ids are only for you to point at lines — never write ids or "line N" in any text the student reads. '
@@ -75,7 +104,7 @@ function context(lines, transcript, guide = '') {
 }
 
 /** 설명 카드에서 이어 묻는 질문. 답은 글(answer) + 화면 짚기(marks, path) + 그림(visuals). history: [{q, a}] */
-function questionPrompt(question, history, explanation, lines, transcript, guide = '') {
+function questionPrompt(question, history, explanation, lines, transcript, guide = '', rich = false) {
   const past = history.map((h) => `Q: ${h.q}\nA: ${h.a}`).join('\n\n');
   return [
     AUDIENCE,
@@ -90,7 +119,7 @@ function questionPrompt(question, history, explanation, lines, transcript, guide
       + 'and work through any formula or calculation step by step. Point at the screen lines your answer refers to.',
     `Return JSON only: {"answer":"Korean answer, paragraphs separated by \\n", ${MARKS_SHAPE},`,
     '"visuals":[0 to 2 items]}',
-    VISUALS_GUIDE,
+    visualsGuide(rich),
   ].join('\n');
 }
 
@@ -100,13 +129,13 @@ function marksPrompt(lines, transcript, guide = '') {
 
 function visualsPrompt(lines, transcript, guide = '') {
   return `${AUDIENCE}\n${context(lines, transcript, guide)}\n\n${VISUALS_TASK}\n`
-    + `Return JSON only: {${VISUALS_SHAPE}}\n${VISUALS_GUIDE}\n${SCENES_GUIDE}`;
+    + `Return JSON only: {${VISUALS_SHAPE}}\n${visualsGuide(false)}\n${SCENES_GUIDE}`;
 }
 
-/** 화면 이미지와 글자를 보고 표시·요약·그림을 한 번에 */
-function unifiedPrompt(lines, transcript, guide = '') {
+/** 화면 이미지와 글자를 보고 표시·요약·그림을 한 번에. rich: Claude·Gemini·GPT 갈래 (움직이는 그림까지) */
+function unifiedPrompt(lines, transcript, guide = '', rich = false) {
   return `${AUDIENCE}\n${context(lines, transcript, guide)}\n\nDo two things.\n1. ${MARKS_TASK}\n`
-    + `2. ${VISUALS_TASK}\nReturn ONE JSON object only: {${MARKS_SHAPE},\n${VISUALS_SHAPE}}\n${VISUALS_GUIDE}\n${SCENES_GUIDE}`;
+    + `2. ${VISUALS_TASK}\nReturn ONE JSON object only: {${MARKS_SHAPE},\n${VISUALS_SHAPE}}\n${visualsGuide(rich)}\n${SCENES_GUIDE}`;
 }
 
 const imageUrl = (jpeg) => `data:image/jpeg;base64,${Buffer.from(jpeg).toString('base64')}`;
@@ -122,7 +151,7 @@ function visionBody(prompt, jpeg) {
   };
 }
 
-/** 네 가지 그림 틀. strict 모드는 모든 칸이 required 여야 해서, 빠질 수 있는 칸은 null 을 허용한다 */
+/** 네 가지 그림 틀 (Groq 는 움직이는 그림을 쓰지 않는다). strict 모드는 모든 칸이 required 여야 해서, 빠질 수 있는 칸은 null 을 허용한다 */
 const VISUALS_SCHEMA = (() => {
   const obj = (props) => ({ type: 'object', additionalProperties: false, required: Object.keys(props).sort(), properties: props });
   const str = { type: 'string' };
@@ -284,7 +313,8 @@ async function explainVisuals(groq, { lines, transcript, guide = '' }) {
 }
 
 module.exports = {
-  AUDIENCE, MARKS_TASK, MARKS_SHAPE, VISUALS_TASK, VISUALS_SHAPE, SCENES_GUIDE, VISUALS_GUIDE, GROQ_RULES, VISUALS_SCHEMA,
+  AUDIENCE, MARKS_TASK, MARKS_SHAPE, VISUALS_TASK, VISUALS_SHAPE, SCENES_GUIDE, BASE_KINDS, ANIM_KIND, VISUAL_RULES, visualsGuide,
+  GROQ_RULES, VISUALS_SCHEMA,
   context, questionPrompt, marksPrompt, visualsPrompt, unifiedPrompt, visionBody, visualsBody, asVisualsObject, source,
   fixScript, explainUnified, answer, answerText, explainMarks, explainVisuals,
 };

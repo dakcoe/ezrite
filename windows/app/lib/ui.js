@@ -26,6 +26,7 @@ function parseDevEnv(env) {
   const ask = String(env.EZRITE_ASK ?? '').trim();
   const updateJSON = String(env.EZRITE_UPDATE_JSON ?? '').trim();
   const scroll = Number(String(env.EZRITE_SHOT_SCROLL ?? '').trim() || NaN);
+  const dockOnly = String(env.EZRITE_DOCK_ONLY ?? '').split(',').map((v) => Number(v.trim())).filter((n) => Number.isInteger(n) && n > 0);
   return {
     preview: PREVIEWS.includes(preview) ? preview : null,
     theme: THEMES.includes(theme) ? theme : 'system',
@@ -44,6 +45,8 @@ function parseDevEnv(env) {
     capturable: ['1', 'true'].includes(norm(env.EZRITE_CAPTURABLE)),
     shotScroll: Number.isInteger(scroll) && scroll > 0 ? scroll : 0, // EZRITE_SHOT 전에 내용을 이만큼(px) 내린다
     updateJSON: updateJSON || null, // GitHub 대신 이 릴리스 JSON(글 또는 파일 경로)으로 새 버전 띠를 띄운다 (맥과 같다)
+    // 화면 나누기 시험용: 이 pid 들의 창만 줄였다 되돌린다 (사용자의 다른 창은 건드리지 않게)
+    dockOnly: dockOnly.length ? dockOnly : null,
   };
 }
 

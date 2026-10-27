@@ -1,6 +1,6 @@
 [package]
 name = "ezrite-audio"
-version = "1.1.5"
+version = "1.2.1"
 edition = "2021"
 description = "Ezrite Windows판 소리 받기 보조 프로그램"
 publish = false
@@ -25,6 +25,7 @@ windows = { version = "0.58", features = [
     "Win32_System_Threading",
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_HiDpi",
     "Win32_UI_Shell_PropertiesSystem",
     "Win32_Devices_FunctionDiscovery",
     "Win32_Storage_FileSystem",

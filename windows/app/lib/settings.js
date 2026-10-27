@@ -53,7 +53,8 @@ const DEFAULTS = Object.freeze({
   theme: 'system',
   welcomed: false, // 처음 한 번 팝업과 사용 가이드를 보여줬나 (맥 welcomed)
   // autoPauseQuiet: 말소리가 30초 없으면 녹음을 저절로 쉬고, 다시 들리면 이어 간다 (1.1.5, 맥 autoPauseQuiet)
-  options: Object.freeze({ autoTranslate: true, askBeforeRecord: true, includeMic: false, autoPauseQuiet: true }),
+  // splitScreen: 설명할 때 화면 나누기 — 보던 창을 왼쪽으로 줄이고 카드를 오른쪽에 붙인다 (1.2.1, 맥 splitScreen, 기본 꺼짐)
+  options: Object.freeze({ autoTranslate: true, askBeforeRecord: true, includeMic: false, autoPauseQuiet: true, splitScreen: false }),
   ai: AI_DEFAULTS,
 });
 

@@ -342,6 +342,8 @@ function visuals(data) {
       case 'card': return typeof v.formula === 'string' || typeof v.body === 'string'
         || (Array.isArray(v.terms) && v.terms.every(strings) && v.terms.length > 0);
       case 'mermaid': return typeof v.code === 'string' && v.code.length > 0;
+      // 움직이는 그림 (1.2.0): 물체와 단계가 있어야 그린다
+      case 'anim': return Array.isArray(v.items) && v.items.length > 0 && Array.isArray(v.frames) && v.frames.length > 0;
       default: return false;
     }
   });
@@ -517,6 +519,21 @@ function cardAsked(frame, work) {
   return withHeight(frame, work.height * CARD.max, work);
 }
 
+/** 화면 나누기 (1.2.1, 맥 WindowDock.cardFrame): 작업 영역 오른쪽 기둥 (폭 440, 높이 전체) */
+const DOCK = { width: 440, min: 300 };
+
+/** 녹음 팝업(avoid)과 겹치면 팝업 위·아래 중 넓은 쪽만 쓴다 (300 은 지킨다) */
+function dockFrame(work, avoid) {
+  const f = { x: work.x + work.width - DOCK.width, y: work.y, width: DOCK.width, height: work.height };
+  if (!avoid || !overlaps(f, avoid)) return f;
+  const bottom = work.y + work.height;
+  const above = avoid.y - 8 - work.y;
+  const below = bottom - (avoid.y + avoid.height + 8);
+  if (above >= below) return { ...f, height: Math.max(DOCK.min, above) };
+  const height = Math.max(DOCK.min, below);
+  return { ...f, y: bottom - height, height };
+}
+
 /** AI 에 보낼 사진 크기: 폭이 maxWidth 를 넘을 때만 줄인다 */
 function scaledSize(size, maxWidth) {
   const s = Math.min(1, maxWidth / size.width);
@@ -546,5 +563,5 @@ module.exports = {
   linesFromOcr, thumbnail, changed, intersects, padded, similarity, sameLine, relocate,
   dropLineRefs, lenientJSON, marks, path, scenes, answer, visuals, pulledIn,
   layout, edge, shapes, allLines, moveModel,
-  presentation, answerPresentation, CARD, cardFrame, cardFit, cardAsked, scaledSize,
+  presentation, answerPresentation, CARD, cardFrame, cardFit, cardAsked, DOCK, dockFrame, scaledSize,
 };

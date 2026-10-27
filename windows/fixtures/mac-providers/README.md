@@ -28,3 +28,4 @@ Claude 는 사용자 키로 실제로 불러 받은 응답(`response-claude-*.js
 - **설명**: 프롬프트 = `unifiedPrompt(lines, transcript)` (groqRules 는 **안 붙인다**), 그림은 1280px 폭 JPEG.
 - **질문**: `questionPrompt(...)`, 답을 못 읽으면 thinking 끄고 한 번 더.
 - **유료 서비스 표시**: 한도 막대 대신 서비스 이름. 남은 횟수(설명·질문)는 Groq 일 때만.
+- **1.2.1 (움직이는 그림)**: 이 서비스들에는 `unifiedPrompt(..., rich: true)`·`questionPrompt(..., rich: true)` 로 그림 안내에 `anim` 틀이 더 붙는다 (Groq 요청에는 안 붙는다). 위 `request-*-explain.json` 은 1.1.x 에 꺼낸 것이라 `anim` 틀이 없고, 1.2.0 에서 바뀐 장면 안내의 `reveal` 문장("or for an anim visual how many frames have played (1 = first frame)")만 손으로 맞췄다. `anim` 틀 문구는 `test/groq-explain.test.js` 가 따로 본다.

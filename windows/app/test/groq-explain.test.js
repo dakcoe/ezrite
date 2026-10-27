@@ -177,3 +177,38 @@ test('[mac Usage.used] 설명·질문 한 번에 쓴 토큰을 알린다 (남은
   await G.answer(a.groq, 'P', { jpeg: Buffer.from('j'), lines, transcript: [], onUsed });
   assert.deepEqual(used, [['explain', 10], ['ask', 10]]);
 });
+
+// --- 1.2.1 움직이는 그림 (맥 ExplainTests 움직이는_그림_안내는_Groq_가_아닌_서비스에만_준다) ---
+
+test('[mac ExplainTests] 움직이는_그림_안내는_Groq_가_아닌_서비스에만_준다', () => {
+  const anim = '"type":"anim"';
+  assert.ok(!G.unifiedPrompt(lines, [], '').includes(anim));
+  assert.ok(G.unifiedPrompt(lines, [], '', true).includes(anim));
+  assert.ok(!G.visualsPrompt(lines, [], '').includes(anim));
+  assert.ok(!G.questionPrompt('q', [], '', lines, []).includes(anim));
+  assert.ok(G.questionPrompt('q', [], '', lines, [], '', true).includes(anim));
+  // 그림 안내 = 네 가지 틀 (+ 움직이는 그림) + 규칙. 규칙은 늘 맨 끝
+  assert.equal(G.visualsGuide(false), `${G.BASE_KINDS}\n${G.VISUAL_RULES}`);
+  assert.equal(G.visualsGuide(true), `${G.BASE_KINDS}\n${G.ANIM_KIND}\n${G.VISUAL_RULES}`);
+  assert.ok(G.ANIM_KIND.includes('"layers": each item has "layer" 0,1,2… drawn as columns left to right'));
+  assert.ok(G.ANIM_KIND.includes('Move them with "set" giving new "points" (same count) or "at"'));
+  // 장면 reveal 은 움직이는 그림이면 재생한 단계 수
+  assert.ok(G.SCENES_GUIDE.includes('or for an anim visual how many frames have played (1 = first frame), or null}'));
+});
+
+test('1.2.1: Groq 로 가는 요청(qwen 한 번에·질문·gpt-oss 그림)과 엄격 스키마에는 움직이는 그림이 없다', async () => {
+  const sent = [];
+  const groq = new GroqClient({
+    fetch: async (_u, init) => {
+      sent.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"summary":"s","visuals":[],"scenes":[],"answer":"a"}' } }] }), { status: 200 });
+    },
+    getKey: () => 'k', sleep: async () => {}, lenientJSON: E.lenientJSON,
+  });
+  await G.explainUnified(groq, { jpeg: Buffer.from('j'), lines, transcript: [] });
+  await G.explainVisuals(groq, { lines, transcript: [] });
+  await G.answer(groq, G.questionPrompt('q', [], '', lines, []), { jpeg: Buffer.from('j'), lines, transcript: [] });
+  const text = (b) => JSON.stringify(b.messages);
+  assert.equal(sent.length, 3);
+  for (const b of sent) assert.ok(!text(b).includes('\\"type\\":\\"anim\\"'), b.model);
+});

@@ -20,7 +20,14 @@ test('EZRITE_PREVIEW·EZRITE_THEME·EZRITE_SHOT을 읽는다', () => {
     capturable: false,
     updateJSON: null,
     shotScroll: 0,
+    dockOnly: null,
   });
+});
+
+test('EZRITE_DOCK_ONLY: 화면 나누기 시험에서 줄일 창의 pid 들 (쉼표로). 숫자가 아니면 버린다', () => {
+  assert.deepEqual(parseDevEnv({ EZRITE_DOCK_ONLY: '123, 456' }).dockOnly, [123, 456]);
+  assert.deepEqual(parseDevEnv({ EZRITE_DOCK_ONLY: '7,abc,-1,0' }).dockOnly, [7]);
+  assert.equal(parseDevEnv({ EZRITE_DOCK_ONLY: 'abc' }).dockOnly, null);
 });
 
 test('EZRITE_TEST_SCALE는 1~3 사이 숫자일 때만 받는다 (기본은 배율을 건드리지 않음)', () => {
@@ -44,7 +51,7 @@ test('Mica·Acrylic은 Windows 11 22H2(빌드 22621) 이상에서만', () => {
 test('값이 없으면 미리보기 없음, 테마는 system', () => {
   assert.deepEqual(parseDevEnv({}), {
     preview: null, theme: 'system', shot: null, testScale: null, capturePid: null, demoScript: null, testFile: null, fakeGroq: false, speed: 1, shotDelay: 1200,
-    explainAfter: null, card: null, ask: null, capturable: false, updateJSON: null, shotScroll: 0,
+    explainAfter: null, card: null, ask: null, capturable: false, updateJSON: null, shotScroll: 0, dockOnly: null,
   });
 });
 

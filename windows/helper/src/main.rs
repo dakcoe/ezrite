@@ -7,17 +7,21 @@
 //!   ezrite-audio ocr <이미지 경로> [--lang <언어 태그>]
 //!   ezrite-audio corner --hwnd <창 핸들>
 //!   ezrite-audio encode --in <16kHz mono s16le .pcm> --out <.m4a>
+//!   ezrite-audio windows
+//!   ezrite-audio place --json <[{"hwnd","x","y","w","h"}]>
 //!
 //! ocr은 글자와 줄 상자(원래 이미지 픽셀 좌표)를 JSON 한 줄로 출력한다.
 //! capture는 16kHz mono s16le PCM을 stdout으로 계속 흘린다. 멈추려면 프로세스를 끝낸다.
 //! encode는 녹음 원본을 AAC(.m4a)로 바꾸고 {"seconds": 길이} 를 JSON 한 줄로 출력한다.
 //! corner는 테두리 없는 창(팝업·작은 창)에 Windows 11 둥근 모서리(DWMWCP_ROUND)를 켠다.
+//! windows·place는 설명할 때 화면 나누기(1.2.1): 보이는 최상위 창 목록(물리 픽셀)과 창 자리·크기 바꾸기.
 //! 오류는 stderr에 한 줄로 쓰고 종료 코드 1로 끝난다.
 
 mod convert;
 mod resample;
 mod ocr_box;
 mod tree;
+mod dock;
 
 #[cfg(windows)]
 mod win;
@@ -27,6 +31,8 @@ mod win_ocr;
 mod win_dwm;
 #[cfg(windows)]
 mod win_encode;
+#[cfg(windows)]
+mod win_windows;
 
 use std::process::ExitCode;
 
@@ -38,6 +44,8 @@ enum Command {
     Ocr { path: String, lang: Option<String> },
     Corner(u64),
     Encode { input: String, output: String },
+    Windows,
+    Place(String),
 }
 
 fn parse_args(args: &[String]) -> Result<Command, String> {
@@ -65,8 +73,10 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
         [cmd, f1, input, f2, output] if cmd == "encode" && f1 == "--in" && f2 == "--out" && !input.is_empty() && !output.is_empty() => {
             Ok(Command::Encode { input: input.clone(), output: output.clone() })
         }
+        [cmd] if cmd == "windows" => Ok(Command::Windows),
+        [cmd, flag, json] if cmd == "place" && flag == "--json" && !json.is_empty() => Ok(Command::Place(json.clone())),
         _ => Err(
-            "사용법: ezrite-audio list | capture --pid <N> | capture --mic <id> | ocr <이미지> [--lang <태그>] | corner --hwnd <N> | encode --in <pcm> --out <m4a>"
+            "사용법: ezrite-audio list | capture --pid <N> | capture --mic <id> | ocr <이미지> [--lang <태그>] | corner --hwnd <N> | encode --in <pcm> --out <m4a> | windows | place --json <목록>"
                 .into(),
         ),
     }
@@ -105,6 +115,8 @@ fn run(cmd: Command) -> Result<(), String> {
             println!("{}", serde_json::json!({ "seconds": secs }));
             Ok(())
         }
+        Command::Windows => win_windows::list_windows().map_err(|e| format!("windows 실패: {e}")),
+        Command::Place(json) => win_windows::place(&json).map_err(|e| format!("place 실패: {e}")),
     }
 }
 
@@ -139,6 +151,12 @@ mod tests {
         assert!(parse_args(&a(&["capture", "--mic", ""])).is_err());
         assert!(parse_args(&a(&["capture"])).is_err());
         assert!(parse_args(&a(&["list", "x"])).is_err());
+        assert_eq!(parse_args(&a(&["windows"])), Ok(Command::Windows));
+        assert_eq!(parse_args(&a(&["place", "--json", "[]"])), Ok(Command::Place("[]".into())));
+        assert!(parse_args(&a(&["windows", "x"])).is_err());
+        assert!(parse_args(&a(&["place"])).is_err());
+        assert!(parse_args(&a(&["place", "--json"])).is_err());
+        assert!(parse_args(&a(&["place", "--json", ""])).is_err());
         assert!(parse_args(&a(&["ocr"])).is_err());
         assert!(parse_args(&a(&["ocr", "a.png", "--lang"])).is_err());
         assert!(parse_args(&a(&["ocr", "a.png", "--lang", ""])).is_err());

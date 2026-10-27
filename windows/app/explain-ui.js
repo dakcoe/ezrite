@@ -96,7 +96,10 @@ function createOverlay(display, model, { onShown, capturable = false }) {
   };
 }
 
-/** 설명 카드: 420 폭, 닫기만 있는 작은 창. 처음엔 화면 오른쪽 위, 내용 높이에 맞춘다 (맥 ExplainCard) */
+/**
+ * 설명 카드: 420 폭, 닫기만 있는 작은 창. 처음엔 화면 오른쪽 위, 내용 높이에 맞춘다 (맥 ExplainCard).
+ * 화면 나누기(1.2.1)로 붙으면 오른쪽 기둥(높이 = 작업 영역)에 두고 내용 길이로 바꾸지 않는다 (맥 docked)
+ */
 function createCard({ onClose, onAsk, onScene }, { capturable = false } = {}) {
   const win = new BrowserWindow({
     width: E.CARD.width, height: E.CARD.initial, show: false,
@@ -116,6 +119,7 @@ function createCard({ onClose, onAsk, onScene }, { capturable = false } = {}) {
   let ready = false;
   let pending = null;
   let locked = false; // 질문을 시작하면 크기를 더 바꾸지 않는다
+  let docked = false; // 화면 나누기로 오른쪽에 붙은 상태
   let closing = false;
 
   const work = () => screen.getDisplayMatching(win.getBounds()).workArea;
@@ -123,7 +127,7 @@ function createCard({ onClose, onAsk, onScene }, { capturable = false } = {}) {
   const from = (e) => !win.isDestroyed() && e.sender === win.webContents;
 
   const onHeight = (e, h) => {
-    if (!from(e) || locked || !Number.isFinite(h)) return;
+    if (!from(e) || locked || docked || !Number.isFinite(h)) return;
     const outer = win.getBounds();
     const chrome = outer.height - win.getContentBounds().height; // 제목 막대
     win.setBounds(round(E.cardFit(outer, h, chrome, work())));
@@ -133,7 +137,7 @@ function createCard({ onClose, onAsk, onScene }, { capturable = false } = {}) {
   };
   const onAskMsg = (e, q) => {
     if (!from(e) || typeof q !== 'string' || !q.trim()) return;
-    if (!locked) win.setBounds(round(E.cardAsked(win.getBounds(), work())));
+    if (!locked && !docked) win.setBounds(round(E.cardAsked(win.getBounds(), work())));
     locked = true;
     onAsk(q.slice(0, 4000));
   };
@@ -173,9 +177,13 @@ function createCard({ onClose, onAsk, onScene }, { capturable = false } = {}) {
 
   return {
     win,
-    show(display, avoid) {
+    show(display, avoid, dock = false) {
       if (win.isDestroyed()) return;
-      if (!win.isVisible()) {
+      docked = dock;
+      if (dock) {
+        const d = display ?? screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+        win.setBounds(round(E.dockFrame(d.workArea, avoid ?? null)));
+      } else if (!win.isVisible()) {
         const d = display ?? screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
         // 맥은 창 폭 = 내용 폭 420. Windows 창 폭에는 테두리(보이지 않는 크기 조절 띠 포함)가 들어 있어 그만큼 넓힌다
         const f = E.cardFrame(d.workArea, avoid ?? null);

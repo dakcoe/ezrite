@@ -7,6 +7,7 @@
 //   ocr(png) → helper ocr 출력 JSON
 //   createCard({ onClose, onAsk, onScene }) → { show(display, avoid), render(p), answer(p), devAsk(q), close() }
 //   createOverlay(display, model) → { update(model), hide(), show(), close() }
+//   dock: 화면 나누기 (1.2.1, 맥 WindowDock). dock() → 창을 줄인 화면(display) 또는 null(전체 화면·실패), restore()
 
 const { EventEmitter } = require('node:events');
 const E = require('./explain');
@@ -23,10 +24,11 @@ const WATCH_HIDDEN_MS = 600;
 class Explainer extends EventEmitter {
   // ai: Claude·Gemini·GPT 호출 (lib/ai.js AIClient). context() 의 provider·model 이 Groq 가 아니면 그쪽에 묻는다
   constructor({ groq, ai = null, onNotice = () => {}, grab, ocr, createCard, createOverlay, context, popupFrame = () => null,
-    sleep = (ms) => new Promise((r) => setTimeout(r, ms)), devQuestion = null, askDelay = 6000, onUsed = () => {}, watch = true }) {
+    sleep = (ms) => new Promise((r) => setTimeout(r, ms)), devQuestion = null, askDelay = 6000, onUsed = () => {}, watch = true,
+    dock = null }) {
     super();
     // watch=false: 표시를 그린 뒤 화면을 지켜보지 않는다 (EZRITE_CAPTURABLE 녹화용 — 찍을 때마다 카드·표시를 빼서 깜박인다)
-    Object.assign(this, { groq, ai, onNotice, grab, ocr, createCard, createOverlay, context, popupFrame, sleep, devQuestion, askDelay, onUsed, watch });
+    Object.assign(this, { groq, ai, onNotice, grab, ocr, createCard, createOverlay, context, popupFrame, sleep, devQuestion, askDelay, onUsed, watch, dock });
     this.busy = false;
     this.card = null;
     this.overlay = null;
@@ -82,11 +84,14 @@ class Explainer extends EventEmitter {
       const card = this.ensureCard();
       this.history = [];
       this.explanation = '';
-      const { transcript, guide, provider, model } = this.context();
+      const { transcript, guide, provider, model, split } = this.context();
       try {
-        const shot = await this.grab({ display: null, full: true });
+        // 화면 나누기: 보던 창을 왼쪽으로 줄이고 카드를 오른쪽에 붙인 뒤 찍는다 (줄인 뒤 화면이라 표시 자리가 맞는다).
+        // 못 붙이면(전체 화면·helper 오류) 예전처럼 마우스 화면에 떠 있는 카드
+        const docked = split && this.dock ? await this.dock.dock().catch(() => null) : null;
+        const shot = await this.grab({ display: docked, full: true });
         this.display = shot.display;
-        card.show(shot.display, this.popupFrame());
+        card.show(shot.display, this.popupFrame(), docked != null);
         card.render({ loading: LOADING_READ });
         const lines = await this.lines(shot.png());
         const hint = E.needsKoreanOcrHint(this.lastOcr) ? E.OCR_KO_HINT : null;
@@ -94,11 +99,11 @@ class Explainer extends EventEmitter {
         const jpeg = shot.jpeg(JPEG_WIDTH);
         const args = { jpeg, lines, transcript, guide, onUsed: this.onUsed };
 
-        // 다른 서비스: 한 번에 묻는다. Groq 규칙·글자 섞임 고치기는 붙이지 않는다 (맥과 같다)
+        // 다른 서비스: 한 번에 묻는다. Groq 규칙·글자 섞임 고치기는 붙이지 않는다 (맥과 같다). 움직이는 그림 안내는 여기만 (1.2.1)
         if (this.usesOther(provider, model)) {
           try {
             const text = await this.ai.complete(provider, {
-              model, prompt: G.unifiedPrompt(lines, transcript, guide), image: jpeg, json: true, maxTokens: AI.EXPLAIN_MAX_TOKENS,
+              model, prompt: G.unifiedPrompt(lines, transcript, guide, true), image: jpeg, json: true, maxTokens: AI.EXPLAIN_MAX_TOKENS,
             });
             this.present(card, lines, shot, text, { data: text }, hint);
             return;
@@ -156,14 +161,15 @@ class Explainer extends EventEmitter {
       const shot = await this.grab({ display: this.display, full: true });
       const lines = await this.lines(shot.png());
       const { transcript, guide, provider, model } = this.context();
-      const prompt = G.questionPrompt(question, this.history, this.explanation, lines, transcript, guide);
+      // Groq 로 묻거나 대신할 때는 움직이는 그림 안내를 뺀 가벼운 질문 (한도에 덜 걸리게, 맥 1.2.1)
+      const prompt = (rich) => G.questionPrompt(question, this.history, this.explanation, lines, transcript, guide, rich);
       const jpeg = shot.jpeg(JPEG_WIDTH);
       let a = null;
       if (this.usesOther(provider, model)) {
         // 답을 읽지 못하면 한 번 더 묻는다. 두 번째는 생각 단계를 꺼서 토큰이 모자라 답이 잘리는 일을 막는다
         for (const think of [true, false]) {
           try {
-            const text = await this.ai.complete(provider, { model, prompt, image: jpeg, json: true, maxTokens: AI.EXPLAIN_MAX_TOKENS, think });
+            const text = await this.ai.complete(provider, { model, prompt: prompt(true), image: jpeg, json: true, maxTokens: AI.EXPLAIN_MAX_TOKENS, think });
             a = E.answerPresentation(text, lines);
             if (a) break;
           } catch (e) {
@@ -174,7 +180,7 @@ class Explainer extends EventEmitter {
         if (!a) this.onNotice(`${AI.LABEL[provider]} 답변 실패 → Groq 로 대신했습니다`);
       }
       if (!a) {
-        const data = await G.answer(this.groq, prompt, { jpeg, lines, transcript, onUsed: this.onUsed });
+        const data = await G.answer(this.groq, prompt(false), { jpeg, lines, transcript, onUsed: this.onUsed });
         a = E.answerPresentation(data, lines);
       }
       if (!a) {
@@ -262,12 +268,17 @@ class Explainer extends EventEmitter {
     this.model = null;
   }
 
-  /** 카드를 닫으면 화면 표시도 지운다. closeCard=false: 사용자가 이미 카드 창을 닫았다 */
+  /**
+   * 카드를 닫으면 화면 표시도 지우고, 줄였던 창을 원래대로 (끝날 때 기다릴 수 있게 그 약속을 돌려준다).
+   * closeCard=false: 사용자가 이미 카드 창을 닫았다
+   */
   clear({ closeCard = true } = {}) {
     this.hideMarks();
+    const restored = this.dock ? this.dock.restore().catch(() => {}) : Promise.resolve();
     const card = this.card;
     this.card = null;
     if (closeCard) card?.close();
+    return restored;
   }
 }
 

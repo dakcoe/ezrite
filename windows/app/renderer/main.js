@@ -150,6 +150,8 @@
       toggleCard('globe', '자동 번역', '영어·일본어 강의를 한국어로 옮겨 아래 줄에 붙입니다. 쓰는 AI 는 아래 기능별 AI 에서 고릅니다.', o.autoTranslate, 'autoTranslate'),
       toggleCard('sliders', '녹음할 때마다 묻기', '녹음 버튼을 누르면 소리 출처와 인식 언어를 먼저 고릅니다.', o.askBeforeRecord, 'askBeforeRecord'),
       toggleCard('pause', '조용하면 자동 일시정지', '말소리가 30초 동안 없으면 잠시 멈추고, 다시 들리면 같은 기록에 이어서 녹음합니다. 쉬는 동안은 녹음 파일에 넣지 않습니다.', o.autoPauseQuiet, 'autoPauseQuiet'),
+      // 맥 문구에서 손쉬운 사용 권한 대목만 Windows 에 맞게 (Windows 는 권한이 필요 없고, 관리자 권한으로 실행한 창은 옮기지 못한다)
+      toggleCard('split', '설명할 때 화면 나누기', '설명해줘를 누르면 보던 창을 왼쪽으로 줄이고 오른쪽에 설명 카드를 붙여 슬라이드를 가리지 않습니다. 카드를 닫으면 창이 원래대로 돌아옵니다. 전체 화면 창과 관리자 권한으로 실행한 창은 그대로 둡니다.', o.splitScreen, 'splitScreen'),
       toggleCard('mic', '내 목소리도 함께', '프로그램 소리를 받을 때 마이크도 섞어서 받아 적습니다.', o.includeMic, 'includeMic', s.sourceId.startsWith('mic:')),
       loginCard(s),
       themeCard(s),

@@ -93,14 +93,14 @@ test('설정: 없으면 기본값, 저장한 값은 다음에 그대로', () => 
   const s = Settings.load(file);
   assert.equal(s.language, 'English');
   assert.equal(s.notesFolder, 'D:\\수업');
-  assert.deepEqual(s.options, { autoTranslate: false, askBeforeRecord: true, includeMic: true, autoPauseQuiet: false });
+  assert.deepEqual(s.options, { autoTranslate: false, askBeforeRecord: true, includeMic: true, autoPauseQuiet: false, splitScreen: false });
 });
 
 test('설정: 조용하면 자동 일시정지(1.1.5)는 기본 켜짐. 전에 저장한 설정 파일에 없어도 켜짐', () => {
   assert.equal(Settings.DEFAULTS.options.autoPauseQuiet, true);
   const file = path.join(tempDir(), 'settings.json');
   fs.writeFileSync(file, JSON.stringify({ options: { autoTranslate: false, askBeforeRecord: false, includeMic: false } }));
-  assert.deepEqual(Settings.load(file).options, { autoTranslate: false, askBeforeRecord: false, includeMic: false, autoPauseQuiet: true });
+  assert.deepEqual(Settings.load(file).options, { autoTranslate: false, askBeforeRecord: false, includeMic: false, autoPauseQuiet: true, splitScreen: false });
   fs.writeFileSync(file, JSON.stringify({ options: { autoPauseQuiet: 'no' } }));
   assert.equal(Settings.load(file).options.autoPauseQuiet, true, '참/거짓이 아니면 기본값');
 });
@@ -135,4 +135,13 @@ test('설정: 깨진 파일·모르는 값·틀린 형식은 기본값으로', (
   assert.deepEqual(s.options, { ...Settings.DEFAULTS.options, includeMic: true });
   assert.equal(s.sourceId, 'pid:5');
   assert.equal('extra' in s, false);
+});
+
+test('설정: 설명할 때 화면 나누기(1.2.1)는 기본 꺼짐. 전에 저장한 설정 파일에 없어도 꺼짐', () => {
+  assert.equal(Settings.DEFAULTS.options.splitScreen, false);
+  const file = path.join(tempDir(), 'settings.json');
+  fs.writeFileSync(file, JSON.stringify({ options: { autoPauseQuiet: false } }));
+  assert.equal(Settings.load(file).options.splitScreen, false);
+  fs.writeFileSync(file, JSON.stringify({ options: { splitScreen: true } }));
+  assert.equal(Settings.load(file).options.splitScreen, true);
 });

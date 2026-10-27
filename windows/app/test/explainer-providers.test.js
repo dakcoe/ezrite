@@ -18,7 +18,7 @@ const LINES = E.linesFromOcr(OCR);
 const unified = JSON.stringify({ summary: '파레토 효율 설명', marks: [{ id: 1, note: '조건' }], visuals: [], scenes: [] });
 const answerJSON = JSON.stringify({ answer: '왜냐하면', marks: [{ id: 1, note: '여기' }] });
 
-function rig({ provider = 'claude', model = 'claude-sonnet-5-5', ai = [], groqReplies = [] } = {}) {
+function rig({ provider = 'claude', model = 'claude-sonnet-5-5', ai = [], groqReplies = [], split = false, dock = null } = {}) {
   const groqCalls = [];
   const aiCalls = [];
   const notices = [];
@@ -45,13 +45,15 @@ function rig({ provider = 'claude', model = 'claude-sonnet-5-5', ai = [], groqRe
     groq, ai: fakeAI, onNotice: (m) => notices.push(m),
     grab: async (opts) => ({ display: opts.display ?? 'D1', bitmap: { width: 100, height: 100, data: Buffer.alloc(40000) }, png: () => Buffer.from('png'), jpeg: (w) => Buffer.from(`jpg${w}`) }),
     ocr: async () => OCR,
-    context: () => ({ transcript: ['교환이 효율적이려면'], guide: '천천히', provider, model }),
+    context: () => ({ transcript: ['교환이 효율적이려면'], guide: '천천히', provider, model, split }),
+    dock,
     createCard: () => {
-      const c = { renders: [], answers: [] };
-      c.show = () => {};
+      const c = { renders: [], answers: [], shows: [] };
+      c.show = (...a) => c.shows.push(a);
       c.render = (p) => c.renders.push(p);
       c.answer = (p) => c.answers.push(p);
       c.devAsk = () => {};
+      c.close = () => {};
       cards.push(c);
       return c;
     },
@@ -69,7 +71,7 @@ test('설명: 고른 서비스에 맥과 같은 프롬프트(GROQ_RULES 없음)�
   const { p, opts } = aiCalls[0];
   assert.equal(p, 'claude');
   assert.deepEqual(opts, {
-    model: 'claude-sonnet-5-5', prompt: G.unifiedPrompt(LINES, ['교환이 효율적이려면'], '천천히'),
+    model: 'claude-sonnet-5-5', prompt: G.unifiedPrompt(LINES, ['교환이 효율적이려면'], '천천히', true),
     image: Buffer.from('jpg1280'), json: true, maxTokens: 3000,
   });
   assert.ok(!opts.prompt.includes(G.GROQ_RULES.trim().slice(0, 30)));
@@ -117,7 +119,7 @@ test('질문: 생각 단계를 켠 채 한 번, 답을 읽으면 끝 (질문 프
   assert.equal(r.aiCalls.length, 1);
   const { opts } = r.aiCalls[0];
   assert.deepEqual(opts, {
-    model: 'gpt-6.1-sol', prompt: G.questionPrompt('왜?', [], '파레토 효율 설명', LINES, ['교환이 효율적이려면'], '천천히'),
+    model: 'gpt-6.1-sol', prompt: G.questionPrompt('왜?', [], '파레토 효율 설명', LINES, ['교환이 효율적이려면'], '천천히', true),
     image: Buffer.from('jpg1280'), json: true, maxTokens: 3000, think: true,
   });
   assert.equal(r.cards[0].answers.at(-1).answer, '왜냐하면');
@@ -149,4 +151,49 @@ test('질문: 키 오류는 Groq 로 대신하지 않고 카드에 오류를 보
   await r.ex.ask('왜?');
   assert.equal(r.groqCalls.length, 0);
   assert.deepEqual(r.cards[0].answers.at(-1), { error: 'Claude API 키가 맞지 않습니다. 설정에서 다시 확인하세요.' });
+});
+
+test('1.2.1 질문: 다른 서비스가 실패해 Groq 로 대신 물을 때는 움직이는 그림 안내를 뺀 가벼운 질문으로', async () => {
+  const r = rig({ ai: [unified, new AIFailure(500, 'boom')], groqReplies: [content(answerJSON)] });
+  await explained(r);
+  await r.ex.ask('왜?');
+  assert.ok(r.aiCalls[0].opts.prompt.includes('"type":"anim"'));
+  const sent = r.groqCalls[0].messages[0].content[0].text;
+  assert.ok(sent.startsWith(G.questionPrompt('왜?', [], '파레토 효율 설명', LINES, ['교환이 효율적이려면'], '천천히', false)));
+  assert.ok(!sent.includes('"type":"anim"'));
+});
+
+// --- 1.2.1 설명할 때 화면 나누기 (맥 Explainer.run split · clear → WindowDock.restore) ---
+
+function fakeDock(result) {
+  const calls = [];
+  return { calls, dock: async () => { calls.push('dock'); return result; }, restore: async () => { calls.push('restore'); } };
+}
+
+test('화면 나누기: 켜져 있으면 찍기 전에 창을 줄이고, 그 화면을 찍어 카드를 오른쪽에 붙인다. 카드를 닫으면 되돌린다', async () => {
+  const dock = fakeDock('D2');
+  const r = rig({ ai: [unified], split: true, dock });
+  await r.ex.run();
+  assert.deepEqual(dock.calls, ['dock']);
+  assert.deepEqual(r.cards[0].shows[0], ['D2', null, true], '줄인 화면에 붙인 카드');
+  await r.ex.clear();
+  assert.deepEqual(dock.calls, ['dock', 'restore']);
+});
+
+test('화면 나누기: 붙이지 못하면(전체 화면·실패) 예전처럼 마우스 화면에 떠 있는 카드', async () => {
+  for (const result of [null, Promise.reject(new Error('helper 없음'))]) {
+    const dock = { calls: [], dock: async () => { dock.calls.push('dock'); return result; }, restore: async () => { dock.calls.push('restore'); } };
+    const r = rig({ ai: [unified], split: true, dock });
+    await r.ex.run();
+    assert.deepEqual(r.cards[0].shows[0], ['D1', null, false]);
+    assert.equal(r.cards[0].renders.at(-1).summary, '파레토 효율 설명', '설명은 그대로');
+  }
+});
+
+test('화면 나누기: 꺼져 있으면 창을 건드리지 않는다 (닫을 때 되돌리기만 — 아무것도 안 줄였으면 할 일 없음)', async () => {
+  const dock = fakeDock('D2');
+  const r = rig({ ai: [unified], split: false, dock });
+  await r.ex.run();
+  assert.deepEqual(dock.calls, []);
+  assert.deepEqual(r.cards[0].shows[0], ['D1', null, false]);
 });

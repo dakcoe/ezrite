@@ -460,3 +460,26 @@ test('한국어 OCR 안내: 영어 화면이 잘 읽혔거나, 한국어 팩이 
   assert.equal(needsKoreanOcrHint(ocrOf(undefined, ['LH 7t Ol 2 E-I', 'O| xl ?? 2t', 'S| 4 ol0', '7H LI E- ?'])), false, '예전 helper (koAvailable 없음)');
   assert.equal(needsKoreanOcrHint(ocrOf(false, ['ok'])), false, '글자가 너무 적으면 판단하지 않는다');
 });
+
+test('[mac ExplainTests] 움직이는_그림은_물체와_단계가_있어야_남는다', () => {
+  const ok = '{"summary":"s","visuals":[{"type":"anim","title":"t","layout":"row","items":[{"id":"a","label":"5","note":null}],"frames":[{"show":["a"],"focus":[],"links":[],"order":null,"set":[],"caption":"c"}]}]}';
+  const empty = '{"summary":"s","visuals":[{"type":"anim","title":"t","layout":"row","items":[],"frames":[]}]}';
+  const broken = '{"summary":"s","visuals":[{"type":"anim","title":"t","layout":"row","items":"a","frames":{}}]}';
+  assert.equal(E.visuals(ok).visuals.length, 1);
+  assert.equal(E.visuals(empty).visuals.length, 0);
+  assert.equal(E.visuals(broken).visuals.length, 0);
+});
+
+test('1.2.1 화면 나누기: 카드는 작업 영역 오른쪽 기둥(폭 440, 높이 전체). 녹음 팝업과 겹치면 위·아래 중 넓은 쪽', () => {
+  const work = { x: 0, y: 0, width: 1920, height: 1040 };
+  assert.deepEqual(E.dockFrame(work, null), { x: 1480, y: 0, width: 440, height: 1040 });
+  assert.deepEqual(E.dockFrame(work, { x: 0, y: 0, width: 300, height: 200 }), { x: 1480, y: 0, width: 440, height: 1040 }, '안 겹치면 그대로');
+  // 팝업이 오른쪽 아래 (Windows 기본 자리): 그 위로
+  assert.deepEqual(E.dockFrame(work, { x: 1560, y: 760, width: 340, height: 260 }), { x: 1480, y: 0, width: 440, height: 752 });
+  // 팝업이 오른쪽 위: 그 아래로
+  assert.deepEqual(E.dockFrame(work, { x: 1560, y: 20, width: 340, height: 260 }), { x: 1480, y: 288, width: 440, height: 752 });
+  // 남는 자리가 300 보다 작으면 300 은 지킨다 (팝업과 조금 겹쳐도)
+  assert.equal(E.dockFrame({ x: 0, y: 0, width: 1280, height: 600 }, { x: 900, y: 0, width: 340, height: 500 }).height, 300);
+  // 두 번째 화면(음수 좌표)
+  assert.deepEqual(E.dockFrame({ x: -1280, y: 100, width: 1280, height: 984 }, null), { x: -440, y: 100, width: 440, height: 984 });
+});

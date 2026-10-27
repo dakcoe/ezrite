@@ -49,6 +49,7 @@ const PKG = require('./package.json');
 const E = require('./lib/explain');
 const { Explainer } = require('./lib/explainer');
 const ExplainUI = require('./explain-ui');
+const { WindowDock, CARD_WIDTH: DOCK_CARD, GAP: DOCK_GAP } = require('./lib/dock');
 
 // 녹음 듣기용 주소 ezrite-note://audio/<기록이름>.m4a 또는 /<기록 폴더>/<기록이름>.m4a.
 // 저장 폴더 안 이 앱 기록의 .m4a 만 내준다 (renderer 가 아무 파일이나 읽지 못하게, notes.audioFile)
@@ -92,7 +93,7 @@ const state = {
   recordedBefore: 0,
   notice: null,
   error: null,
-  options: { autoTranslate: true, askBeforeRecord: true, includeMic: false, autoPauseQuiet: true },
+  options: { autoTranslate: true, askBeforeRecord: true, includeMic: false, autoPauseQuiet: true, splitScreen: false },
   compact: false,
   page: 'live',
   entries: [],
@@ -517,6 +518,23 @@ function ourWindows(full) {
   return list.filter((w) => w && !w.isDestroyed());
 }
 
+/** Electron 좌표(DIP) 사각형 → helper 가 쓰는 물리 픽셀 {x, y, w, h} */
+function physical(r) {
+  const p = screen.dipToScreenRect(null, r);
+  return { x: p.x, y: p.y, w: p.width, h: p.height };
+}
+
+// 설명할 때 화면 나누기 (1.2.1, 맥 WindowDock). 창 목록·옮기기는 helper (windows·place)
+const windowDock = new WindowDock({
+  me: process.pid,
+  list: async () => {
+    const list = JSON.parse(await runHelper(['windows'], 10_000));
+    if (dev.dockOnly) list.windows = list.windows.filter((w) => dev.dockOnly.includes(w.pid));
+    return list;
+  },
+  place: (items) => runHelper(['place', '--json', JSON.stringify(items)], 10_000),
+});
+
 const explainer = new Explainer({
   groq,
   ai: aiClient,
@@ -529,7 +547,19 @@ const explainer = new Explainer({
     guide: state.userGuide,
     provider: state.ai.explainProvider,
     model: state.ai.explainModel,
+    split: state.options.splitScreen,
   }),
+  // 마우스가 있는 화면의 창들을 줄이고, 창이 줄고 내용이 다시 그려질 때까지 잠깐 기다린다 (맥 0.35초)
+  dock: {
+    async dock() {
+      const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+      const geom = { area: physical(d.workArea), bounds: physical(d.bounds), reserve: Math.round((DOCK_CARD + DOCK_GAP) * d.scaleFactor) };
+      if (!(await windowDock.dock(geom))) return null;
+      await new Promise((r) => setTimeout(r, 350));
+      return d;
+    },
+    restore: () => windowDock.restore(),
+  },
   popupFrame: () => (popup && !popup.isDestroyed() && popup.isVisible() ? popup.getBounds() : null),
   createCard: (hooks) => ExplainUI.createCard(hooks, { capturable: dev.capturable }),
   createOverlay: (display, model) => ExplainUI.createOverlay(display, model, {
@@ -1423,18 +1453,21 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 
-// 끝낼 때: 녹음을 마무리하고, m4a 로 바꾸는 일이 끝날 때까지(최대 30초) 기다린다.
+// 끝낼 때: 녹음을 마무리하고, m4a 로 바꾸는 일과 줄였던 창 되돌리기가 끝날 때까지(최대 30초) 기다린다.
 // 그래도 못 끝내면 .pcm 이 남아 다음 실행 때 바꾼다
 let quitting = false;
 app.on('before-quit', (e) => {
   app.isQuitting = true;
   session.stop();
-  explainer.clear();
-  if (quitting || encoding.size === 0) return;
+  // 화면 나누기로 줄였던 창도 원래대로 돌려 놓고 끝낸다 (맥 applicationWillTerminate)
+  const docking = !windowDock.idle;
+  const restored = explainer.clear();
+  const waits = [...encoding, ...(docking ? [restored] : [])];
+  if (quitting || waits.length === 0) return;
   e.preventDefault();
   quitting = true;
   const timeout = new Promise((r) => setTimeout(r, 30_000));
-  Promise.race([Promise.allSettled([...encoding]), timeout]).then(() => app.quit());
+  Promise.race([Promise.allSettled(waits), timeout]).then(() => app.quit());
 });
 app.on('window-all-closed', () => {
   // 트레이에 남아 있으므로 종료하지 않는다
