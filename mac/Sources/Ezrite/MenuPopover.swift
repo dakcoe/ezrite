@@ -416,6 +416,7 @@ struct StatusHeader<Extra: View>: View {
                     } else if state.quietPaused {
                         Text("조용함 · 자동 일시정지 " + Self.clock(state.recordedBefore))
                             .font(.system(size: 13.5, weight: .semibold)).monospacedDigit()
+                            .lineLimit(1).minimumScaleFactor(0.75)      // 버튼 옆 좁은 자리에서 두 줄로 꺾이지 않게
                             .help("말소리가 30초 동안 없어 잠시 멈췄습니다. 말이 다시 들리면 이어서 녹음합니다")
                     } else if state.paused {
                         Text("일시정지 " + Self.clock(state.recordedBefore))
@@ -428,7 +429,7 @@ struct StatusHeader<Extra: View>: View {
                     .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
-            if state.listening && !state.paused { Waveform(level: state.level) }
+            if state.listening && !state.paused { Waveform(meter: state.meter) }
             // 설명해줘: 화면 캡처가 고른 AI 회사로 전송된다
             Button { AppDelegate.shared?.explain() } label: {
                 Group {
@@ -896,16 +897,17 @@ private struct TabButton: View {
 
 /// 소리 크기만큼 출렁이는 막대
 struct Waveform: View {
-    var level: Float
+    @ObservedObject var meter: Meter
+    private var level: Float { meter.level }
     private let count = 5
 
+    // 화면 주사율(60~120번/초)로 다시 그리던 TimelineView(.animation) 는 팝업을 닫아 둬도 돌아 녹음 내내 CPU 를 썼다.
+    // 소리 크기가 올 때(약 11번/초)만 다시 그린다. 사이를 애니메이션으로 이으면 그것도 매 프레임 돌아서 잇지 않는다
     var body: some View {
-        TimelineView(.animation) { tl in
-            let t = tl.date.timeIntervalSinceReferenceDate
-            HStack(spacing: 2.5) {
-                ForEach(0..<count, id: \.self) { i in
-                    Capsule().fill(Color.red).frame(width: 2.5, height: barHeight(t: t, index: i))
-                }
+        let t = Date().timeIntervalSinceReferenceDate
+        HStack(spacing: 2.5) {
+            ForEach(0..<count, id: \.self) { i in
+                Capsule().fill(Color.red).frame(width: 2.5, height: barHeight(t: t, index: i))
             }
         }
         .frame(height: 16)

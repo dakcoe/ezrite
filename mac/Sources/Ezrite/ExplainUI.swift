@@ -305,8 +305,9 @@ final class MarksOverlay: NSPanel {
         // 클릭은 통과하니 겹쳐도 팝업 버튼은 그대로 눌린다
         level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 3)
 
-        // 지금 보는 화면(전체 화면 영상 포함)에 뜬다. 다른 데스크톱으로 화면을 넘기지 않는다
-        collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .ignoresCycle]
+        // 모든 데스크톱(전체 화면 영상 포함)에 함께 있다. 설명을 기다리는 사이 데스크톱을 넘겨도 따라오고,
+        // 짚은 글자가 안 보이는 데스크톱에서는 watchMarks 가 표시를 숨겼다가 돌아오면 되살린다
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         isReleasedWhenClosed = false
         contentView = NSHostingView(rootView: MarksView(model: model))
         setFrame(screen.frame, display: true)
@@ -434,7 +435,7 @@ final class ExplainCard: NSObject, NSWindowDelegate {
         panel.standardWindowButton(.zoomButton)?.isHidden = true
         // 맨 위: 녹음 팝업(floating+2)과 ①②③ 표시(floating+3)가 설명 글을 가리지 않게
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 4)
-        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]   // 위 MarksOverlay 와 같은 이유
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]   // 어느 데스크톱에서도 보인다 (위 MarksOverlay 와 같은 이유)
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.delegate = self

@@ -3,6 +3,10 @@ import Combine
 import SwiftUI
 import WebKit
 
+final class Meter: ObservableObject {
+    @Published var level: Float = 0
+}
+
 final class AppState: ObservableObject {
     static let languages: [(label: String, code: String)] = [("한국어", "ko"), ("English", "en"), ("日本語", "ja")]
     private static let defaults = UserDefaults.standard
@@ -20,7 +24,8 @@ final class AppState: ObservableObject {
     @Published var liveSession: URL?           // 지금 쓰고 있는 자동 저장 파일
     @Published var savedSession: URL?          // 방금 끝난 녹음의 기록. 맨 위에 "저장됨" 띠를 띄운다
     @Published var inflight = 0                // Groq 에 보내 놓고 기다리는 발화 수
-    @Published var level: Float = 0            // 최근 소리 크기 (파형)
+    /// 최근 소리 크기 (파형). 90ms 마다 바뀌어서 AppState 에 두면 숨긴 팝업·설정 화면까지 통째로 다시 그린다. 파형만 본다
+    let meter = Meter()
     @Published var error: String?
     /// 위쪽 줄에 잠깐 띄우는 알림. 6초 뒤 저절로 사라진다 (그 사이 새 알림이 오면 그것 기준으로 다시 센다)
     @Published var notice: String? {
@@ -350,6 +355,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     var popupFrame: NSRect? { statusBar.frame }
+
+    /// 파형이 보이는 창(팝업·전체 창)이 화면에 있나. 안 보일 땐 소리 크기를 보내지 않아 다시 그리지 않는다
+    var showsLevel: Bool { statusBar.frame != nil || main?.occlusionState.contains(.visible) == true }
 
     /// 팝업의 ⚙ 버튼: 팝업을 닫고 전체 창을 띄운다
     func showMainWindow() {

@@ -282,7 +282,7 @@ final class Transcriber {
     }
 
     private func stopCapture() {
-        state.level = 0
+        state.meter.level = 0
         screen?.stop()
         mic?.stop()
         screen = nil
@@ -301,7 +301,13 @@ final class Transcriber {
             onUtterance: { [weak self] u, start, end in
                 DispatchQueue.main.async { MainActor.assumeIsolated { self?.enqueue(u, time: start...end) } }
             },
-            onLevel: { [weak self] l in Task { @MainActor in self?.state.level = l } },
+            onLevel: { [weak self] l in
+                Task { @MainActor in
+                    guard let self else { return }
+                    let shown = AppDelegate.shared?.showsLevel ?? true
+                    if shown || self.state.meter.level != 0 { self.state.meter.level = shown ? l : 0 }
+                }
+            },
             onIdle: { [weak self] quiet in
                 DispatchQueue.main.async { MainActor.assumeIsolated { self?.quietChanged(quiet) } }
             })

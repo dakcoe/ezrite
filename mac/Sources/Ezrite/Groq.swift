@@ -363,7 +363,7 @@ extension GroqClient {
         """
     /// 그림 틀 안내. rich: 움직이는 그림(anim)까지 — Claude·Gemini·GPT 만. Groq 무료 한도(특히 qwen 분당 출력 1000)에서는
     /// 대본이 길어 막히기 쉬워 네 가지 틀만 준다
-    static func visualsGuide(rich: Bool) -> String { baseKinds + (rich ? animKind : "") + visualRules }
+    static func visualsGuide(rich: Bool) -> String { ([baseKinds] + (rich ? [animKind] : []) + [visualRules]).joined(separator: "\n") }
     static let baseKinds = """
         Visual item types — pick only what genuinely helps, or none:
         - {"type":"steps","title":"...","items":["...", "..."]}  ordered process, procedure, argument, derivation, \
