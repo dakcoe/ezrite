@@ -37,6 +37,17 @@ test('complete: Claude 실제 응답(설명)을 코드블록 벗긴 JSON 으로,
   assert.deepEqual(spent, [['claude-sonnet-5-5', 'tokens', raw.usage.input_tokens + raw.usage.output_tokens]]);
 });
 
+test('[1.2.3] complete: 비용 계산용으로 서비스·모델·입력·출력 토큰을 따로 알린다 (실패한 호출은 알리지 않는다)', async () => {
+  const cost = [];
+  const ok = client(() => respond(200, { content: [{ type: 'text', text: 'x' }], usage: { input_tokens: 1200, output_tokens: 300 } }),
+    { onCost: (...a) => cost.push(a) });
+  await ok.c.complete('claude', { model: 'claude-haiku-5-5', prompt: 'p', maxTokens: 10 });
+  assert.deepEqual(cost, [['claude', 'claude-haiku-5-5', 1200, 300]]);
+  const bad = client(() => respond(500, { error: { message: 'x' } }), { onCost: (...a) => cost.push(a) });
+  await assert.rejects(bad.c.complete('claude', { model: 'claude-haiku-5-5', prompt: 'p', maxTokens: 10 }));
+  assert.equal(cost.length, 1);
+});
+
 test('complete: json 이 아니면 받은 글 그대로 (번역)', async () => {
   const { c } = client(() => respond(200, { choices: [{ message: { content: '1. 안녕' } }], usage: { total_tokens: 3 } }));
   assert.equal(await c.complete('openai', { model: 'gpt-5-luna', prompt: 'p', maxTokens: 2000, think: false }), '1. 안녕');

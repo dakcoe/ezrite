@@ -353,6 +353,61 @@ test('[1.2.2] 데스크톱을 알 수 없으면(기준 창 없음·helper 오류
   }
 });
 
+test('[1.2.3] 설명을 기다리는 사이 카드를 닫으면, 답이 와도 화면 표시·지켜보기를 띄우지 않는다', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const desk = fakeDesktop();
+  const { ex, cards, overlays, grabs } = rig({
+    replies: [() => gate.then(() => content(unified))], desktop: desk,
+    sleep: async () => { await new Promise((r) => setImmediate(r)); },
+  });
+  const running = ex.run();
+  await flush();
+  cards[0].hooks.onClose(); // 사용자가 카드 창을 닫음
+  release();
+  await running;
+  await flush();
+  assert.equal(overlays.length, 0, '표시를 만들지 않는다');
+  assert.equal(grabs.length, 1, '지켜보기 찍기도 없다');
+  assert.equal(cards[0].renders.some((p) => p.summary), false, '닫힌 카드에 그리지 않는다');
+  assert.equal(ex.card, null);
+  assert.ok(desk.watches.every((w) => w.stopped), '데스크톱 지켜보기도 남지 않는다');
+});
+
+test('[1.2.3] 질문 답을 기다리는 사이 카드를 닫으면, 답이 와도 표시를 띄우지 않는다', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const answer = JSON.stringify({ answer: '답', marks: [{ id: 1, note: 'n' }] });
+  const { ex, cards, overlays } = rig({ replies: [content(unified), () => gate.then(() => content(answer))] });
+  await ex.run();
+  assert.equal(overlays.length, 1);
+  const asking = ex.ask('왜요?');
+  await flush();
+  cards[0].hooks.onClose();
+  release();
+  await asking;
+  assert.equal(overlays.length, 1, '새 표시 없음');
+  assert.ok(overlays[0].closed);
+  assert.deepEqual(cards[0].answers, []);
+});
+
+test('[1.2.3] 화면을 찍는 사이 카드를 닫으면 데스크톱 지켜보기를 새로 띄우지 않는다', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const desk = fakeDesktop();
+  const { ex, cards, grabs } = rig({
+    replies: [], desktop: desk,
+    grab: async (opts) => { grabs.push(opts); await gate; return { display: 'D1', bitmap: bitmap(0), png: () => Buffer.from('p'), jpeg: () => Buffer.from('j') }; },
+  });
+  const running = ex.run();
+  await flush();
+  cards[0].hooks.onClose();
+  release();
+  await running;
+  await flush();
+  assert.equal(desk.watches.length, 0);
+});
+
 test('지켜보기 기본값은 켬', async () => {
   let ticks = 0;
   const { ex, grabs } = rig({ replies: [content(unified)], sleep: async () => { ticks++; if (ticks > 2) ex.hideMarks(); await new Promise((r) => setImmediate(r)); } });

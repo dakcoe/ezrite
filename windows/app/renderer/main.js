@@ -191,7 +191,8 @@
           // 새 버전이 있으면 그 자리에서 바로 받는다 (맥 설정과 같다)
           s.update?.available && !s.update.checking
             ? h('button', { class: 'btn primary', onclick: () => window.ezrite.update.download() }, '받기') : null,
-          h('button', { class: 'btn', disabled: Boolean(s.update?.checking), onclick: () => window.ezrite.update.check() }, '업데이트 확인'))),
+          h('button', { class: 'btn', disabled: Boolean(s.update?.checking), onclick: () => window.ezrite.update.check() }, '업데이트 확인')),
+        ...releaseNotes(s)),
       h('button', { class: 'link-btn notices', onclick: () => window.ezrite.openNotices() }, '오픈소스 고지'),
 
       h('div', { class: 'footer-buttons' },
@@ -201,6 +202,17 @@
         h('button', { class: 'fbtn', title: '문의·신고', onclick: () => window.ezrite.openIssue() },
           h('span', { html: icon('report', 14, 1.6) }), '문의·신고')),
       h('button', { class: 'fbtn quit', onclick: () => window.ezrite.quit() }, h('span', { html: icon('power', 14, 1.8) }), 'Ezrite 종료'));
+  }
+
+  /** 버전 카드 아래 버전별 요약 (1.2.3, 맥과 같다). 받지 못했으면 없다 */
+  function releaseNotes(s) {
+    const list = Array.isArray(s.releases) ? s.releases : [];
+    return list.flatMap((r) => [
+      h('div', { class: 'sep' }),
+      h('div', { class: 'release' },
+        h('div', { class: 'rtitle' }, r.version, r.version === s.version ? h('span', { class: 'secondary' }, ' · 지금 쓰는 버전') : null),
+        h('ul', null, r.lines.map((l) => h('li', null, l)))),
+    ]);
   }
 
   /** 버전 줄 아래 한 줄: 새 버전 있음 / 확인 중 / 최신 / 아직 확인 전 (맥 versionStatus) */
@@ -349,7 +361,7 @@
     }
     const key = JSON.stringify([s.page,
       s.page === 'settings' ? [s.sources, s.sourceId, s.language, s.options, s.listening, s.notesDir, s.notesFolder, s.hasKey, s.update, s.openAtLogin, s.theme, s.appAudio,
-        s.aiView, s.providerStatus, s.modelCheck, s.checking] : null,
+        s.aiView, s.providerStatus, s.modelCheck, s.checking, s.releases] : null,
       s.page === 'history' ? [s.sessions, s.opened, s.opened?.live ? s.entries : null] : null]);
     if (key === shownKey) return;
     const scroll = page.firstElementChild?.scrollTop ?? 0;

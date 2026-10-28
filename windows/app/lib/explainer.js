@@ -20,6 +20,7 @@ const AI = require('./ai');
 const LOADING_READ = '화면을 읽는 중…';
 const LOADING_MAKE = '설명을 만드는 중…';
 const ANSWER_FAILED = '답을 읽지 못했습니다. 다시 물어봐 주세요.';
+const EMPTY_EXPLANATION = '설명을 만들지 못했습니다. ✨ 를 다시 눌러 주세요.';
 const JPEG_WIDTH = 1280; // 이미지 토큰은 크기와 상관없이 한 장에 약 1,800 (맥 실측)
 const WATCH_MS = 400;
 const WATCH_HIDDEN_MS = 600;
@@ -96,6 +97,7 @@ class Explainer extends EventEmitter {
         // 못 붙이면(전체 화면·helper 오류) 예전처럼 마우스 화면에 떠 있는 카드
         const docked = split && this.dock ? await this.dock.dock().catch(() => null) : null;
         const shot = await this.grab({ display: docked, full: true });
+        if (this.card !== card) return; // 기다리는 사이 카드를 닫았다 (1.2.3)
         this.display = shot.display;
         this.followDesktop(shot.display);
         card.show(shot.display, this.popupFrame(), docked != null);
@@ -106,14 +108,26 @@ class Explainer extends EventEmitter {
         const jpeg = shot.jpeg(JPEG_WIDTH);
         const args = { jpeg, lines, transcript, guide, onUsed: this.onUsed };
 
-        // 다른 서비스: 한 번에 묻는다. Groq 규칙·글자 섞임 고치기는 붙이지 않는다 (맥과 같다). 움직이는 그림 안내는 여기만 (1.2.1)
+        // 다른 서비스: 한 번에 묻는다. Groq 규칙·글자 섞임 고치기는 붙이지 않는다 (맥과 같다). 움직이는 그림 안내는 여기만 (1.2.1).
+        // 요약이 비면(생각만 하고 본문을 안 줌) 생각을 끄고 한 번 더, 그래도 비면 Groq 로 대신한다 (1.2.3)
         if (this.usesOther(provider, model)) {
           try {
-            const text = await this.ai.complete(provider, {
-              model, prompt: G.unifiedPrompt(lines, transcript, guide, true), image: jpeg, json: true, maxTokens: AI.EXPLAIN_MAX_TOKENS,
-            });
-            this.present(card, lines, shot, text, { data: text }, hint);
-            return;
+            let text = null;
+            for (const think of [true, false]) {
+              const t = await this.ai.complete(provider, {
+                model, prompt: G.unifiedPrompt(lines, transcript, guide, true), image: jpeg, json: true, maxTokens: AI.EXPLAIN_MAX_TOKENS, think,
+              });
+              if (this.card !== card) return;
+              if (E.visuals(t).summary.trim()) {
+                text = t;
+                break;
+              }
+            }
+            if (text != null) {
+              this.present(card, lines, shot, text, { data: text }, hint);
+              return;
+            }
+            this.onNotice(`${AI.LABEL[provider]} 설명을 읽지 못함 → Groq 로 대신했습니다`);
           } catch (e) {
             if (!AI.fallsBack(e)) throw e;
             this.onNotice(`${AI.LABEL[provider]} 설명 실패 → Groq 로 대신했습니다`);
@@ -132,7 +146,7 @@ class Explainer extends EventEmitter {
         ]);
         this.present(card, lines, shot, picked, visuals, hint);
       } catch (e) {
-        card.render({ error: e.message });
+        if (this.card === card) card.render({ error: e.message });
       }
     } finally {
       this.setBusy(false);
@@ -141,7 +155,14 @@ class Explainer extends EventEmitter {
 
   /** hint: 카드 맨 위 한 줄 안내 (한국어 글자 인식 팩이 없을 때) */
   present(card, lines, shot, marksData, visualsResult, hint = null) {
+    // 답을 기다리는 사이 카드를 닫았으면 표시·지켜보기를 새로 띄우지 않는다 (1.2.3, 맥과 같다)
+    if (this.card !== card) return;
     const { payload, model, explanation } = E.presentation(marksData, visualsResult, lines);
+    // 요약도 그림도 없으면 빈 카드 대신 다시 눌러 달라고 (1.2.3)
+    if (!payload.error && !payload.summary?.trim() && !payload.visuals?.length) {
+      card.render({ error: EMPTY_EXPLANATION });
+      return;
+    }
     if (hint) payload.hint = hint;
     this.explanation = explanation;
     if (model) this.showMarks(shot, model);
@@ -164,8 +185,11 @@ class Explainer extends EventEmitter {
   async ask(question) {
     const card = this.card;
     if (!card) return;
+    // 기다리는 사이 카드를 닫았으면 답이 와도 아무것도 띄우지 않는다 (1.2.3)
+    const closed = () => this.card !== card;
     try {
       const shot = await this.grab({ display: this.display, full: true });
+      if (closed()) return;
       this.followDesktop(shot.display); // 질문한 그때 화면이 기준
       const lines = await this.lines(shot.png());
       const { transcript, guide, provider, model } = this.context();
@@ -191,6 +215,7 @@ class Explainer extends EventEmitter {
         const data = await G.answer(this.groq, prompt(false), { jpeg, lines, transcript, onUsed: this.onUsed });
         a = E.answerPresentation(data, lines);
       }
+      if (closed()) return;
       if (!a) {
         card.answer({ error: ANSWER_FAILED });
         return;
@@ -200,7 +225,7 @@ class Explainer extends EventEmitter {
       if (a.model) this.showMarks(shot, a.model);
       card.answer(a.payload);
     } catch (e) {
-      card.answer({ error: e.message });
+      if (!closed()) card.answer({ error: e.message });
     }
   }
 
@@ -327,4 +352,4 @@ class Explainer extends EventEmitter {
   }
 }
 
-module.exports = { Explainer, LOADING_READ, LOADING_MAKE, ANSWER_FAILED, JPEG_WIDTH };
+module.exports = { Explainer, LOADING_READ, LOADING_MAKE, ANSWER_FAILED, EMPTY_EXPLANATION, JPEG_WIDTH };

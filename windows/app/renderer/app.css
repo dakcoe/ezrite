@@ -237,6 +237,7 @@ html.material .caption { background: var(--popup-bg); }
   pointer-events: none;
 }
 .footer .small { width: 20px; height: 20px; display: grid; place-items: center; flex: none; }
+.footer .cost { flex: none; font-size: 11px; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* ── 작은 창 (CompactPopover) ── */
 .compact {
@@ -405,6 +406,11 @@ textarea {
   background: var(--fill-2); box-shadow: inset 0 0 0 1px var(--stroke);
 }
 .version .title { font-size: 13px; font-weight: 600; }
+/* 버전별 요약 (1.2.3): 버전 카드 아래, 버전 이름 줄 + 바뀐 점 목록 */
+.version .release { padding-left: 28px; }
+.version .rtitle { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.version .rtitle .secondary { font-weight: 400; }
+.version .release ul { margin: 4px 0 0; padding-left: 16px; font-size: 11.5px; line-height: 1.45; color: var(--secondary); word-break: keep-all; }
 
 /* ── 처음 쓰는 사람 안내 ── */
 .onboarding { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }

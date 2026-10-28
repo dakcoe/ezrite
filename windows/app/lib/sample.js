@@ -23,6 +23,12 @@ function state() {
       preview,
     })),
     footer: { audio: 1, translate: 'Claude', explain: 'Claude', uses: null },
+    cost: { label: '$0.03', caption: '이번 실행 AI 비용 (Claude 요금 기준)' }, // 1.2.3 이번 실행 AI 비용
+    // 1.2.3 설정의 버전별 요약 (미리보기는 네트워크에 나가지 않는다)
+    releases: [
+      { version: '1.2.3', lines: ['설명을 기다리는 사이 카드를 닫으면 화면 표시도 남지 않습니다', '팝업 아래에 이번 실행 AI 비용이 보입니다'] },
+      { version: '1.2.2', lines: ['녹음하는 동안 배터리를 훨씬 덜 씁니다'] },
+    ],
     hasKey: true,
     micReady: true,
   };

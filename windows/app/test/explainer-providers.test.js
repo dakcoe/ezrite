@@ -72,11 +72,41 @@ test('설명: 고른 서비스에 맥과 같은 프롬프트(GROQ_RULES 없음)�
   assert.equal(p, 'claude');
   assert.deepEqual(opts, {
     model: 'claude-sonnet-5-5', prompt: G.unifiedPrompt(LINES, ['교환이 효율적이려면'], '천천히', true),
-    image: Buffer.from('jpg1280'), json: true, maxTokens: 3000,
+    image: Buffer.from('jpg1280'), json: true, maxTokens: 3000, think: true,
   });
   assert.ok(!opts.prompt.includes(G.GROQ_RULES.trim().slice(0, 30)));
   const last = cards[0].renders.at(-1);
   assert.equal(last.summary, '파레토 효율 설명');
+});
+
+const empty = JSON.stringify({ summary: '', marks: [], visuals: [], scenes: [] });
+
+test('[1.2.3] 설명: 요약이 비면(생각만 하고 본문이 없음) 생각을 끄고 한 번 더 묻는다', async () => {
+  const { ex, aiCalls, groqCalls, notices, cards } = rig({ ai: [empty, unified] });
+  await ex.run();
+  assert.deepEqual(aiCalls.map((c) => c.opts.think), [true, false]);
+  assert.equal(groqCalls.length, 0);
+  assert.deepEqual(notices, []);
+  assert.equal(cards[0].renders.at(-1).summary, '파레토 효율 설명');
+});
+
+test('[1.2.3] 설명: 두 번 다 요약이 비면 알리고 Groq 로 대신한다 (JSON 이 아닌 답도 빈 것으로)', async () => {
+  const { ex, aiCalls, groqCalls, notices, cards } = rig({ ai: [empty, '생각만 했습니다'], groqReplies: [content(unified)] });
+  await ex.run();
+  assert.equal(aiCalls.length, 2);
+  assert.equal(groqCalls.length, 1);
+  assert.deepEqual(notices, ['Claude 설명을 읽지 못함 → Groq 로 대신했습니다']);
+  assert.equal(cards[0].renders.at(-1).summary, '파레토 효율 설명');
+});
+
+test('[1.2.3] 설명: 요약도 그림도 비면(Groq 까지) 카드에 다시 눌러 달라는 오류, 화면 표시는 없다', async () => {
+  const marksOnly = JSON.stringify({ summary: ' ', marks: [{ id: 1, note: '조건' }], visuals: [], scenes: [] });
+  let overlays = 0;
+  const r = rig({ provider: 'groq', model: '', groqReplies: [content(marksOnly)] });
+  r.ex.createOverlay = () => { overlays++; return { update() {}, hide() {}, show() {}, close() {} }; };
+  await r.ex.run();
+  assert.deepEqual(r.cards[0].renders.at(-1), { error: '설명을 만들지 못했습니다. ✨ 를 다시 눌러 주세요.' });
+  assert.equal(overlays, 0);
 });
 
 test('설명: 키 오류가 아닌 실패는 알리고 Groq 로 대신한다', async () => {

@@ -44,6 +44,8 @@ const { PcmFile, finishAudio, parseRange } = require('./lib/recording');
 const Settings = require('./lib/settings');
 const { Budget } = require('./lib/budget');
 const { AIClient } = require('./lib/ai');
+const { CostMeter } = require('./lib/cost');
+const { releasesURL, summaries } = require('./lib/releases');
 const { Updater, issueURL } = require('./lib/updater');
 const PKG = require('./package.json');
 const E = require('./lib/explain');
@@ -100,6 +102,8 @@ const state = {
   entries: [],
   sessions: [],
   footer: { audio: null, translate: null, explain: null, uses: null, captions: {} },
+  cost: null, // 이번 실행 AI 비용 { label: "$0.03", caption } 또는 null(숨김) (1.2.3, lib/cost.js)
+  releases: [], // 설정의 버전별 요약 [{ version, lines }] (1.2.3, lib/releases.js)
   notesFolder: '', // 사용자가 고른 저장 위치. 빈 글이면 기본 위치
   notesDir: '', // 화면에 보일 저장 위치
   liveSession: null, // 지금 쓰고 있는 기록 파일 (지난 기록의 "진행 중")
@@ -247,6 +251,7 @@ const keystore = new KeyStore();
 const usage = {}; // 모델 → { remaining, limit } (응답 헤더)
 
 // Claude·Gemini·GPT (그리고 키 확인 때 Groq 모델 목록). 키는 keystore 에서 그때그때 읽는다
+const costMeter = new CostMeter(); // 앱을 켠 뒤로 (끄면 처음부터)
 const aiClient = new AIClient({
   getKey: (p) => {
     try {
@@ -258,6 +263,12 @@ const aiClient = new AIClient({
   onSpent: (model, kind, amount) => {
     budget.note(model, kind, amount);
     saveBudget();
+  },
+  // 이번 실행 AI 비용 (팝업 아래 줄). Groq 는 무료라 따로 더하지 않는다
+  onCost: (p, model, input, output) => {
+    costMeter.add(p, model, input, output);
+    const label = costMeter.label();
+    setState({ cost: label ? { label, caption: costMeter.caption() } : null });
   },
 });
 
@@ -964,6 +975,7 @@ function applyPatch(patch) {
   }
   if (state.languages.includes(patch.language)) next.language = patch.language;
   if (['live', 'history', 'settings'].includes(patch.page)) next.page = patch.page;
+  if (next.page === 'settings') refreshReleases(); // 버전별 요약 (1.2.3)
   if (typeof patch.compact === 'boolean') next.compact = patch.compact;
   if (typeof patch.userGuide === 'string') next.userGuide = patch.userGuide.slice(0, Settings.GUIDE_MAX);
   if (Settings.THEMES.includes(patch.theme)) next.theme = patch.theme;
@@ -1191,6 +1203,7 @@ function createMain() {
 
 function showMain(page) {
   if (page) applyPatch({ page });
+  else if (state.page === 'settings') refreshReleases();
   if (popup?.isVisible() && !state.compact) popup.hide();
   showWhenPainted(mainWin);
   refreshSources();
@@ -1339,6 +1352,24 @@ const updater = new Updater({
   fakeJSON: fakeRelease(),
   onChange: (update) => setState({ update }),
 });
+
+// 설정의 버전별 요약 (1.2.3, lib/releases.js). 설정을 열 때 받는다. GitHub 은 키 없이 시간당 60번까지라 10분 안에는 다시 받지 않는다.
+// 미리보기·스크린샷은 네트워크에 나가지 않는다 (예시 데이터)
+const RELEASES_EVERY_MS = 10 * 60_000;
+let releasesAt = 0;
+async function refreshReleases() {
+  const url = releasesURL(PKG.ezriteUpdateRepo);
+  if (!url || dev.preview || dev.shot || Date.now() - releasesAt < RELEASES_EVERY_MS) return;
+  releasesAt = Date.now();
+  try {
+    const res = await fetch(url, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Ezrite' }, signal: AbortSignal.timeout(20_000) });
+    // 404(비공개 저장소)·한도 초과는 조용히 — 요약 없이 버전 카드만 보인다
+    if (res.status === 200) setState({ releases: summaries(await res.text()) });
+    else releasesAt = 0;
+  } catch {
+    releasesAt = 0;
+  }
+}
 
 // ── IPC ──
 

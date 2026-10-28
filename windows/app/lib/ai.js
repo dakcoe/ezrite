@@ -132,17 +132,19 @@ function parseJSON(text) {
   }
 }
 
-/** obj: 응답 JSON. { text, tokens } 또는 null */
+/** obj: 응답 JSON. { text, tokens, input, output } 또는 null. input·output 은 비용 계산용 입력·출력 토큰 (1.2.3) */
 function reply(p, obj) {
   if (!isObject(obj)) return null;
   const usage = isObject(obj.usage) ? obj.usage : {};
   if (p === 'claude') {
     const text = (Array.isArray(obj.content) ? obj.content : [])
       .filter((c) => c?.type === 'text' && typeof c.text === 'string').map((c) => c.text).join('');
-    return { text, tokens: num(usage.input_tokens) + num(usage.output_tokens) };
+    const input = num(usage.input_tokens);
+    const output = num(usage.output_tokens);
+    return { text, tokens: input + output, input, output };
   }
   const msg = Array.isArray(obj.choices) ? obj.choices[0]?.message?.content : undefined;
-  return { text: typeof msg === 'string' ? msg : '', tokens: num(usage.total_tokens) };
+  return { text: typeof msg === 'string' ? msg : '', tokens: num(usage.total_tokens), input: num(usage.prompt_tokens), output: num(usage.completion_tokens) };
 }
 
 /** ```json … ``` 처럼 감싸 오거나 앞뒤에 말을 붙여 온 답에서 JSON 객체만 꺼낸다 */
@@ -259,11 +261,12 @@ const pick = (models, feature) => ranked(models, feature)[0] ?? null;
  * 서비스 호출. fetch·getKey 는 주입한다 (시험에서는 가짜 fetch).
  *   getKey(provider) → 키 또는 null
  *   onSpent(model, 'tokens', n): 쓴 토큰 (맥 Usage.spent)
+ *   onCost(provider, model, input, output): 이번 실행 AI 비용 (1.2.3, lib/cost.js)
  */
 class AIClient {
-  constructor({ fetch = globalThis.fetch, getKey, onSpent = () => {}, requestMs = REQUEST_MS, checkMs = CHECK_MS } = {}) {
+  constructor({ fetch = globalThis.fetch, getKey, onSpent = () => {}, onCost = () => {}, requestMs = REQUEST_MS, checkMs = CHECK_MS } = {}) {
     if (typeof getKey !== 'function') throw new TypeError('AIClient: getKey 함수가 필요합니다');
-    Object.assign(this, { fetch, getKey, onSpent, requestMs, checkMs });
+    Object.assign(this, { fetch, getKey, onSpent, onCost, requestMs, checkMs });
   }
 
   /** 전체 시간 안에 끝나지 않거나 연결이 끊기면 null. { status, text } */
@@ -302,6 +305,7 @@ class AIClient {
     const r = res.status === 200 ? reply(p, parseJSON(res.text)) : null;
     if (!r) throw new AIFailure(res.status, redact(`${label} 오류 ${res.status}: ${errorMessage(res.text)}`, key));
     this.onSpent(model, 'tokens', r.tokens);
+    this.onCost(p, model, r.input, r.output);
     return json ? stripFences(r.text) : r.text;
   }
 

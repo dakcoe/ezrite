@@ -21,7 +21,9 @@
   const gauges = h('div', { class: 'gauges' });
   const compactBtn = h('button', { class: 'small', html: icon('pip', 13, 2.2), onclick: () => window.ezrite.set({ compact: true }) });
   const quitBtn = h('button', { class: 'small', html: icon('power', 13, 2.4), onclick: () => window.ezrite.quit() });
-  const footer = h('div', { class: 'footer' }, gauges, compactBtn, quitBtn);
+  // 이번 실행 AI 비용 "$0.03" (1.2.3, 맥과 같다). 0 이고 모르는 서비스도 안 썼으면 숨긴다
+  const cost = h('span', { class: 'cost hidden' });
+  const footer = h('div', { class: 'footer' }, gauges, cost, compactBtn, quitBtn);
 
   // 글이 칸보다 길면 글자를 85% 까지 줄여 맞춘다 (맥 minimumScaleFactor 0.85). 실제 그려진 폭으로 잰다
   const CAPTION_PX = 10.5;
@@ -41,6 +43,7 @@
     el.addEventListener('mouseleave', () => caption.classList.add('hidden'));
   };
   hover(compactBtn, '작은 창으로');
+  hover(cost, () => current?.cost?.caption ?? '');
   hover(quitBtn, 'Ezrite 종료');
 
   const GAUGES = [
@@ -115,6 +118,8 @@
       footerKey = fk;
       paintFooter(s);
     }
+    cost.textContent = s.cost?.label ?? '';
+    cost.classList.toggle('hidden', !s.cost);
     const last = [...s.entries].reverse().find((e) => e.kind !== 'gap');
     cDot.className = `dot${s.paused || s.quietPaused ? ' paused' : s.listening ? ' rec' : ''}`;
     cOrig.textContent = last?.original ?? (s.listening ? '듣고 있어요…' : '녹음하고 있지 않아요');

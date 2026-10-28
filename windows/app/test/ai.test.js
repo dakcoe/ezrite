@@ -52,9 +52,10 @@ test('GPT 와 Gemini 는 같은 채팅 형식에 주소만 다르다', () => {
 test('서비스마다 다른 응답에서 본문과 쓴 토큰을 읽는다', () => {
   const claude = { content: [{ type: 'text', text: '안녕' }], usage: { input_tokens: 10, output_tokens: 5 } };
   const chat = { choices: [{ message: { content: 'hi' } }], usage: { total_tokens: 42 } };
-  assert.deepEqual(AI.reply('claude', claude), { text: '안녕', tokens: 15 });
-  assert.deepEqual(AI.reply('openai', chat), { text: 'hi', tokens: 42 });
-  assert.deepEqual(AI.reply('gemini', chat), { text: 'hi', tokens: 42 });
+  assert.deepEqual(AI.reply('claude', claude), { text: '안녕', tokens: 15, input: 10, output: 5 });
+  assert.deepEqual(AI.reply('openai', chat), { text: 'hi', tokens: 42, input: 0, output: 0 });
+  assert.deepEqual(AI.reply('gemini', { ...chat, usage: { total_tokens: 42, prompt_tokens: 30, completion_tokens: 12 } }),
+    { text: 'hi', tokens: 42, input: 30, output: 12 });
 });
 
 test('코드블록으로 감싼 JSON 도 벗겨서 읽는다', () => {
