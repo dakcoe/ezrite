@@ -198,6 +198,7 @@ struct UsageFooter: View {
         guard let t = hover.target else { return nil }
         if t == "quit" { return "Ezrite 종료" }
         if t == "compact" { return "작은 창으로" }
+        if t == "cost" { return "이번 실행 AI 비용 (Claude 요금 기준" + (state.costUnknown ? ", GPT·Gemini 제외)" : ")") }
         guard let g = Self.gauges.first(where: { $0.label == t }) else { return nil }
         let p = parts(g)
         let uses = g.feature == .explain ? (left(.explain), left(.ask)) : nil
@@ -210,6 +211,11 @@ struct UsageFooter: View {
         let pct = Int((left * 100).rounded())
         if let uses { return "\(label) \(pct)% 남음 · 설명 약 \(uses.explain)번, 질문 약 \(uses.ask)번" }
         return "\(label) 한도 \(pct)% 남음"
+    }
+
+    /// 1센트 아래는 소수 셋째 자리까지 ($0.004), 그 위는 센트까지. 요금을 모르는 사용이 있으면 "+"
+    static func costText(_ dollars: Double, unknown: Bool) -> String {
+        String(format: dollars < 0.01 ? "$%.3f" : "$%.2f", dollars) + (unknown ? "+" : "")
     }
 
     /// 남은 한도로 설명·질문을 몇 번 더 할 수 있나 (qwen 한도 ÷ 한 번 평균)
@@ -245,6 +251,12 @@ struct UsageFooter: View {
                 let i = Int(x / (Self.gaugeWidth + Self.gaugeSpacing))
                 hover.target = Self.gauges.indices.contains(i) ? Self.gauges[i].label : nil
             })
+            // 앱을 켠 뒤 유료 AI(Claude 등)에 쓴 돈. 무료(Groq)만 쓰면 보이지 않는다
+            if state.sessionCost > 0 || state.costUnknown {
+                Text(Self.costText(state.sessionCost, unknown: state.costUnknown))
+                    .font(.system(size: 10).monospacedDigit()).foregroundStyle(.secondary).fixedSize()
+                    .overlay(HoverArea { hover.target = $0 == nil ? nil : "cost" })
+            }
             Button { state.compact = true } label: {
                 Image(systemName: "pip.enter").font(.system(size: 11, weight: .semibold))
                     .frame(width: 20, height: 20).contentShape(Rectangle())
@@ -696,7 +708,21 @@ private struct SettingsPage: View {
                         Button("업데이트 확인") { updater.checkNow() }
                             .disabled(updater.checking)
                     }
+                    // 버전마다 핵심 변경만 (자세한 글은 GitHub 릴리스에)
+                    ForEach(updater.history) { h in
+                        Divider().opacity(0.4)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(h.version + (h.version == Updater.current ? " · 지금 쓰는 버전" : ""))
+                                .font(.system(size: 11.5, weight: .semibold))
+                            ForEach(h.points, id: \.self) { p in
+                                Text("• " + p).font(.system(size: 11)).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
+                .onAppear { updater.loadHistory() }
 
                 // 세 버튼을 한 줄에 나란히 (한 줄씩 쓰면 자리를 많이 차지한다)
                 HStack(spacing: 8) {

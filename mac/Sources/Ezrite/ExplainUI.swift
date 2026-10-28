@@ -49,12 +49,21 @@ final class Explainer: ObservableObject {
             let jpeg = Self.jpeg(shot.image, maxWidth: 1280)   // 이미지 토큰은 크기와 상관없이 한 장에 약 1,800 (640·1024·1280 실측 같음)
 
             if provider != .groq, !model.isEmpty {
+                // 생각 단계가 출력 토큰을 다 쓰면 JSON 이 중간에 잘려 요약이 비고 카드가 빈 채로 뜬다.
+                // 읽지 못하면 생각을 끄고 한 번 더, 그래도 안 되면 Groq 로 대신한다 (질문 ask 와 같다)
+                let prompt = GroqClient.unifiedPrompt(lines: lines, transcript: transcript, rich: true)
                 do {
-                    let text = try await AI.complete(provider, model: model,
-                                                     prompt: GroqClient.unifiedPrompt(lines: lines, transcript: transcript, rich: true),
-                                                     image: jpeg, json: true, maxTokens: 3000)
-                    let data = Data(text.utf8)
-                    return present(card: card, lines: lines, shot: shot, marks: data, visuals: .success(data))
+                    for think in [true, false] {
+                        let text = try await AI.complete(provider, model: model, prompt: prompt,
+                                                         image: jpeg, json: true, maxTokens: 3000, think: think)
+                        let data = Data(text.utf8)
+                        if !Explain.visuals(from: data).summary.isEmpty {
+                            return present(card: card, lines: lines, shot: shot, marks: data, visuals: .success(data))
+                        }
+                        NSLog("Ezrite 설명을 읽지 못함 (think=%d): %@", think ? 1 : 0, String(text.suffix(300)))
+                        if think { card.render(["loading": "설명을 다시 만드는 중…"]) }
+                    }
+                    onNotice("\(provider.label) 설명을 읽지 못함 → Groq 로 대신했습니다")
                 } catch let e as AI.Failure where AI.shouldFallback(status: e.status) {
                     onNotice("\(provider.label) 설명 실패 → Groq 로 대신했습니다")
                 }
@@ -81,6 +90,8 @@ final class Explainer: ObservableObject {
     /// 화면 표시를 그리고 카드에 요약·그림을 채운다
     private func present(card: ExplainCard, lines: [Explain.Line], shot: ScreenGrab.Shot, marks marksData: Data?,
                          visuals: Result<Data, Error>) {
+        // 설명을 기다리는 사이 카드를 닫았으면 화면 표시를 만들지 않는다 (닫힌 뒤 표시와 화면 감시가 남아 CPU 를 쓴다)
+        guard self.card === card else { return }
         let marks = marksData.map { Explain.marks(from: $0, lines: lines) } ?? []
         let path = marksData.flatMap { Explain.path(from: $0, lines: lines) }
         var payload: [String: Any] = ["marks": marks.map { ["note": $0.note, "text": $0.line.text] }]
@@ -89,6 +100,9 @@ final class Explainer: ObservableObject {
         switch visuals {
         case .success(let data):
             let (summary, list) = Explain.visuals(from: data)
+            if summary.isEmpty && list.isEmpty {         // 읽을 게 없으면 빈 카드 대신 다시 누르라고 알린다
+                payload["error"] = "설명을 만들지 못했습니다. ✨ 를 다시 눌러 주세요."
+            }
             payload["summary"] = summary
             explanation = summary
             payload["visuals"] = list
@@ -159,6 +173,7 @@ final class Explainer: ObservableObject {
             guard let data, let text = Explain.answer(from: data) else {
                 return card.answer(["error": "답을 읽지 못했습니다. 다시 물어봐 주세요."])
             }
+            guard self.card === card else { return }      // 답을 기다리는 사이 카드를 닫았다
             history.append((question, text))
             let marks = Explain.marks(from: data, lines: lines)
             let path = Explain.path(from: data, lines: lines)

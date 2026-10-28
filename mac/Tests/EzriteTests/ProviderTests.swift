@@ -76,6 +76,17 @@ struct ProviderTests {
         #expect(AI.reply(.gemini, chat) == AI.Reply(text: "hi", tokens: 42))
     }
 
+    @Test func Claude_응답의_토큰으로_비용을_낸다() throws {
+        let usage = Data(#"{"content":[],"usage":{"input_tokens":1000000,"output_tokens":100000}}"#.utf8)
+        #expect(AI.cost(.claude, model: "claude-sonnet-5-5", usage) == 3.0)          // 2 + 0.1 × 10
+        #expect(AI.cost(.claude, model: "claude-opus-5-5", usage) == 6.0)            // 4 + 0.1 × 20
+        #expect(AI.cost(.claude, model: "claude-opus-4-8", usage) == 7.5)            // 5 + 0.1 × 25
+        #expect(AI.cost(.groq, model: "x", usage) == 0)
+        #expect(AI.cost(.openai, model: "gpt-x", usage) == nil)                      // 요금 모름
+        #expect(UsageFooter.costText(0.0042, unknown: false) == "$0.004")
+        #expect(UsageFooter.costText(1.234, unknown: true) == "$1.23+")
+    }
+
     @Test func 코드블록으로_감싼_JSON도_벗겨서_읽는다() {
         #expect(AI.stripFences("```json\n{\"a\":1}\n```") == "{\"a\":1}")
         #expect(AI.stripFences("설명입니다\n```\n{\"a\":1}\n```") == "{\"a\":1}")

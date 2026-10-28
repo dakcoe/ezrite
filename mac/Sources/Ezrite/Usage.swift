@@ -32,6 +32,8 @@ struct Usage: Equatable {
     nonisolated(unsafe) static var spent: ((String, Budget.Kind, Double) -> Void)?
     /// 설명·질문 한 번에 쓴 토큰 (남은 횟수 계산용 평균에 넣는다)
     nonisolated(unsafe) static var used: ((Budget.Use, Double) -> Void)?
+    /// 유료 서비스에 쓴 돈(달러). 요금을 모르는 모델이면 nil
+    nonisolated(unsafe) static var paid: ((Double?) -> Void)?
 }
 
 extension Usage {

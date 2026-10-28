@@ -17,6 +17,8 @@ final class AppState: ObservableObject {
     @Published var budget = Budget.load()           // 하루 토큰·음성 시간 (앱이 직접 센다)
     @Published var explaining = false          // "설명해줘" 진행 중
     @Published var paused = false              // 세션은 열려 있고 듣기만 멈춘 상태
+    @Published var sessionCost = 0.0           // 앱을 켠 뒤 유료 AI 에 쓴 돈 (달러, 저장하지 않는다)
+    @Published var costUnknown = false         // 요금을 모르는 모델(GPT·Gemini)도 썼다
     @Published var quietPaused = false         // 말소리가 없어 저절로 쉬는 중. 소리는 계속 듣다가 말이 들리면 이어 간다
     @Published var startedAt: Date?            // 지금 듣기를 시작한 때. 일시정지 중엔 nil
     @Published var recordedBefore: TimeInterval = 0   // 일시정지 전까지 들은 시간
@@ -243,6 +245,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.state.budget.note(model, kind, amount)
                 self.state.budget.save()
+            }
+        }
+        Usage.paid = { [weak self] dollars in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if let dollars { if dollars > 0 { self.state.sessionCost += dollars } } else { self.state.costUnknown = true }
             }
         }
         Usage.used = { [weak self] use, tokens in

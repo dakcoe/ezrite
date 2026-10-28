@@ -50,4 +50,9 @@ struct UpdateTests {
         #expect(u.shouldShow("0.9.1", current: "0.9.0"))
         #expect(!u.shouldShow("0.9.0", current: "0.9.0"))       // 같은 버전은 알리지 않는다
     }
+
+    @Test func 릴리스_글에서_맨_위_핵심_줄만_뽑고_Windows_줄은_뺀다() {
+        let body = "- 배터리를 덜 씁니다\r\n- Windows 는 바뀐 것이 없습니다\n- 카드가 따라옵니다\n\n## 받기\n- macOS 13 이상"
+        #expect(Updater.highlights(body) == ["배터리를 덜 씁니다", "카드가 따라옵니다"])
+    }
 }

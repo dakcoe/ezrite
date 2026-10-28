@@ -103,6 +103,24 @@ enum AI {
 
     // MARK: 응답 읽기
 
+    /// 100만 토큰당 (입력, 출력) 달러. Anthropic 공식 요금 (2026-10). 앞에서부터 맞는 이름을 쓴다
+    /// shortcut: GPT·Gemini 는 모델이 자주 바뀌어 요금을 넣지 않았다 (비용 표시에서 빠지고 "+" 로 알린다)
+    static let claudePrices: [(prefix: String, input: Double, output: Double)] = [
+        ("claude-fable", 10, 50), ("claude-opus-5-5", 4, 20), ("claude-opus", 5, 25),
+        ("claude-sonnet-5", 2, 10), ("claude-sonnet", 3, 15),
+        ("claude-haiku-5-5", 0.10, 0.50), ("claude-haiku", 1, 5),
+    ]
+
+    /// 응답 한 번의 비용(달러). Groq 는 무료 한도라 0, 요금을 모르면 nil
+    static func cost(_ p: Provider, model: String, _ data: Data) -> Double? {
+        if p == .groq { return 0 }
+        guard p == .claude, let price = claudePrices.first(where: { model.hasPrefix($0.prefix) }),
+              let usage = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["usage"] as? [String: Any]
+        else { return nil }
+        let n = { (k: String) in (usage[k] as? NSNumber)?.doubleValue ?? 0 }
+        return (n("input_tokens") * price.input + n("output_tokens") * price.output) / 1_000_000
+    }
+
     static func reply(_ p: Provider, _ data: Data) -> Reply? {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         let usage = obj["usage"] as? [String: Any]
@@ -299,6 +317,7 @@ enum AI {
             throw Failure(status: code, errorDescription: "\(p.label) 오류 \(code): \(msg)")
         }
         Usage.spent?(model, .tokens, Double(r.tokens))
+        Usage.paid?(cost(p, model: model, data))
         return json ? stripFences(r.text) : r.text
     }
 

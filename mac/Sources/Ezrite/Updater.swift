@@ -16,6 +16,14 @@ final class Updater: ObservableObject {
     @Published private(set) var checking = false
     /// 마지막 확인이 끝난 시각 (설정에 "최신 버전입니다" 를 띄울 때 쓴다)
     @Published private(set) var checkedAt: Date?
+    /// 설정에 보이는 최근 버전들의 핵심 변경 (릴리스 글 맨 위 줄들)
+    @Published private(set) var history: [Highlights] = []
+
+    struct Highlights: Equatable, Identifiable {
+        let version: String
+        let points: [String]
+        var id: String { version }
+    }
 
     /// 릴리스를 올리는 GitHub 저장소 ("owner/name"). Info.plist 의 EzriteUpdateRepo
     static var repo: String? { Bundle.main.object(forInfoDictionaryKey: "EzriteUpdateRepo") as? String }
@@ -74,6 +82,37 @@ final class Updater: ObservableObject {
     func checkNow() {
         snoozed = nil
         check()
+    }
+
+    /// 설정을 열 때 최근 릴리스 몇 개의 핵심 변경을 받아 온다 (한 번 받으면 다시 묻지 않는다)
+    func loadHistory(count: Int = 4) {
+        guard history.isEmpty, let repo = Self.repo,
+              let url = URL(string: "https://api.github.com/repos/\(repo)/releases?per_page=\(count)") else { return }
+        var req = URLRequest(url: url, timeoutInterval: 20)
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        URLSession.shared.dataTask(with: req) { [weak self] data, resp, _ in
+            guard (resp as? HTTPURLResponse)?.statusCode == 200, let data,
+                  let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+            let items = list.compactMap { r -> Highlights? in
+                guard let tag = r["tag_name"] as? String else { return nil }
+                return Highlights(version: tag.trimmingCharacters(in: CharacterSet(charactersIn: "vV ")),
+                                  points: Self.highlights((r["body"] as? String) ?? ""))
+            }
+            DispatchQueue.main.async { self?.history = items }
+        }.resume()
+    }
+
+    /// 릴리스 글에서 첫 "##" 앞의 "- " 줄만 (맨 위 요약). Windows 만의 줄은 맥 앱이라 뺀다
+    static func highlights(_ body: String) -> [String] {
+        var out: [String] = []
+        for raw in body.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("##") { break }
+            guard line.hasPrefix("- ") else { continue }
+            let text = String(line.dropFirst(2))
+            if !text.hasPrefix("Windows") { out.append(text) }
+        }
+        return out
     }
 
     /// 문제 신고 양식 (버전·macOS·칩을 미리 채운다)
