@@ -204,7 +204,8 @@
     let key = '';
     function update(s) {
       const r = s.update?.available;
-      const k = JSON.stringify(r ? [r, s.update.current] : null);
+      const inst = s.install ?? {};
+      const k = JSON.stringify(r ? [r, s.update.current, s.update.canInstall, inst] : null);
       if (k === key) return false;
       key = k;
       el.classList.toggle('hidden', !r);
@@ -213,15 +214,30 @@
         return true;
       }
       const notes = r.notes ? r.notes.split('\n').slice(0, 3).join('\n') : '';
+      // [업데이트] (1.2.4, 맥과 같다): 앱이 받아 조용히 설치하고 다시 켠다. 설치 파일 자산이 없으면 [받기] = 브라우저.
+      // 받는 중·설치 중에는 작은 스피너 + 두 단추 비활성
+      const busy = Boolean(inst.phase);
+      const actions = [
+        busy ? h('span', { class: 'spinner small' }) : null,
+        h('button', { class: 'btn', disabled: busy, onclick: () => window.ezrite.update.skip() }, '나중에'),
+        s.update.canInstall
+          ? h('button', { class: 'btn primary', disabled: busy, onclick: () => window.ezrite.update.install() }, '업데이트')
+          : h('button', { class: 'btn primary', disabled: busy, onclick: () => window.ezrite.update.download() }, '받기'),
+      ];
+      // 실패하면 주황 한 줄과 오른쪽 [브라우저로 받기] (맥 문구, 자세한 이유는 마우스를 올리면)
+      const below = inst.error
+        ? h('div', { class: 'ub-error' }, h('span', { title: inst.detail || null }, inst.error),
+          h('button', { class: 'link-btn', onclick: () => window.ezrite.update.download() }, '브라우저로 받기'))
+        : inst.waiting ? h('div', { class: 'ub-notes secondary' }, inst.waiting)
+          : notes ? h('div', { class: 'ub-notes secondary' }, notes) : null;
       el.replaceChildren(
         h('div', { class: 'top' },
           h('span', { class: 'ub-icon', html: icon('download', 15) }),
           h('span', { class: 'ub-title' }, `새 버전 ${r.version}`),
           h('span', { class: 'ub-now secondary' }, `지금 ${s.update.current}`),
           h('span', { class: 'spacer' }),
-          h('button', { class: 'btn', onclick: () => window.ezrite.update.skip() }, '나중에'),
-          h('button', { class: 'btn primary', onclick: () => window.ezrite.update.download() }, '받기')),
-        notes ? h('div', { class: 'ub-notes secondary' }, notes) : null);
+          ...actions),
+        below);
       return true;
     }
     return { el, update };

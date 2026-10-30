@@ -30,16 +30,18 @@ test('합계: 쓴 만큼 더하고, 모르는 서비스를 쓰면 "+" — 0 이�
   assert.equal(m.label(), '$0.03+');
   const u = new CostMeter();
   u.add('gemini', 'gemini-3-flash', 10, 10);
-  assert.equal(u.label(), '$0.00+', '모르는 것만 썼어도 보인다');
+  assert.equal(u.label(), '$0.000+', '모르는 것만 썼어도 보인다');
   const big = new CostMeter();
-  big.add('claude', 'claude-opus-5-5', 200_000, 50_000); // 0.8 + 1.0
-  assert.equal(big.label(), '$1.80');
+  big.add('claude', 'claude-opus-5-5', 58_500, 50_000); // 0.234 + 1.0
+  assert.equal(big.label(), '$1.23');
 });
 
-test('아주 적은 금액은 "<$0.01" (0 으로 보이지 않게)', () => {
+test('0.01 달러 미만은 소수 셋째 자리 (맥 "$%.3f", 1.2.4)', () => {
   const m = new CostMeter();
-  m.add('claude', 'claude-haiku-5-5', 1000, 200); // 0.0001 + 0.0001
-  assert.equal(m.label(), '<$0.01');
+  m.add('claude', 'claude-haiku-5-5', 10_000, 6_400); // 0.001 + 0.0032
+  assert.equal(m.label(), '$0.004');
+  m.add('gemini', 'gemini-3-flash', 1, 1);
+  assert.equal(m.label(), '$0.004+');
 });
 
 test('마우스를 올리면: 이번 실행 AI 비용 (Claude 요금 기준), 모르는 서비스가 있으면 빠졌다고', () => {
@@ -47,7 +49,7 @@ test('마우스를 올리면: 이번 실행 AI 비용 (Claude 요금 기준), �
   m.add('claude', 'claude-sonnet-5-5', 10_000, 1_000);
   assert.equal(m.caption(), '이번 실행 AI 비용 (Claude 요금 기준)');
   m.add('gemini', 'gemini-3-pro', 1, 1);
-  assert.equal(m.caption(), '이번 실행 AI 비용 (Claude 요금 기준, GPT·Gemini 는 빠짐)');
+  assert.equal(m.caption(), '이번 실행 AI 비용 (Claude 요금 기준, GPT·Gemini 제외)');
 });
 
 test('잘못된 토큰 수는 0 으로', () => {

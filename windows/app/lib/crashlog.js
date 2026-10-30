@@ -48,4 +48,14 @@ function install({ logDir, onError = () => {}, proc = process, now = () => new D
   };
 }
 
-module.exports = { install, formatEntry, redact };
+/** 알릴 일 한 줄을 시각과 함께 main.log 에 덧붙인다 (1.2.4: 시작 정리가 지운 파일). 못 써도 던지지 않는다 */
+function appendLine(logDir, text, now = new Date()) {
+  try {
+    fs.mkdirSync(logDir, { recursive: true });
+    fs.appendFileSync(path.join(logDir, 'main.log'), `[${now.toISOString()}] ${redact(text)}\n`);
+  } catch {
+    // 로그를 못 써도 앱은 계속 간다
+  }
+}
+
+module.exports = { install, formatEntry, redact, appendLine };

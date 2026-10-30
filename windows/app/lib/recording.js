@@ -47,7 +47,7 @@ class PcmFile {
  * 임시 이름(.encoding-기록이름.m4a)에 만든 뒤 옮겨서, 도중에 꺼져도 반쯤 된 m4a 가 남지 않는다.
  * 실패하면 .pcm 을 남긴다 (다음 실행 때 다시 해 본다). 빈 .pcm 은 지우고 null
  */
-async function finishAudio(pcm, { run }) {
+async function finishAudio(pcm, { run, onDelete = () => {} }) {
   let size;
   try {
     size = fs.statSync(pcm).size;
@@ -56,6 +56,7 @@ async function finishAudio(pcm, { run }) {
   }
   if (size === 0) {
     fs.rmSync(pcm, { force: true });
+    onDelete(path.basename(pcm), '빈 소리'); // 정리 로그 (1.2.4)
     return null;
   }
   const dir = path.dirname(pcm);

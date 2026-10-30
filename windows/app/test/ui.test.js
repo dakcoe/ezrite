@@ -21,6 +21,8 @@ test('EZRITE_PREVIEW·EZRITE_THEME·EZRITE_SHOT을 읽는다', () => {
     updateJSON: null,
     shotScroll: 0,
     dockOnly: null,
+    updateExe: null,
+    updateNow: false,
   });
 });
 
@@ -51,7 +53,7 @@ test('Mica·Acrylic은 Windows 11 22H2(빌드 22621) 이상에서만', () => {
 test('값이 없으면 미리보기 없음, 테마는 system', () => {
   assert.deepEqual(parseDevEnv({}), {
     preview: null, theme: 'system', shot: null, testScale: null, capturePid: null, demoScript: null, testFile: null, fakeGroq: false, speed: 1, shotDelay: 1200,
-    explainAfter: null, card: null, ask: null, capturable: false, updateJSON: null, shotScroll: 0, dockOnly: null,
+    explainAfter: null, card: null, ask: null, capturable: false, updateJSON: null, shotScroll: 0, dockOnly: null, updateExe: null, updateNow: false,
   });
 });
 
@@ -194,6 +196,14 @@ test('EZRITE_EXPLAIN(초)·EZRITE_CARD(json)·EZRITE_ASK(질문)', () => {
 test('EZRITE_CAPTURABLE: 설명 카드·화면 표시를 화면 캡처에 보이게 (평소엔 캡처에서 빠진다)', () => {
   assert.equal(parseDevEnv({ EZRITE_CAPTURABLE: '1' }).capturable, true);
   assert.equal(parseDevEnv({ EZRITE_CAPTURABLE: 'no' }).capturable, false);
+});
+
+test('[1.2.4] EZRITE_UPDATE_EXE·EZRITE_UPDATE_NOW: 앱 안 업데이트를 로컬 설치 파일로, 띠가 뜨면 한 번 누르기', () => {
+  const d = parseDevEnv({ EZRITE_UPDATE_EXE: ' C:/t/Ezrite-Setup-9.0.0.exe ', EZRITE_UPDATE_NOW: '1' });
+  assert.equal(d.updateExe, 'C:/t/Ezrite-Setup-9.0.0.exe');
+  assert.equal(d.updateNow, true);
+  assert.equal(parseDevEnv({ EZRITE_UPDATE_NOW: 'no' }).updateNow, false);
+  assert.equal(parseDevEnv({ EZRITE_UPDATE_EXE: '' }).updateExe, null);
 });
 
 test('EZRITE_UPDATE_JSON: 새 버전 띠 모양 확인용 릴리스 JSON (글 또는 파일 경로)', () => {

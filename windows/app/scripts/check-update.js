@@ -4,7 +4,8 @@ require('./guard'); // 오류가 나도 화면에 창을 띄우지 않고 종료
 //   npx electron scripts/check-update.js   → 결과 JSON 한 줄, 하나라도 틀리면 종료 코드 1
 // test/update-ui.test.js 가 부른다. 1.1.3 "설정에서 '팝업 위 알림에서 받기' 라는데 띠가 없다" 의 재발 방지:
 //   전체 창의 실시간·지난 기록·설정 어느 화면이든 맨 위에 새 버전 띠, 저장됨 띠는 그 아래 (맥 MainView)
-//   설정의 버전 줄은 "새 버전 X가 있습니다" + [받기], 누르면 설치 파일 주소를 연다
+//   설정의 버전 줄은 "새 버전 X가 있습니다" + [업데이트] (1.2.4 앱 안 업데이트)
+//   [업데이트] 가 실패하면(여기서는 받기가 404) 띠에 오류 한 줄과 [브라우저로 받기], 누르면 설치 파일 주소를 연다
 //   [나중에] 는 팝업·전체 창 둘 다에서 띠를 닫고, 설정의 [업데이트 확인] 은 둘 다에 다시 띄운다
 //   띠의 단추는 창 끌기 영역에 먹히지 않는다
 // EZRITE_UPDATE_SHOTS=<폴더> 이면 설정 탭(띠 보임) 전체 창과 팝업을 찍는다.
@@ -28,12 +29,18 @@ Object.assign(process.env, {
   APPDATA: roaming, LOCALAPPDATA: path.join(tmp, 'Local'), EZRITE_THEME: theme, EZRITE_UPDATE_JSON: JSON.stringify(RELEASE),
 });
 
+// 앱 안 업데이트의 받기는 네트워크에 나가지 않고 404 로 실패시킨다 (main.js 를 부르기 전에 바꿔야 SelfUpdate 가 이것을 쓴다)
+const fetched = [];
+globalThis.fetch = async (url) => { fetched.push(String(url)); return { ok: false, status: 404, url: String(url), headers: new Headers(), body: null }; };
+
 const { app, BrowserWindow, shell } = require('electron');
 for (const m of ['show', 'showInactive', 'focus', 'moveTop']) BrowserWindow.prototype[m] = function noop() {};
 // [받기] 는 브라우저를 열지 않고 연 주소만 적어 둔다
 const opened = [];
 shell.openExternal = async (url) => { opened.push(url); };
 app.setPath('userData', path.join(tmp, 'userData'));
+// electron 으로 스크립트를 바로 돌리면 앱 버전이 Electron 버전(44.x)이 된다. 9.9.9 가 새 버전이 되게 실제 앱 버전으로
+app.setVersion(require('../package.json').version);
 require('../main.js');
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -104,7 +111,7 @@ app.whenReady().then(async () => {
       const { themeColors } = require('../lib/ui');
       const { nativeImage } = require('electron');
       const c = themeColors(theme === 'dark');
-      // 설정 맨 위(띠) · 설정 버전 카드까지 내린 것([받기]) · 팝업
+      // 설정 맨 위(띠) · 설정 버전 카드까지 내린 것([업데이트]) · 팝업
       const toVersion = () => main.executeJavaScript("document.querySelector('.card.version').scrollIntoView({ block: 'center' })");
       for (const [name, wc, bg, before] of [['settings', main, c.win], ['settings-version', main, c.win, toVersion], ['popover', popup, c.popup]]) {
         if (before) await before();
@@ -121,7 +128,11 @@ app.whenReady().then(async () => {
       }
     }
 
-    await click(main, '.card.version button', '받기');
+    // [업데이트] → 받기 실패(404) → 오류 한 줄 + [브라우저로 받기] → 설치 파일 주소를 연다
+    await click(main, '.update-banner button', '업데이트');
+    r.installError = await until(() => main.executeJavaScript("document.querySelector('.update-banner .ub-error span')?.textContent ?? null"));
+    r.fetched = fetched.filter((u) => u.endsWith('.exe')); // 설정을 열면 버전별 요약도 묻는다 (그것도 여기서 404)
+    await click(main, '.update-banner .ub-error button', '브라우저로 받기');
     await until(() => opened.length);
     r.opened = [...opened];
 
@@ -135,12 +146,13 @@ app.whenReady().then(async () => {
 
     const good = (b) => b && b.title === '새 버전 9.9.9' && b.now === `지금 ${app.getVersion()}` && b.top && b.first
       && b.notes === '- 전체 창에도 새 버전 알림\n- 설정에서 바로 받기\n- 셋째 줄'
-      && JSON.stringify(b.buttons.map((x) => x.text)) === '["나중에","받기"]'
+      && JSON.stringify(b.buttons.map((x) => x.text)) === '["나중에","업데이트"]'
       && b.buttons.every((x) => x.region !== 'drag' && !x.covered);
     r.ok = good(r.popup) && ['live', 'history', 'settings'].every((p) => good(r.pages[p]))
-      && r.version?.sub === '새 버전 9.9.9가 있습니다' && r.version.buttons.includes('받기')
+      && r.version?.sub === '새 버전 9.9.9가 있습니다' && r.version.buttons.includes('업데이트')
+      && r.installError === '새 버전을 받지 못했어요' && JSON.stringify(r.fetched) === JSON.stringify([EXE])
       && JSON.stringify(r.opened) === JSON.stringify([EXE])
-      && r.afterSkip.main === 'gone' && r.afterSkip.popup === 'gone' && !r.versionAfterSkip.buttons.includes('받기')
+      && r.afterSkip.main === 'gone' && r.afterSkip.popup === 'gone' && !r.versionAfterSkip.buttons.includes('업데이트')
       && r.afterCheck.main && r.afterCheck.popup;
   } catch (e) {
     r.error = e.stack;

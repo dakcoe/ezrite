@@ -199,6 +199,29 @@ test('되살릴 소리: 끝내지 못한 .pcm (글이 있는 것만, 글 없는 
   assert.ok(fs.existsSync(path.join(d, '다른.pcm')));
 });
 
+test('[1.2.4 맥과 같게] 정리가 지운 것은 이름과 이유를 알린다 (로그 한 줄씩)', () => {
+  const d = tempDir();
+  const sub = path.join(d, '2026-10-20_10-00-00');
+  fs.mkdirSync(sub);
+  file(sub, '2026-10-20_10-00-00.m4a'); // 글 없는 소리 폴더
+  file(d, '2026-10-14_21-23-07.m4a'); // 글 없는 소리
+  file(d, '2025-01-01_10-00-00.txt', { daysOld: 400 }); // 30일 지난 기록 (글·소리)
+  file(d, '2025-01-01_10-00-00.m4a', { daysOld: 400 });
+  file(d, '2026-10-14_22-00-00.pcm'); // 글 없는 녹음 원본 (pendingAudio)
+  const seen = [];
+  const onDelete = (name, reason) => seen.push(`${name} (${reason})`);
+  N.prune(d, { autoDelete: true, onDelete });
+  N.pendingAudio(d, onDelete);
+  assert.deepEqual(seen.sort(), [
+    '2025-01-01_10-00-00.m4a (30일 지난 기록)',
+    '2025-01-01_10-00-00.txt (30일 지난 기록)',
+    '2026-10-14_21-23-07.m4a (글 없는 소리)',
+    '2026-10-14_22-00-00.pcm (글 없는 소리)',
+    '2026-10-20_10-00-00 (글 없는 소리 폴더)',
+  ]);
+  assert.equal(N.cleanupLine('a.m4a', '글 없는 소리'), 'Ezrite 정리: a.m4a 지움 (글 없는 소리)');
+});
+
 test('목록 미리보기: 끊김 줄이 아닌 첫 줄', () => {
   const d = tempDir();
   const txt = file(d, '2026-10-14_21-23-07.txt', { body: '── 21:23:07 소리 출처 → chrome\n첫 문장입니다.\n    First.\n' });

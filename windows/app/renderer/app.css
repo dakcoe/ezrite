@@ -521,6 +521,10 @@ textarea {
 .update-banner .ub-now { font-size: 11px; }
 .update-banner .spacer { flex: 1; }
 .update-banner .btn { height: 22px; }
+/* 1.2.4 앱 안 업데이트: 오류는 주황 한 줄 + 오른쪽 [브라우저로 받기] (맥과 같다) */
+.update-banner .ub-error { font-size: 11px; color: var(--orange); display: flex; align-items: baseline; gap: 8px; }
+.update-banner .ub-error span { flex: 1; min-width: 0; }
+.update-banner .ub-error .link-btn { font-size: 11px; flex: none; }
 .update-banner .ub-notes { font-size: 11px; white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 /* 설정: 버전 카드 아래 오픈소스 고지 */
 .link-btn.notices { align-self: flex-start; margin: -8px 0 0 4px; font-weight: 500; }

@@ -136,6 +136,17 @@ test('맥·윈도우 한 릴리스 (dakcoe/ezrite v1.1.0): DMG 와 EXE 가 함�
   assert.equal(r.download, 'https://github.com/dakcoe/ezrite/releases/download/v1.1.0/Ezrite-Setup-1.1.0.exe');
 });
 
+test('[1.2.4] 앱 안 업데이트용: 설치 파일(.exe)의 이름·주소·크기를 같이 읽는다. GitHub 밖이거나 exe 가 없으면 null', () => {
+  const asset = (name, size, url = `https://github.com/dakcoe/ezrite/releases/download/v1.2.4/${name}`) => ({ name, size, browser_download_url: url });
+  const base = { tag_name: 'v1.2.4', html_url: 'https://github.com/dakcoe/ezrite/releases/tag/v1.2.4', body: '' };
+  const r = release(JSON.stringify({ ...base, assets: [asset('Ezrite-1.2.4.dmg', 5), asset('Ezrite-Setup-1.2.4.exe.blockmap', 9), asset('Ezrite-Setup-1.2.4.exe', 106748344)] }));
+  assert.deepEqual(r.installer, { name: 'Ezrite-Setup-1.2.4.exe', url: 'https://github.com/dakcoe/ezrite/releases/download/v1.2.4/Ezrite-Setup-1.2.4.exe', size: 106748344 });
+  assert.equal(release(JSON.stringify({ ...base, assets: [asset('Ezrite-1.2.4.dmg', 5)] })).installer, null);
+  assert.equal(release(JSON.stringify({ ...base, assets: [asset('Ezrite-Setup-1.2.4.exe', 1, 'https://evil.example/x.exe')] })).installer, null);
+  // 크기를 모르면 null (받은 뒤 크기 비교는 건너뛴다)
+  assert.equal(release(JSON.stringify({ ...base, assets: [asset('Ezrite-Setup-1.2.4.exe', 'big')] })).installer.size, null);
+});
+
 test('맥·윈도우 한 릴리스: DMG 만 있으면 (윈도우판이 아직 안 올라왔으면) 릴리스 페이지로', () => {
   const dmgOnly = {
     tag_name: 'v1.1.0', html_url: 'https://github.com/dakcoe/ezrite/releases/tag/v1.1.0', body: '',

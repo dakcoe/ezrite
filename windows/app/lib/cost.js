@@ -39,16 +39,14 @@ class CostMeter {
     this.dollars += (count(input) * p.input + count(output) * p.output) / 1e6;
   }
 
-  /** "$0.03" · "$1.23+" · "<$0.01" · null(숨김) */
+  /** "$0.03" · "$1.23+" · "$0.004" · "$0.000+" · null(숨김). 0.01 미만은 소수 셋째 자리 (맥 "$%.3f" / "$%.2f", 1.2.4) */
   label() {
     if (this.dollars <= 0 && !this.unknown) return null;
-    const plus = this.unknown ? '+' : '';
-    if (this.dollars > 0 && this.dollars < 0.005) return `<$0.01${plus}`;
-    return `$${this.dollars.toFixed(2)}${plus}`;
+    return `$${this.dollars.toFixed(this.dollars < 0.01 ? 3 : 2)}${this.unknown ? '+' : ''}`;
   }
 
   caption() {
-    return `이번 실행 AI 비용 (Claude 요금 기준${this.unknown ? ', GPT·Gemini 는 빠짐' : ''})`;
+    return `이번 실행 AI 비용 (Claude 요금 기준${this.unknown ? ', GPT·Gemini 제외' : ''})`;
   }
 }
 

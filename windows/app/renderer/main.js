@@ -188,9 +188,11 @@
           h('div', { class: 'grow' }, h('div', { class: 'title' }, `Ezrite ${s.version}`),
             h('div', { class: 'sub' }, versionStatus(s))),
           s.update?.checking ? h('span', { class: 'spinner' }) : null,
-          // 새 버전이 있으면 그 자리에서 바로 받는다 (맥 설정과 같다)
+          // 새 버전이 있으면 그 자리에서 바로 (띠와 같은 규칙: 설치 파일 자산이 있으면 [업데이트], 없으면 [받기] = 브라우저)
           s.update?.available && !s.update.checking
-            ? h('button', { class: 'btn primary', onclick: () => window.ezrite.update.download() }, '받기') : null,
+            ? h('button', { class: 'btn primary', disabled: Boolean(s.install?.phase),
+              onclick: () => (s.update.canInstall ? window.ezrite.update.install() : window.ezrite.update.download()) },
+            s.update.canInstall ? '업데이트' : '받기') : null,
           h('button', { class: 'btn', disabled: Boolean(s.update?.checking), onclick: () => window.ezrite.update.check() }, '업데이트 확인')),
         ...releaseNotes(s)),
       h('button', { class: 'link-btn notices', onclick: () => window.ezrite.openNotices() }, '오픈소스 고지'),
@@ -360,7 +362,7 @@
       return;
     }
     const key = JSON.stringify([s.page,
-      s.page === 'settings' ? [s.sources, s.sourceId, s.language, s.options, s.listening, s.notesDir, s.notesFolder, s.hasKey, s.update, s.openAtLogin, s.theme, s.appAudio,
+      s.page === 'settings' ? [s.sources, s.sourceId, s.language, s.options, s.listening, s.notesDir, s.notesFolder, s.hasKey, s.update, s.install?.phase, s.openAtLogin, s.theme, s.appAudio,
         s.aiView, s.providerStatus, s.modelCheck, s.checking, s.releases] : null,
       s.page === 'history' ? [s.sessions, s.opened, s.opened?.live ? s.entries : null] : null]);
     if (key === shownKey) return;

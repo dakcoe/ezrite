@@ -6,7 +6,8 @@ const PREVIEWS = ['popover', 'compact', 'live', 'history', 'settings', 'onboardi
 const THEMES = ['light', 'dark'];
 
 /**
- * EZRITE_PREVIEW / THEME / SHOT / SHOT_DELAY / TEST_SCALE / TESTFILE / SPEED / FAKE_GROQ / EXPLAIN / CARD / ASK / CAPTURABLE / UPDATE_JSON / SHOT_SCROLL.
+ * EZRITE_PREVIEW / THEME / SHOT / SHOT_DELAY / TEST_SCALE / TESTFILE / SPEED / FAKE_GROQ / EXPLAIN / CARD / ASK / CAPTURABLE / UPDATE_JSON / SHOT_SCROLL
+ * / DOCK_ONLY / UPDATE_EXE / UPDATE_NOW.
  * 모르는 값은 없는 것으로 친다.
  * EZRITE_TEST_SCALE은 시험할 때만 화면 배율(100%·150% 등)을 흉내 낸다. 평소에는 Windows 배율을 그대로 쓴다
  */
@@ -27,6 +28,7 @@ function parseDevEnv(env) {
   const updateJSON = String(env.EZRITE_UPDATE_JSON ?? '').trim();
   const scroll = Number(String(env.EZRITE_SHOT_SCROLL ?? '').trim() || NaN);
   const dockOnly = String(env.EZRITE_DOCK_ONLY ?? '').split(',').map((v) => Number(v.trim())).filter((n) => Number.isInteger(n) && n > 0);
+  const updateExe = String(env.EZRITE_UPDATE_EXE ?? '').trim();
   return {
     preview: PREVIEWS.includes(preview) ? preview : null,
     theme: THEMES.includes(theme) ? theme : 'system',
@@ -47,6 +49,9 @@ function parseDevEnv(env) {
     updateJSON: updateJSON || null, // GitHub 대신 이 릴리스 JSON(글 또는 파일 경로)으로 새 버전 띠를 띄운다 (맥과 같다)
     // 화면 나누기·가상 데스크톱 시험용: 이 pid 들의 창만 줄였다 되돌리고 기준 창으로 삼는다 (사용자의 다른 창은 건드리지 않게)
     dockOnly: dockOnly.length ? dockOnly : null,
+    // 앱 안 업데이트 시험용 (1.2.4): [업데이트] 가 받지 않고 이 로컬 설치 파일(Ezrite-Setup-<버전>.exe)을 쓴다
+    updateExe: updateExe || null,
+    updateNow: ['1', 'true'].includes(norm(env.EZRITE_UPDATE_NOW)), // 새 버전 띠가 뜨면 [업데이트] 를 한 번 누른다 (자동 시험용)
   };
 }
 

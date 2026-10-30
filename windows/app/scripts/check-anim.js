@@ -4,7 +4,7 @@ require('./guard'); // 오류가 나도 화면에 창을 띄우지 않고 종료
 //   npx electron scripts/check-anim.js   → 결과 JSON 한 줄, 하나라도 틀리면 종료 코드 1
 // test/anim-ui.test.js 가 부른다. 맥 explain.html 1.2.0 과 같은 규칙:
 //   row: 나타날 때 옆 물체가 비켜 앉고, order 로 자리를 바꾸고, set 으로 글이 바뀌고, links 는 화살표(이번 단계 것만 주황)
-//   layers: 층마다 한 열 (왼쪽부터) · grid: 칸 자리는 물체 순서로 고정 · graph: 곡선·점이 set 으로 옮겨 간다
+//   layers: 층마다 한 열 (왼쪽부터), 열이 84px 보다 좁으면 층마다 한 줄 (위에서부터) · grid: 칸 자리는 물체 순서로 고정 · graph: 곡선·점이 set 으로 옮겨 간다
 //   장면 재생기의 reveal = 지금까지 재생한 단계 수, [↻ 다시] 는 처음 단계부터 다시
 //   요약은 문장마다 한 줄(첫 문장 굵게), 질문 답은 140자 넘는 문단을 두 문장씩
 // EZRITE_ANIM_SHOT=<png 경로> 이면 다 그린 카드를 찍는다.
@@ -149,10 +149,12 @@ async function main() {
       rowFocusLink: r[1].items.filter((i) => i.on).map((i) => i.label).join() === '5,3' && r[1].paths.join() === 'new' && r[1].caption === '5 와 3 비교',
       rowOrder: xs(r[2])['3'] < xs(r[2])['5'] && xs(r[1])['5'] < xs(r[1])['3'] && r[2].paths.join() === 'old',
       rowSet: r[3].items.some((i) => i.label === '9' && i.on) && !r[3].items.some((i) => i.label === '8') && r[3].paths.join() === 'old,new',
+      // 1.2.4 (맥 MIN_W 84): 보통 카드 폭에서 3층(h 셋)은 열이 84px 보다 좁아져 층마다 한 줄(위에서 아래로)로 그린다
       layers: out.layers1.items.length === 2 && out.layers.items.length === 6
-        && new Set(out.layers.items.filter((i) => /x/.test(i.label)).map((i) => i.x)).size === 1
-        && Math.max(...out.layers.items.filter((i) => /x/.test(i.label)).map((i) => i.x)) < Math.min(...out.layers.items.filter((i) => /h/.test(i.label)).map((i) => i.x))
-        && Math.max(...out.layers.items.filter((i) => /h/.test(i.label)).map((i) => i.x)) < out.layers.items.find((i) => i.label === 'ŷ').x
+        && new Set(out.layers.items.filter((i) => /x/.test(i.label)).map((i) => i.y)).size === 1
+        && new Set(out.layers.items.filter((i) => /h/.test(i.label)).map((i) => i.y)).size === 1
+        && Math.max(...out.layers.items.filter((i) => /x/.test(i.label)).map((i) => i.y)) < Math.min(...out.layers.items.filter((i) => /h/.test(i.label)).map((i) => i.y))
+        && Math.max(...out.layers.items.filter((i) => /h/.test(i.label)).map((i) => i.y)) < out.layers.items.find((i) => i.label === 'ŷ').y
         && out.layers.paths.length === 5,
       grid: out.grid1.items.length === 6 && new Set(out.grid1.items.map((i) => i.y)).size === 2 && new Set(out.grid1.items.map((i) => i.x)).size === 3
         && out.grid.items[4].label === '50' && out.grid.items[4].on && out.grid.items[4].x === out.grid1.items[4].x,

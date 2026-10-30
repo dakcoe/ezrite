@@ -293,38 +293,52 @@ function sessions(dir) {
  * 받아 적은 글 없이 소리만 남은 파일을 지운다. autoDelete 면(기본 위치) 30일 지난 기록도 지운다.
  * 어느 쪽이든 이 앱 이름 형식이 아닌 파일은 건드리지 않는다 (맥 Notes.prune)
  */
-function prune(dir, { autoDelete, now = Date.now() } = {}) {
+function prune(dir, { autoDelete, now = Date.now(), onDelete = () => {} } = {}) {
+  // 지운 것은 onDelete(이름, 이유) 로 알린다 — 앱이 로그에 한 줄씩 (1.2.4, 맥 "Ezrite 정리: … 지움 (…)")
+  const remove = (p, why) => {
+    fs.rmSync(p, { recursive: true, force: true });
+    onDelete(path.basename(p), why);
+  };
   // 글 없이 소리만 남은 기록 폴더는 폴더째 지운다. 사용자가 넣은 다른 파일이 있으면 두고 (맥: .m4a·.DS_Store 만 있으면)
   for (const sub of subfolders(dir)) {
     if (exists(path.join(sub, `${path.basename(sub)}.txt`))) continue;
-    if (readDir(sub).every((n) => n.toLowerCase().endsWith('.m4a') || SYSTEM_FILES.has(n.toLowerCase()))) fs.rmSync(sub, { recursive: true, force: true });
+    if (readDir(sub).every((n) => n.toLowerCase().endsWith('.m4a') || SYSTEM_FILES.has(n.toLowerCase()))) remove(sub, '글 없는 소리 폴더');
   }
   for (const n of readDir(dir)) {
     if (!n.toLowerCase().endsWith('.m4a') || !startedAt(n)) continue;
     const audio = path.join(dir, n);
-    if (!exists(swapExt(audio, '.txt'))) fs.rmSync(audio, { force: true });
+    if (!exists(swapExt(audio, '.txt'))) remove(audio, '글 없는 소리');
   }
   if (!autoDelete) return;
   const cutoff = now - KEEP_DAYS * 86400_000;
   for (const s of sessions(dir)) {
     if (s.date >= cutoff) continue;
-    for (const t of trashTargets(s.path)) fs.rmSync(t, { recursive: true, force: true });
+    for (const t of trashTargets(s.path)) remove(t, '30일 지난 기록');
   }
+}
+
+/** 시작 정리 로그 한 줄 (맥 NSLog 와 같은 모양) */
+function cleanupLine(name, reason) {
+  return `Ezrite 정리: ${name} 지움 (${reason})`;
 }
 
 /**
  * 앱이 죽어 m4a 로 바꾸지 못한 녹음(.pcm) 목록 — 다음 실행 때 helper 로 바꾼다.
  * 받아 적은 글이 하나도 없는 녹음은 맥처럼 소리도 남기지 않는다 (여기서 지운다)
  */
-function pendingAudio(dir) {
+function pendingAudio(dir, onDelete = () => {}) {
   const out = [];
   // 기록 폴더 안과 저장 폴더 바로 아래 (맥 recoverParts 가 하위 폴더까지 찾는 것과 같다)
   for (const folder of [...subfolders(dir), dir]) {
     for (const n of readDir(folder)) {
       if (!n.toLowerCase().endsWith('.pcm') || !startedAt(n)) continue;
       const pcm = path.join(folder, n);
-      if (exists(swapExt(pcm, '.txt'))) out.push(pcm);
-      else fs.rmSync(pcm, { force: true });
+      if (exists(swapExt(pcm, '.txt'))) {
+        out.push(pcm);
+      } else {
+        fs.rmSync(pcm, { force: true });
+        onDelete(n, '글 없는 소리');
+      }
     }
   }
   return out.sort();
@@ -415,5 +429,5 @@ class Writer {
 
 module.exports = {
   KEEP_DAYS, defaultDir, stamp, startedAt, newPath, title, companions, isFoldered, subfolders, rename, trashTargets, remove, exportTo,
-  render, parse, timesPath, saveTimes, loadTimes, load, sessions, preview, prune, pendingAudio, ownNote, audioRel, audioFile, Writer,
+  render, parse, timesPath, saveTimes, loadTimes, load, sessions, preview, prune, cleanupLine, pendingAudio, ownNote, audioRel, audioFile, Writer,
 };

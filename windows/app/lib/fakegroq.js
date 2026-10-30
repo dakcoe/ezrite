@@ -21,7 +21,7 @@ const TRANSLATIONS = new Map(SAMPLE_LINES);
 
 /** "설명해줘" 요청(JSON 답): 프롬프트의 화면 글자 줄 번호로 앞의 세 줄을 짚는 정해 둔 설명 (그림 없이 화면 표시 확인용) */
 function explainReply(prompt) {
-  const section = /Text lines on screen \(id: text\):\n([\s\S]*?)(?:\n\n|$)/.exec(prompt)?.[1] ?? '';
+  const section = /Text lines on screen \(id: text\)[^\n]*:\n([\s\S]*?)(?:\n\n|$)/.exec(prompt)?.[1] ?? '';
   const lines = section.split('\n').map((l) => /^(\d+): (.*)$/.exec(l)).filter(Boolean).map(([, id, text]) => ({ id: Number(id), text }));
   const picked = lines.slice(0, 3);
   const marks = picked.map((l) => ({ id: l.id, note: `(예시 설명) ‘${l.text}’ 가 지금 다루는 내용입니다.` }));

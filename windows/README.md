@@ -99,6 +99,7 @@ npm run lint           # cargo clippy -D warnings + node --check
 | `EZRITE_CAPTURABLE=1` | 설명 카드·화면 표시를 화면 캡처에 보이게 둔다 |
 | `EZRITE_DOCK_ONLY=<pid,…>` | 화면 나누기·가상 데스크톱 시험용: 그 프로세스들의 창만 줄였다 되돌리고 기준 창으로 삼는다 (`app/scripts/check-split.js`, `check-desktops.js`) |
 | `EZRITE_UPDATE_JSON=<json 또는 파일>` | GitHub 대신 그 릴리스 JSON 으로 "새 버전" 띠를 띄운다 |
+| `EZRITE_UPDATE_EXE=<Ezrite-Setup-<버전>.exe>` · `EZRITE_UPDATE_NOW=1` | 앱 안 업데이트 시험: [업데이트] 가 받지 않고 그 로컬 설치 파일을 쓴다 · 띠가 뜨면 [업데이트] 를 한 번 누른다 |
 
 ```
 cd app
@@ -142,7 +143,14 @@ npm run dist           # helper release 빌드 → 오픈소스 고지 → elect
    시험판도 prerelease 로 표시하지 않는다 (`releases/latest` 가 prerelease 를 건너뛴다).
 
 앱은 켤 때와 6시간마다 `https://api.github.com/repos/<저장소>/releases/latest` 를 보고, 앱보다 높은 버전이면 팝업 위에 띠를 띄운다.
-[받기] 는 릴리스의 `.exe` 링크를 브라우저로 연다. DMG 만 있으면(윈도우판을 아직 안 올렸으면) 릴리스 페이지를 연다. 저장소가 비공개면 GitHub 이 404 를 돌려주고, 이때는 아무것도 띄우지 않는다.
+저장소가 비공개면 GitHub 이 404 를 돌려주고, 이때는 아무것도 띄우지 않는다.
+
+띠의 [업데이트] (1.2.4, `app/lib/selfupdate.js`): 앱이 릴리스의 `Ezrite-Setup-<버전>.exe` 를 `%LOCALAPPDATA%\ezrite-updater` 로 직접 받는다
+(https 의 GitHub 주소만, 리다이렉트 끝 주소까지 확인, 이름·버전·자산 크기 확인). 브라우저로 받은 파일과 달리 MOTW(Zone.Identifier)가 없어
+SmartScreen 경고가 뜨지 않는다. 앱이 끝나기를 기다렸다가 `--updated /S --force-run` 으로 조용히 설치하고 다시 켠다
+(`--updated` 라서 `installer.nsh` 의 지우기가 돌지 않는다. 키·기록·설정 `%APPDATA%\Ezrite` 는 원래 지우지 않는다). 녹음 중이면 기다리라고만 한다.
+실패하면 띠에 오류 한 줄과 [브라우저로 받기]. 그래서 **설치 파일 이름은 꼭 `Ezrite-Setup-<버전>.exe`** 여야 한다 (electron-builder 기본).
+지난 설치 파일은 다음에 켤 때 지운다.
 
 ## 라이선스
 

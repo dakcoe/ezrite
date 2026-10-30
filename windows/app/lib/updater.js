@@ -48,11 +48,14 @@ function release(text) {
   const page = typeof obj.html_url === 'string' ? trusted(obj.html_url) : null;
   if (!page) return null;
   const assets = Array.isArray(obj.assets) ? obj.assets : [];
-  const exe = assets.find((a) => typeof a?.name === 'string' && a.name.toLowerCase().endsWith('.exe'))?.browser_download_url;
+  const asset = assets.find((a) => typeof a?.name === 'string' && a.name.toLowerCase().endsWith('.exe'));
+  const exe = typeof asset?.browser_download_url === 'string' ? trusted(asset.browser_download_url) : null;
   return {
     version: strip(obj.tag_name),
     notes: (typeof obj.body === 'string' ? obj.body : '').replace(/\r\n/g, '\n').trim(),
-    download: (typeof exe === 'string' && trusted(exe)) || page,
+    download: exe || page,
+    // 앱 안 업데이트(1.2.4, lib/selfupdate.js)가 직접 받을 설치 파일. 크기는 받은 뒤 맞춰 본다
+    installer: exe ? { name: asset.name, url: exe, size: Number.isInteger(asset.size) && asset.size > 0 ? asset.size : null } : null,
   };
 }
 

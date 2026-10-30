@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('ezrite', {
   /** 새 버전: [받기] 는 main 이 확인한 GitHub 주소만 연다 */
   update: {
     download: () => ipcRenderer.invoke('update:download'),
+    /** 앱 안 업데이트 (1.2.4): 받아서 조용히 설치하고 다시 켠다 */
+    install: () => ipcRenderer.invoke('update:install'),
     skip: () => ipcRenderer.invoke('update:skip'),
     check: () => ipcRenderer.invoke('update:check'),
   },

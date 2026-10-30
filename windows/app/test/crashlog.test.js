@@ -48,6 +48,16 @@ test('로그를 못 쓰거나 알림이 다시 던져도 처리기는 던지지 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('[1.2.4] 한 줄 기록: 시각과 함께 main.log 에 덧붙인다 (키 모양은 가린다, 못 써도 던지지 않는다)', () => {
+  const { appendLine } = require('../lib/crashlog');
+  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ezrite-log-')), 'logs');
+  appendLine(dir, 'Ezrite 정리: a.m4a 지움 (글 없는 소리)', new Date('2026-10-30T10:00:00Z'));
+  appendLine(dir, 'gsk_ABCDEFGHIJKL 줄', new Date('2026-10-30T10:00:01Z'));
+  assert.equal(fs.readFileSync(path.join(dir, 'main.log'), 'utf8'),
+    '[2026-10-30T10:00:00.000Z] Ezrite 정리: a.m4a 지움 (글 없는 소리)\n[2026-10-30T10:00:01.000Z] gsk_*** 줄\n');
+  assert.doesNotThrow(() => appendLine('\0bad', 'x'));
+});
+
 test('main.js 는 다른 모듈을 부르기 전에 처리기를 단다', () => {
   const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
   const at = src.indexOf("require('./lib/crashlog')");

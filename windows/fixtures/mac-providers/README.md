@@ -30,3 +30,4 @@ Claude 는 사용자 키로 실제로 불러 받은 응답(`response-claude-*.js
 - **유료 서비스 표시**: 한도 막대 대신 서비스 이름. 남은 횟수(설명·질문)는 Groq 일 때만.
 - **1.2.1 (움직이는 그림)**: 이 서비스들에는 `unifiedPrompt(..., rich: true)`·`questionPrompt(..., rich: true)` 로 그림 안내에 `anim` 틀이 더 붙는다 (Groq 요청에는 안 붙는다). 위 `request-*-explain.json` 은 1.1.x 에 꺼낸 것이고, 1.2.0 에서 바뀐 장면 안내의 `reveal` 문장("or for an anim visual how many frames have played (1 = first frame)")을 손으로 맞췄다.
 - **1.2.2 (그림 안내 줄바꿈)**: 맥이 그림 안내 세 덩이(`baseKinds`·`animKind`·`visualRules`)를 `"\n"` 으로 잇게 고쳤다 (1.2.1 은 붙여서 보냈다). `request-*-{explain,ask-retry-nothink}.json` 의 그림 안내를 맥 1.2.2 `Groq.swift` 의 `visualsGuide(rich: true)` 글 그대로 바꿨다 (나머지는 그대로). `animKind` 의 `"set".   "graph"` 세 칸도 맥 원문 그대로다 (Swift 여러 줄 글 이음 뒤 들여쓰기).
+- **1.2.4 (교수님 말 되풀이 안 하기)**: 맥이 준 네 곳의 글로 바꿨다 — 말·화면 머리(`context`), `visualsTask`, `visualRules` 앞부분, `scenesGuide` 의 say 설명. 질문 요청도 같은 머리를 쓴다.

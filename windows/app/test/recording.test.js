@@ -64,9 +64,11 @@ test('finishAudio: 빈 .pcm 은 지우고 소리 파일을 만들지 않는다',
   const d = tempDir();
   const pcm = path.join(d, '2026-10-17_10-00-00.pcm');
   fs.writeFileSync(pcm, Buffer.alloc(0));
-  const out = await finishAudio(pcm, { run: async () => assert.fail('부르지 않는다') });
+  const seen = [];
+  const out = await finishAudio(pcm, { run: async () => assert.fail('부르지 않는다'), onDelete: (n, why) => seen.push([n, why]) });
   assert.equal(out, null);
   assert.deepEqual(fs.readdirSync(d), []);
+  assert.deepEqual(seen, [['2026-10-17_10-00-00.pcm', '빈 소리']], '[1.2.4] 정리 로그');
 });
 
 test('finishAudio: .pcm 이 없으면 null', async () => {

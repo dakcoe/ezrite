@@ -22,6 +22,21 @@ test('[mac AskTests] 지침이_비어_있으면_아무것도_넣지_않는다', 
   assert.ok(!G.unifiedPrompt(lines, [], '   ').includes("Student's instructions"));
 });
 
+test('[1.2.4 후보] 교수님 말을 되풀이하지 않게: 말·화면 머리, 설명 과제, 규칙, 장면 say 가 맥과 같은 글', () => {
+  assert.equal(G.VISUALS_TASK, 'Explain, in Korean, the idea underneath what is being taught right now — what the lecturer left unsaid: '
+    + 'why it is true or needed, what it assumes, an intuition or small worked example, and the usual point of confusion. '
+    + 'Use your own words; the student already has the speech and the screen.');
+  assert.ok(G.VISUAL_RULES.startsWith('Rules: never contradict the screen or the speech and do not invent facts, but do add standard textbook background the lecturer skipped; check any calculation'));
+  assert.ok(G.SCENES_GUIDE.includes('{"say":"1-2 Korean sentences that teach this step (meaning and reason, not just what is on screen, and not a sentence the lecturer already said)", '));
+  // 질문도 같은 머리를 쓴다 (의도)
+  const q = G.questionPrompt('왜?', [], '', lines, ['교수님 말']);
+  assert.ok(q.includes('Recent lecture speech (oldest first) — the student just heard this and still did not fully get it, so never restate or paraphrase it:\n교수님 말'));
+  assert.ok(q.includes('Text lines on screen (id: text) — the student can already read these:\n1: MRS_A = MRS_B'));
+  for (const old of ['Recent lecture speech (oldest first):', 'Text lines on screen (id: text):', 'stay faithful to the screen', 'for a student seeing it for the first time']) {
+    assert.ok(!G.unifiedPrompt(lines, ['x'], '', true).includes(old), old);
+  }
+});
+
 test('[mac AskTests] 질문_요청에는_질문·앞의_설명·앞의_대화가_들어간다', () => {
   const p = G.questionPrompt('그럼 MRS가 다르면?', [{ q: 'MRS가 뭐야?', a: '한계대체율이에요' }], '파레토 효율 설명', lines, ['교환이 효율적이려면']);
   for (const s of ['그럼 MRS가 다르면?', '한계대체율이에요', '파레토 효율 설명', '교환이 효율적이려면', '1: MRS_A = MRS_B']) assert.ok(p.includes(s), s);
@@ -29,7 +44,9 @@ test('[mac AskTests] 질문_요청에는_질문·앞의_설명·앞의_대화가
 
 test('맥과 같은 프롬프트 조각 (줄 번호 금지·문단 나누기 규칙은 Groq 모델에만)', () => {
   const u = G.unifiedPrompt(lines, [], '');
-  assert.ok(u.startsWith('You help a university student follow a lecture. The subject can be anything (humanities, social science, science, engineering, arts).\nRecent lecture speech (oldest first):\n(none — explain what is on screen)\n\nText lines on screen (id: text):\n1: MRS_A = MRS_B\n\nDo two things.\n1. Choose up to 3 text lines'));
+  assert.ok(u.startsWith('You help a university student follow a lecture. The subject can be anything (humanities, social science, science, engineering, arts).\n'
+    + 'Recent lecture speech (oldest first) — the student just heard this and still did not fully get it, so never restate or paraphrase it:\n'
+    + '(none — explain what is on screen)\n\nText lines on screen (id: text) — the student can already read these:\n1: MRS_A = MRS_B\n\nDo two things.\n1. Choose up to 3 text lines'));
   assert.ok(u.includes('"scenes":[2 to 6 scenes]'));
   assert.ok(u.includes('Use flowchart TD/LR or sequenceDiagram.'));
   assert.ok(!u.includes('Line ids are only for you'));

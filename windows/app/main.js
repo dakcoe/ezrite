@@ -9,8 +9,10 @@ const fs = require('fs');
 
 // 처리 안 된 예외는 기본 오류 창 대신 %APPDATA%\Ezrite\logs\main.log 로 쓰고 앱 안 알림으로 알린다.
 // 다른 앱 모듈을 부르기 전에 달아서, 불러오는 중의 오류도 창으로 뜨지 않게 한다
+const LOG_DIR = path.join(process.env.APPDATA || app.getPath('appData'), 'Ezrite', 'logs');
+const { appendLine } = require('./lib/crashlog');
 require('./lib/crashlog').install({
-  logDir: path.join(process.env.APPDATA || app.getPath('appData'), 'Ezrite', 'logs'),
+  logDir: LOG_DIR,
   onError: (msg) => {
     try {
       showNotice(`문제가 생겨 기록해 두었습니다: ${msg}`);
@@ -47,6 +49,7 @@ const { AIClient } = require('./lib/ai');
 const { CostMeter } = require('./lib/cost');
 const { releasesURL, summaries } = require('./lib/releases');
 const { Updater, issueURL } = require('./lib/updater');
+const { SelfUpdate, UPDATE_DIR_NAME } = require('./lib/selfupdate');
 const PKG = require('./package.json');
 const E = require('./lib/explain');
 const { Explainer } = require('./lib/explainer');
@@ -124,6 +127,7 @@ const state = {
   explaining: false, // "설명해줘" 진행 중 (✨ 단추가 돌아간다)
   userGuide: '', // AI 지침
   update: { available: null, checking: false, checkedAt: null, current: app.getVersion() }, // 새 버전 (lib/updater.js)
+  install: { phase: null, percent: null, error: null, waiting: null }, // 앱 안 업데이트 진행 (1.2.4, lib/selfupdate.js)
   openAtLogin: false, // 로그인할 때 자동 실행
   loginItemAvailable: app.isPackaged, // 개발 중(electron.exe)에는 바꾸지 않는다
   build: `${app.getVersion()} (Windows ${os.release()})`,
@@ -631,21 +635,25 @@ function demoCard(value) {
 /** 앱이 죽어 남은 녹음(.pcm)을 m4a 로 바꾸고, 글 없는 소리와 (기본 위치면) 30일 지난 기록을 지운다 */
 async function recoverAndPrune() {
   const dir = notesDir();
+  // 지운 것은 이름과 이유를 main.log 에 한 줄씩 (1.2.4, 맥 "Ezrite 정리: <이름> 지움 (<이유>)")
+  const logDeleted = (name, reason) => appendLine(LOG_DIR, notes.cleanupLine(name, reason));
   // 바꾸다 꺼진 반쪽 파일 (기록 폴더 안에도 생긴다)
   for (const folder of [dir, ...notes.subfolders(dir)]) {
     for (const n of fs.existsSync(folder) ? fs.readdirSync(folder) : []) {
-      if (n.startsWith('.encoding-')) fs.rmSync(path.join(folder, n), { force: true });
+      if (!n.startsWith('.encoding-')) continue;
+      fs.rmSync(path.join(folder, n), { force: true });
+      logDeleted(n, '변환 임시 파일');
     }
   }
-  for (const pcm of notes.pendingAudio(dir)) {
+  for (const pcm of notes.pendingAudio(dir, logDeleted)) {
     try {
-      await finishAudio(pcm, { run: runHelper });
+      await finishAudio(pcm, { run: runHelper, onDelete: logDeleted });
     } catch {
       // .pcm 은 남는다. 다음 실행 때 다시
     }
   }
   try {
-    notes.prune(dir, { autoDelete: !state.notesFolder });
+    notes.prune(dir, { autoDelete: !state.notesFolder, onDelete: logDeleted });
   } catch {
     // 정리를 못 해도 앱은 돈다
   }
@@ -1346,11 +1354,34 @@ function fakeRelease() {
   }
 }
 
+// 앱 안 업데이트 (1.2.4): [업데이트] → 설치 파일을 직접 받아 조용히 설치하고 다시 켠다 (lib/selfupdate.js)
+const selfUpdate = new SelfUpdate({
+  current: app.getVersion(),
+  dir: path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), UPDATE_DIR_NAME),
+  // 녹음 중·방금 끝난 녹음을 m4a 로 바꾸는 중에는 설치하지 않는다 (설치기가 앱을 닫으면 .pcm 이 남는다)
+  busy: () => state.listening || state.paused || state.quietPaused || encoding.size > 0,
+  localExe: dev.updateExe,
+  spawn,
+  quit: () => {
+    app.isQuitting = true;
+    app.quit();
+  },
+  onChange: (install) => setState({ install }),
+});
+
+let autoUpdated = false; // EZRITE_UPDATE_NOW: 한 번만 누른다
 const updater = new Updater({
   repo: PKG.ezriteUpdateRepo,
   current: app.getVersion(),
   fakeJSON: fakeRelease(),
-  onChange: (update) => setState({ update }),
+  onChange: (update) => {
+    // 설치 파일 자산이 있어야 [업데이트] (앱이 받아 설치). 없으면 띠 단추는 [받기] = 브라우저 (맥과 같다)
+    setState({ update: { ...update, canInstall: Boolean(update.available?.installer || dev.updateExe) } });
+    if (dev.updateNow && update.available && !autoUpdated) {
+      autoUpdated = true;
+      selfUpdate.install(update.available.installer);
+    }
+  },
 });
 
 // 설정의 버전별 요약 (1.2.3, lib/releases.js). 설정을 열 때 받는다. GitHub 은 키 없이 시간당 60번까지라 10분 안에는 다시 받지 않는다.
@@ -1435,6 +1466,8 @@ function registerIpc() {
     const url = updater.available?.download;
     if (url) shell.openExternal(url);
   });
+  // [업데이트]: 앱이 직접 받아 설치한다. 실패하면 띠에 오류와 [받기](위 브라우저 길)가 남는다
+  ipcMain.handle('update:install', () => selfUpdate.install(updater.available?.installer ?? null));
   ipcMain.handle('update:skip', () => updater.skip());
   ipcMain.handle('update:check', () => updater.checkNow());
   ipcMain.handle('window:guide', () => showGuide());
@@ -1494,6 +1527,9 @@ if (!app.requestSingleInstanceLock()) {
     if (state.loginItemAvailable) setState({ openAtLogin: app.getLoginItemSettings().openAtLogin });
     // 켤 때와 6시간마다 새 버전 확인. 미리보기·스크린샷은 EZRITE_UPDATE_JSON 이 있을 때만 (네트워크에 나가지 않게)
     if (dev.updateJSON || (!dev.preview && !dev.shot)) updater.start();
+    // 업데이트 뒤 다시 켜졌으면 받았던 설치 파일을 지운다 (지금 버전 이하·받다 만 것). 다시 켜진 직후엔
+    // 설치기가 아직 그 파일을 잡고 있을 수 있어, 못 지웠으면 1분 뒤 한 번 더
+    if (!dev.preview && !dev.shot && selfUpdate.cleanup().length) setTimeout(() => selfUpdate.cleanup(), 60_000).unref?.();
     // 한도는 24시간에 걸쳐 차오른다. 1분마다 다시 내어 막대와 횟수가 따라 오르게 한다 (맥 TimelineView 60초)
     refreshFooter();
     setInterval(refreshFooter, 60_000);
