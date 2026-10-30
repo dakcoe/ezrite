@@ -1,14 +1,18 @@
 import AppKit
 import Foundation
+import Security
 
 /// 새 버전 알림. 켤 때와 6시간마다 GitHub 의 최신 릴리스를 물어보고, 앱보다 높으면 팝업 위에 띠를 띄운다.
-/// 설치는 사용자가 [받기]로 DMG 를 받아 직접 한다 (자동 설치는 Apple 개발자 서명이 있어야 매끄럽다).
+/// [업데이트] 는 릴리스의 zip 을 앱이 직접 받아 풀고, 지금 앱과 같은 인증서로 서명됐는지 확인한 뒤 바꿔 끼우고 다시 켠다.
+/// 앱이 받은 파일에는 격리 표시가 붙지 않아 "그래도 열기" 가 다시 뜨지 않는다. zip 이 없거나 바꿀 수 없으면 예전처럼 DMG 를 연다.
 /// 보내는 것은 릴리스 조회 요청 하나뿐이다. 개인 정보는 보내지 않는다
 final class Updater: ObservableObject {
     struct Release: Equatable {
         let version: String
         let notes: String
         let download: URL
+        /// 앱 자동 교체용 zip (없으면 nil — 옛 릴리스)
+        var zip: URL?
     }
 
     @Published private(set) var available: Release?
@@ -18,6 +22,11 @@ final class Updater: ObservableObject {
     @Published private(set) var checkedAt: Date?
     /// 설정에 보이는 최근 버전들의 핵심 변경 (릴리스 글 맨 위 줄들)
     @Published private(set) var history: [Highlights] = []
+    /// [업데이트] 로 받고 확인하는 중
+    @Published private(set) var installing = false
+    @Published private(set) var installError: String?
+    /// 지금 바꿔 끼우면 안 되는 때 (녹음·다시 받아쓰기 중). AppDelegate 가 채운다
+    var busy: () -> Bool = { false }
 
     struct Highlights: Equatable, Identifiable {
         let version: String
@@ -35,6 +44,8 @@ final class Updater: ObservableObject {
     private var snoozeChecks = 0                   // 닫은 뒤 지난 확인 횟수
 
     func start() {
+        // 지난 업데이트 때 받아 둔 파일. 바꿔 끼운 뒤 다시 켜진 이때 지운다
+        try? FileManager.default.removeItem(at: Self.work)
         check()
         timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in self?.check() }
     }
@@ -45,6 +56,8 @@ final class Updater: ObservableObject {
         if let path = ProcessInfo.processInfo.environment["EZRITE_UPDATE_JSON"],
            let data = FileManager.default.contents(atPath: path) {
             available = Self.release(from: data)
+            // 개발용: 이 zip 으로 자동 교체를 시험한다
+            if let zip = ProcessInfo.processInfo.environment["EZRITE_UPDATE_ZIP"] { available?.zip = URL(fileURLWithPath: zip) }
             return
         }
         guard let repo = Self.repo, let url = URL(string: "https://api.github.com/repos/\(repo)/releases/latest") else { return }
@@ -67,6 +80,81 @@ final class Updater: ObservableObject {
     func download() {
         guard let r = available else { return }
         NSWorkspace.shared.open(r.download)
+    }
+
+    /// 앱이 직접 바꿔 끼울 수 있나: zip 이 있고, 앱이 사용자가 쓸 수 있는 폴더에 있다
+    var canInstall: Bool {
+        available?.zip != nil && FileManager.default.isWritableFile(atPath: Bundle.main.bundleURL.deletingLastPathComponent().path)
+    }
+
+    /// [업데이트]: zip 받기 → 풀기 → 서명·버전 확인 → 앱이 끝난 뒤 바꿔 끼우고 다시 켠다. 안 되면 DMG 를 연다
+    func install() {
+        guard let r = available, let zip = r.zip, canInstall else { return download() }
+        guard !busy() else { installError = "녹음이 끝나면 업데이트할 수 있어요"; return }
+        installing = true; installError = nil
+        let fail: (String) -> Void = { msg in DispatchQueue.main.async { self.installing = false; self.installError = msg } }
+        let work = Self.work
+        let unpack: (URL) -> Void = { file in
+            try? FileManager.default.removeItem(at: work.appendingPathComponent("app"))
+            let app = work.appendingPathComponent("app/Ezrite.app")
+            guard Self.run("/usr/bin/ditto", ["-x", "-k", file.path, work.appendingPathComponent("app").path]),
+                  FileManager.default.fileExists(atPath: app.path) else { return fail("받은 파일을 풀지 못했어요") }
+            guard Self.sameSigner(app) else { return fail("받은 앱의 서명이 달라 설치하지 않았어요") }
+            let v = Bundle(url: app)?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+            guard Self.isNewer(v, than: Self.current) else { return fail("받은 앱이 지금보다 새 버전이 아니에요") }
+            DispatchQueue.main.async {
+                guard !self.busy() else { self.installing = false; self.installError = "녹음이 끝나면 업데이트할 수 있어요"; return }
+                self.relaunch(into: app)
+            }
+        }
+        try? FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+        if zip.isFileURL { DispatchQueue.global().async { unpack(zip) }; return }
+        URLSession.shared.downloadTask(with: URLRequest(url: zip, timeoutInterval: 120)) { tmp, resp, _ in
+            guard let tmp, (resp as? HTTPURLResponse)?.statusCode == 200 else { return fail("새 버전을 받지 못했어요") }
+            let file = work.appendingPathComponent("Ezrite.zip")
+            try? FileManager.default.removeItem(at: file)
+            guard (try? FileManager.default.moveItem(at: tmp, to: file)) != nil else { return fail("새 버전을 받지 못했어요") }
+            unpack(file)
+        }.resume()
+    }
+
+    static let work = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Ezrite-update", isDirectory: true)
+
+    /// 이 앱이 끝나기를 기다렸다가 바꿔 끼우고 연다. 실패하면 옛 앱을 되돌려 연다
+    private func relaunch(into app: URL) {
+        let dest = Bundle.main.bundleURL.path, old = dest + ".old"
+        let script = """
+        while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.2; done
+        rm -rf "$3"
+        if mv "$1" "$3" && mv "$2" "$1"; then rm -rf "$3"; xattr -dr com.apple.quarantine "$1"
+        else [ -e "$1" ] || mv "$3" "$1"; fi
+        open "$1"
+        """
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", script, "sh", dest, app.path, old]
+        do { try p.run() } catch { installing = false; installError = "업데이트를 시작하지 못했어요"; return }
+        NSApp.terminate(nil)
+    }
+
+    /// 받은 앱이 지금 앱의 지정 요구사항(번들 ID + 인증서)을 채우는지. 자체 서명이라 이것이 바꿔치기를 막는 유일한 확인이다
+    static func sameSigner(_ app: URL) -> Bool {
+        var me: SecCode?, mine: SecStaticCode?, req: SecRequirement?, other: SecStaticCode?
+        guard SecCodeCopySelf([], &me) == errSecSuccess, let me,
+              SecCodeCopyStaticCode(me, [], &mine) == errSecSuccess, let mine,
+              SecCodeCopyDesignatedRequirement(mine, [], &req) == errSecSuccess, let req,
+              SecStaticCodeCreateWithPath(app as CFURL, [], &other) == errSecSuccess, let other else { return false }
+        return SecStaticCodeCheckValidity(other, SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate | kSecCSCheckNestedCode), req) == errSecSuccess
+    }
+
+    private static func run(_ tool: String, _ args: [String]) -> Bool {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: tool)
+        p.arguments = args
+        guard (try? p.run()) != nil else { return false }
+        p.waitUntilExit()
+        return p.terminationStatus == 0
     }
 
     /// [나중에]: 지금만 닫는다
@@ -161,11 +249,13 @@ final class Updater: ObservableObject {
               let tag = obj["tag_name"] as? String,
               let page = (obj["html_url"] as? String).flatMap(trusted) else { return nil }
         let assets = (obj["assets"] as? [[String: Any]]) ?? []
-        let dmg = assets.first { ($0["name"] as? String)?.lowercased().hasSuffix(".dmg") == true }?["browser_download_url"] as? String
+        let asset = { (ext: String) in assets.first { ($0["name"] as? String)?.lowercased().hasSuffix(ext) == true }?["browser_download_url"] as? String }
+        let dmg = asset(".dmg")
         return Release(version: tag.trimmingCharacters(in: CharacterSet(charactersIn: "vV ")),
                        notes: ((obj["body"] as? String) ?? "").replacingOccurrences(of: "\r\n", with: "\n")
                            .trimmingCharacters(in: .whitespacesAndNewlines),
-                       download: dmg.flatMap(trusted) ?? page)
+                       download: dmg.flatMap(trusted) ?? page,
+                       zip: asset(".zip").flatMap(trusted))
     }
 
     /// [받기] 로 여는 주소는 https 의 GitHub 것만 믿는다 (응답이 바뀌어도 다른 곳을 열지 않게)

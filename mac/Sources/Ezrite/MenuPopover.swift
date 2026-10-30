@@ -92,8 +92,17 @@ struct UpdateBanner: View {
                     Text("새 버전 \(r.version)").font(.system(size: 12.5, weight: .semibold))
                     Text("지금 \(Updater.current)").font(.system(size: 11)).foregroundStyle(.secondary)
                     Spacer()
-                    Button("나중에") { updater.skip() }.controlSize(.small)
-                    Button("받기") { updater.download() }.controlSize(.small).buttonStyle(.borderedProminent)
+                    if updater.installing { ProgressView().controlSize(.small) }
+                    Button("나중에") { updater.skip() }.controlSize(.small).disabled(updater.installing)
+                    Button(updater.canInstall ? "업데이트" : "받기") { updater.install() }
+                        .controlSize(.small).buttonStyle(.borderedProminent).disabled(updater.installing)
+                }
+                if let e = updater.installError {
+                    HStack(spacing: 6) {
+                        Text(e).font(.system(size: 11)).foregroundStyle(.orange)
+                        Spacer()
+                        Button("브라우저로 받기") { updater.download() }.controlSize(.small)
+                    }
                 }
                 if !r.notes.isEmpty {
                     Text(r.notes.split(separator: "\n").prefix(3).joined(separator: "\n"))
@@ -704,9 +713,15 @@ private struct SettingsPage: View {
                             Text(versionStatus).font(.system(size: 11)).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        if updater.checking { ProgressView().controlSize(.small) }
-                        Button("업데이트 확인") { updater.checkNow() }
-                            .disabled(updater.checking)
+                        if updater.checking || updater.installing { ProgressView().controlSize(.small) }
+                        if updater.available != nil {
+                            // 팝업 띠와 같은 버튼 (Windows 설정 버전 줄과 같다)
+                            Button(updater.canInstall ? "업데이트" : "받기") { updater.install() }
+                                .buttonStyle(.borderedProminent).disabled(updater.installing)
+                        } else {
+                            Button("업데이트 확인") { updater.checkNow() }
+                                .disabled(updater.checking)
+                        }
                     }
                     // 버전마다 핵심 변경만 (자세한 글은 GitHub 릴리스에)
                     ForEach(updater.history) { h in
@@ -749,7 +764,7 @@ private struct SettingsPage: View {
 private extension SettingsPage {
     /// 버전 줄 아래 한 줄: 새 버전 있음 / 최신 / 아직 확인 전
     var versionStatus: String {
-        if let r = updater.available { return "새 버전 \(r.version) 이 있습니다 — 팝업 위 알림에서 받기" }
+        if let r = updater.available { return updater.installError ?? "새 버전 \(r.version) 이 있습니다" }
         if updater.checking { return "확인하는 중…" }
         if updater.checkedAt != nil { return "최신 버전입니다" }
         return "빌드 \(Updater.build)"

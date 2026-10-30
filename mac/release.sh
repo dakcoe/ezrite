@@ -99,8 +99,11 @@ osascript -e "tell application \"Finder\" to duplicate (POSIX file \"$CHECK/v/Ez
 hdiutil detach "$CHECK/v" >/dev/null
 codesign --verify --deep --strict "$CHECK/Ezrite.app" || { echo "DMG 에서 복사한 앱의 서명이 깨졌습니다" >&2; exit 1; }
 rm -rf "$CHECK"
+# 앱 안 [업데이트] 가 받는 zip. 앱이 직접 받으면 격리 표시가 없어 "그래도 열기" 없이 바뀐다
+ZIP="$OUT/Ezrite-$VERSION.zip"
+ditto -c -k --keepParent "$APP" "$ZIP"
 rm -rf "$APP"                     # 빌드한 앱을 남겨 두면 Launchpad·Spotlight 에 Ezrite 가 하나 더 보인다
-echo "DMG: $DMG ($(du -h "$DMG" | cut -f1))"
+echo "DMG: $DMG ($(du -h "$DMG" | cut -f1)) · zip: $ZIP ($(du -h "$ZIP" | cut -f1))"
 
 if [ "$DRY" = "--dry" ]; then
     echo "--dry: 올리지 않았습니다. 버전 번호는 Info.plist 에 $VERSION 으로 바뀌어 있습니다."
@@ -108,5 +111,5 @@ if [ "$DRY" = "--dry" ]; then
 fi
 
 # 시험판(0.x)이어도 prerelease 로 표시하지 않는다 — 앱이 보는 releases/latest 는 prerelease 를 건너뛴다
-gh release create "v$VERSION" "$DMG" --repo "$REPO" --title "Ezrite $VERSION" --notes-file "$NOTES"
+gh release create "v$VERSION" "$DMG" "$ZIP" --repo "$REPO" --title "Ezrite $VERSION" --notes-file "$NOTES"
 echo "올림: https://github.com/$REPO/releases/tag/v$VERSION"

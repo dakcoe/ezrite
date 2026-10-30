@@ -60,6 +60,7 @@ API 키를 키체인에 두지 않는 이유: 자체 서명 앱은 빌드마다 
 | `EZRITE_CARD=<json>` | AI 없이 설명 카드에 그 내용(`{summary, marks, visuals}`)을 띄운다. 그림 틀 모양 확인용 |
 | `EZRITE_RETX=<기록.txt>` | 확인 창 없이 그 기록을 저장된 소리로 다시 받아 적는다 (원래 글은 휴지통으로) |
 | `EZRITE_UPDATE_JSON=<json>` | GitHub 대신 그 릴리스 JSON 으로 새 버전 띠를 띄운다 (모양 확인용) |
+| `EZRITE_UPDATE_ZIP=<zip>` | `EZRITE_UPDATE_JSON` 과 함께. [업데이트] 가 이 zip 으로 바꿔 끼운다 (버전을 올려 같은 인증서로 다시 서명한 앱) |
 | `EZRITE_ASK=<질문>` | `EZRITE_EXPLAIN` 설명이 뜬 6초 뒤 질문 칸에 그 질문을 넣고 묻는다 |
 | `EZRITE_SCRIPT=pop@1;choose@3;source@5=Google Chrome;start@7;explain@40;stop@60` | 정해 둔 시각(초)에 팝업 열기·녹음 말풍선·소리 출처·시작·설명해줘·끝내기를 한다. 홍보 영상 녹화용(`promo/`). `EZRITE_TESTFILE` 소리를 흘려 넣고, 이때는 바로 시작하지 않는다 |
 | `EZRITE_SPEED=2` | 위 파일을 2배속으로 흘린다 |

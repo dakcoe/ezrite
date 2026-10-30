@@ -437,6 +437,7 @@
     go(frames.length, false);
   }
 
+  const MIN_W = 84;          // 상자가 이보다 좁으면 한글이 한 자씩 꺾인다 (15px 글자 4자 + 여백)
   function anim(box, v) {
     if (v.layout === "graph") return graph(box, v);
     const stage = el("div", "anim"), svg = document.createElementNS(NS, "svg");
@@ -473,6 +474,16 @@
         const layers = [...new Set(layerOf.values())].sort((a, b) => a - b);
         const cw = W / layers.length, w = Math.min(100, cw * 0.62), lh = hasNote ? 56 : 40, vg = 14;
         const stacks = layers.map(L => shown.filter(id => layerOf.get(id) === L));
+        // 층이 많아 열이 좁으면 글자가 한 자씩 꺾인다. 그땐 층을 위에서 아래로 한 줄씩 놓는다
+        if (w < MIN_W) {
+          const wide = Math.max(1, ...stacks.map(st => st.length)), hg = 18, rg = 34;
+          const rw = Math.min(120, (W - hg * (wide - 1)) / wide);
+          stacks.forEach((st, r) => st.forEach((id, i) => {
+            const left = (W - (st.length * rw + hg * (st.length - 1))) / 2;
+            pos[id] = { x: left + i * (rw + hg), y: 12 + r * (lh + rg), w: rw, h: lh };
+          }));
+          return { pos, H: 24 + layers.length * (lh + rg) - rg, free: true };
+        }
         const most = Math.max(1, ...stacks.map(st => st.length));
         H = most * (lh + vg) - vg + 24;
         stacks.forEach((st, c) => st.forEach((id, i) =>
@@ -499,6 +510,14 @@
           pos[id] = { x: W / 2 + r * Math.cos(a) - w / 2, y: r + 12 + r * Math.sin(a), w, h };
         });
         H = 2 * r + h + 24;
+      } else if ((W - gap * (n - 1)) / n < MIN_W) {
+        // 한 줄에 다 넣으면 상자가 좁아져 글자가 한 자씩 꺾인다. 여러 줄로 나눠 놓는다
+        const g = 30, per = Math.max(1, Math.floor((W + g) / (MIN_W + g))), w = Math.min(120, (W - g * (per - 1)) / per), rg = 40;
+        shown.forEach((id, i) => {
+          const r = Math.floor(i / per), inRow = Math.min(per, n - r * per), left = (W - (inRow * w + g * (inRow - 1))) / 2;
+          pos[id] = { x: left + (i % per) * (w + g), y: 14 + r * (h + rg), w, h };
+        });
+        return { pos, H: 28 + Math.ceil(n / per) * (h + rg) - rg, free: true };
       } else {
         const w = Math.min(120, (W - gap * (n - 1)) / n), left = (W - (n * w + gap * (n - 1))) / 2, top = 58;
         shown.forEach((id, i) => pos[id] = { x: left + i * (w + gap), y: top, w, h });
@@ -543,7 +562,7 @@
     let cur = -1;
     function go(k, animate = true) {
       k = Math.max(0, Math.min(frames.length, k ?? frames.length));
-      const s = state(k), { pos, H } = place(s.shown);
+      const s = state(k), { pos, H, free } = place(s.shown);
       stage.style.height = H + "px";
       items.forEach((it, id) => {
         const p = pos[id];
@@ -565,7 +584,7 @@
         if (!a || !b) continue;
         const key = [l.from, l.to].sort().join("\u0000"), o = seen[key] = (seen[key] ?? -1) + 1;
         const apart = Math.abs(order.indexOf(l.from) - order.indexOf(l.to));
-        const { d, mid } = layout === "layers" || layout === "grid" ? curve(a, b, o ? (o % 2 ? 1 : -1) * 12 * o : 0)
+        const { d, mid } = free || layout === "layers" || layout === "grid" ? curve(a, b, o ? (o % 2 ? 1 : -1) * 12 * o : 0)
           : layout === "cycle" && order.length > 2 ? curve(a, b, (o % 2 ? 1 : -1) * 10 * (1 + o)) : arc(a, b, o, apart);
         const cls = l.fresh ? "new" : "old";
         const path = document.createElementNS(NS, "path");

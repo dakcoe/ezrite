@@ -311,7 +311,7 @@ extension GroqClient {
         let g = guide.trimmingCharacters(in: .whitespacesAndNewlines)
         // 지침은 말투·깊이·형식을 바꾸지만 사실을 바꾸지는 않는다
         let rules = g.isEmpty ? "" : "\n\nStudent's instructions (follow them for depth, style and format; never invent facts):\n\(g)"
-        return "Recent lecture speech (oldest first):\n\(speech)\n\nText lines on screen (id: text):\n\(screen)\(rules)"
+        return "Recent lecture speech (oldest first) — the student just heard this and still did not fully get it, so never restate or paraphrase it:\n\(speech)\n\nText lines on screen (id: text) — the student can already read these:\n\(screen)\(rules)"
     }
 
     /// 설명 카드에서 이어 묻는 질문. 답은 글(answer) + 화면 짚기(marks, path) + 그림(visuals)
@@ -349,12 +349,14 @@ extension GroqClient {
         with the why) — not that the lecturer is explaining it"}],
         "path":{"ids":[<label line ids in order>],"note":"one short Korean sentence about the route"}
         """
-    static let visualsTask = "Explain what is being taught right now, in Korean, for a student seeing it for the first time."
+    static let visualsTask = "Explain, in Korean, the idea underneath what is being taught right now — what the lecturer left unsaid: " +
+        "why it is true or needed, what it assumes, an intuition or small worked example, and the usual point of confusion. " +
+        "Use your own words; the student already has the speech and the screen."
     static let visualsShape = #""summary":"3-5 Korean sentences: what it is, why it matters, and a simple example or intuition","visuals":[0 to 2 items],"scenes":[2 to 6 scenes]"#
     /// 장면 대본: 설명을 짧은 영상처럼 순서대로 보여준다
     static let scenesGuide = """
         Scenes play like a short explainer video, in the order the lecturer explained it (follow the speech; with no \
-        speech, follow the screen's logical order). Each scene: {"say":"1-2 Korean sentences that teach this step (meaning and reason, not just what is on screen)", \
+        speech, follow the screen's logical order). Each scene: {"say":"1-2 Korean sentences that teach this step (meaning and reason, not just what is on screen, and not a sentence the lecturer already said)", \
         "focus":[screen line ids to highlight, 0-2], "arrow":{"from":line id,"to":line id} or null (connect two \
         related lines on screen), "visual":index into visuals or null (show that visual beside the screen), \
         "reveal":how many items/rows of that steps/table visual to show so far, or for an anim visual how many frames \
@@ -393,7 +395,7 @@ extension GroqClient {
         "points" (same count) or "at" — shifting curves, a moving equilibrium, descent along a curve.
         """
     static let visualRules = """
-        Rules: stay faithful to the screen and the speech, do not invent facts; check any calculation step by step; \
+        Rules: never contradict the screen or the speech and do not invent facts, but do add standard textbook background the lecturer skipped; check any calculation step by step; \
         keep text short; formulas only in the card "formula" field.
         """
     static let audience = "You help a university student follow a lecture. The subject can be anything " +

@@ -399,20 +399,24 @@ enum Notes {
     static func prune(in dir: URL = dir, autoDelete: Bool? = nil) {
         let autoDelete = autoDelete ?? (dir.standardizedFileURL.path == defaultDir.standardizedFileURL.path)
         recoverParts(in: dir)
+        // 지운 이름을 남긴다 (나중에 "무엇이 지워졌나" 에 답할 수 있게). Windows recoverAndPrune 과 같다
+        let remove = { (u: URL, why: String) in
+            if (try? FileManager.default.removeItem(at: u)) != nil { NSLog("Ezrite 정리: %@ 지움 (%@)", u.lastPathComponent, why) }
+        }
         // 글 없이 소리만 남은 기록 폴더는 폴더째 지운다
         for sub in subfolders(dir) where !FileManager.default.fileExists(atPath: sub.appendingPathComponent(sub.lastPathComponent + ".txt").path) {
             let names = (try? FileManager.default.contentsOfDirectory(atPath: sub.path)) ?? []
-            if names.allSatisfy({ $0.hasSuffix(".m4a") || $0 == ".DS_Store" }) { try? FileManager.default.removeItem(at: sub) }
+            if names.allSatisfy({ $0.hasSuffix(".m4a") || $0 == ".DS_Store" }) { remove(sub, "글 없는 소리 폴더") }
         }
         let all = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         for a in all where a.pathExtension == "m4a" && startedAt(a) != nil && !a.lastPathComponent.contains(".part-") {
             let txt = a.deletingPathExtension().appendingPathExtension("txt")
-            if !FileManager.default.fileExists(atPath: txt.path) { try? FileManager.default.removeItem(at: a) }
+            if !FileManager.default.fileExists(atPath: txt.path) { remove(a, "글 없는 소리") }
         }
         guard autoDelete else { return }
         let cutoff = Date().addingTimeInterval(-keepDays * 86400)
         for s in sessions(in: dir) where s.date < cutoff {
-            for t in trashTargets(s.url) { try? FileManager.default.removeItem(at: t) }
+            for t in trashTargets(s.url) { remove(t, "\(Int(keepDays))일 지난 기록") }
         }
     }
 

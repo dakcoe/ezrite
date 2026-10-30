@@ -25,6 +25,18 @@ struct UpdateTests {
         #expect(r.download.absoluteString == "https://github.com/o/r/releases/download/v2.1.0/Ezrite-2.1.0.dmg")   // DMG 가 있으면 바로 받기
     }
 
+    @Test func zip_이_있으면_자동_교체용으로_쓴다() throws {
+        let json = #"{"tag_name":"v2.4","html_url":"https://github.com/o/r/releases/tag/v2.4","body":"","assets":[{"name":"Ezrite-2.4.zip","browser_download_url":"https://github.com/o/r/releases/download/v2.4/Ezrite-2.4.zip"},{"name":"b.zip","browser_download_url":"https://evil.example/b.zip"}]}"#
+        #expect(try #require(Updater.release(from: Data(json.utf8))).zip?.absoluteString == "https://github.com/o/r/releases/download/v2.4/Ezrite-2.4.zip")
+        let evil = #"{"tag_name":"v2.4","html_url":"https://github.com/o/r/releases/tag/v2.4","body":"","assets":[{"name":"b.zip","browser_download_url":"https://evil.example/b.zip"}]}"#
+        #expect(try #require(Updater.release(from: Data(evil.utf8))).zip == nil)
+    }
+
+    @Test func 서명이_다른_앱은_교체하지_않는다() {
+        // 테스트 실행 파일은 앱 인증서로 서명되지 않았으니 어떤 앱도 통과하면 안 된다
+        #expect(!Updater.sameSigner(URL(fileURLWithPath: "/System/Applications/Calculator.app")))
+    }
+
     @Test func DMG가_없으면_릴리스_페이지로() throws {
         let json = #"{"tag_name":"v2.2","html_url":"https://github.com/o/r/releases/tag/v2.2","body":"","assets":[]}"#
         #expect(try #require(Updater.release(from: Data(json.utf8))).download.absoluteString == "https://github.com/o/r/releases/tag/v2.2")
