@@ -369,6 +369,18 @@ html.material .caption { background: var(--popup-bg); }
 .toggle-card .switch { margin-left: 8px; }
 /* 설명 표시 방식 (1.3.0): 제목 줄 오른쪽에 목록, 설명은 아래 넓게 */
 .toggle-card.mark-style .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* 설명 표시 방식 미리보기 (맥 MarkStylePreview): 가상 화면 760×400 을 폭에 맞춰 줄인다. 마우스는 받지 않는다 */
+.mark-preview { position: relative; width: 100%; aspect-ratio: 760 / 400; margin-top: 8px; border-radius: 8px; overflow: hidden;
+  background: var(--fill-3); pointer-events: none; }
+.mark-preview .mp-stage { position: absolute; left: 0; top: 0; width: 760px; height: 400px; transform-origin: 0 0; }
+.mark-preview canvas.mp-slide, .mark-preview canvas.mp-marks, .mark-preview canvas.mp-classic { position: absolute; left: 0; top: 0; width: 760px; height: 400px; }
+.mark-preview canvas.mp-slide { width: 580px; }
+.mark-preview .mp-card { position: absolute; left: 590px; top: 10px; width: 160px; height: 380px; border-radius: 14px;
+  background: var(--control-bg); border: 1px solid var(--stroke); box-sizing: border-box; }
+.mark-preview .mp-title { position: absolute; left: 0; right: 0; top: 9px; text-align: center; font-size: 13px; font-weight: 600; color: var(--secondary); }
+.mark-preview .mp-say { position: absolute; left: 14px; top: 40px; width: 132px; max-height: 110px; overflow: hidden;
+  font-size: 16px; font-weight: 600; line-height: 1.35; color: var(--text); word-break: keep-all; }
+.mark-preview .mp-map { position: absolute; left: 13px; bottom: 13px; width: 132px; border: 1px solid var(--stroke); }
 .path { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .key-row { display: flex; flex-direction: column; gap: 4px; }
 .key-row .line { display: flex; align-items: center; gap: 8px; }

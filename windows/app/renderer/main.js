@@ -148,7 +148,16 @@
       h('div', { class: 'body' },
         h('div', { class: 'head' }, h('div', { class: 'title' }, '설명 표시 방식'),
           h('span', { class: 'picker' }, sel, h('span', { class: 'chev', html: icon('chevronsUpDown', 12, 2.6) }))),
-        h('div', { class: 'detail' }, now?.detail ?? '')));
+        h('div', { class: 'detail' }, now?.detail ?? ''),
+        // 고른 방식을 가짜 슬라이드 위에서 실제 표시 그대로 돌려 본다 (1.3.x 맥 MarkStylePreview). 다시 그려져도 같은 미리보기를 붙인다
+        markPreview(s.markStyle)));
+  }
+  let preview = null;
+  function markPreview(style) {
+    if (typeof Marks === 'undefined') return null;
+    preview ??= Marks.Preview(document);
+    preview.show(style);
+    return preview.el;
   }
   // 맥 Provider.allCases 순서. 값은 main 의 서비스 이름, 글은 보이는 이름
   const PROVIDERS = [['groq', 'Groq'], ['claude', 'Claude'], ['gemini', 'Gemini'], ['openai', 'GPT']];
@@ -377,7 +386,7 @@
       return;
     }
     const key = JSON.stringify([s.page,
-      s.page === 'settings' ? [s.sources, s.sourceId, s.language, s.options, s.listening, s.notesDir, s.notesFolder, s.hasKey, s.update, s.install?.phase, s.openAtLogin, s.theme, s.appAudio,
+      s.page === 'settings' ? [s.sources, s.sourceId, s.language, s.options, s.listening, s.notesDir, s.notesFolder, s.hasKey, s.update, s.install?.phase, s.openAtLogin, s.theme, s.markStyle, s.appAudio,
         s.aiView, s.providerStatus, s.modelCheck, s.checking, s.releases] : null,
       s.page === 'history' ? [s.sessions, s.opened, s.opened?.live ? s.entries : null] : null]);
     if (key === shownKey) return;

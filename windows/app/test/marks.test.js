@@ -90,3 +90,50 @@ test('멈추는 때(맥 settleTime)와 부드럽게 움직이기(ease), 잘라 �
   assert.deepEqual(K.trim(pts, 0.25), [{ x: 0, y: 0 }, { x: 5, y: 0 }]);
   assert.equal(K.trim(pts, 1), pts);
 });
+
+// ── 설정 미리보기 (맥 MarkStylePreview: 가짜 슬라이드, 장면 0→1→2→3→전체 보기) ──
+
+const measure = (text, font) => ({ w: [...text].length * (font.startsWith('700') ? 27 : 19) * 0.6, h: font.startsWith('700') ? 36 : 25 });
+
+test('미리보기: 가상 화면 760×400, 슬라이드 580, 3.4초마다, 마우스는 1.1초 뒤, 선은 카드 자리 왼쪽(594)에서', () => {
+  assert.equal(K.PREVIEW.width, 760);
+  assert.equal(K.PREVIEW.height, 400);
+  assert.equal(K.PREVIEW.slideWidth, 580);
+  assert.equal(K.PREVIEW.period, 3400);
+  assert.equal(K.PREVIEW.hoverAfter, 1100);
+  assert.deepEqual(K.PREVIEW.anchors, { say: { x: 594, y: 62 }, m0: { x: 594, y: 62 }, m1: { x: 594, y: 96 } });
+});
+
+test('미리보기 슬라이드: 제목·글 세 줄·그림 라벨 넷, 짚은 곳 둘(연쇄법칙·손실), 길 L→ŷ→h→x, 장면 넷 (맥 글 그대로)', () => {
+  const pm = K.previewModel(measure);
+  assert.deepEqual(pm.items.map((it) => it.text), ['역전파 — 연쇄법칙으로 기울기 구하기', '• 순전파: 입력 x → 은닉 h → 출력 ŷ → 손실 L',
+    '• ∂L/∂W₁ = ∂L/∂h · ∂h/∂W₁', '• 기울기는 출력에서 입력 방향으로 전달된다', 'x', 'h', 'ŷ', 'L']);
+  assert.deepEqual(pm.marks.map((m) => [m.line.id, m.note]), [[2, '연쇄법칙'], [7, '손실']]);
+  assert.deepEqual(pm.path.steps.map((l) => l.id), [7, 6, 5, 4]);
+  assert.deepEqual(pm.scenes.map((s) => s.tag), ['순전파', '출발점', '넘어온 값 × 내 몫', '출력 → 입력']);
+  assert.deepEqual(pm.scenes.map((s) => s.arrow && [s.arrow.from.id, s.arrow.to.id]), [null, null, [6, 5], [5, 4]]);
+  // 그림 라벨은 동그라미 가운데 (x 노드: 80, 312)
+  const x = pm.items[4];
+  assert.ok(Math.abs(x.box.x * 760 + x.box.w * 760 / 2 - 80) < 1e-9 && Math.abs(x.box.y * 400 + x.box.h * 400 / 2 - 312) < 1e-9);
+});
+
+test('미리보기 차례와 자료: 0→1→2→3→전체 보기→처음, 제목은 짚지 않고, 예전 방식 도형도 함께', () => {
+  const pm = K.previewModel(measure);
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 9].map((s) => K.previewScene(pm, s)), [0, 1, 2, 3, null, 0, null]);
+  const d = K.previewData(pm, 'trail', 2, 'say');
+  assert.equal(d.style, 'trail');
+  assert.equal(d.scene, 2);
+  assert.equal(d.hover, 'say');
+  assert.equal(d.R[0], undefined, '제목은 짚을 줄이 아니다');
+  assert.deepEqual(Object.keys(d.Q).map(Number), [1, 2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(d.scenes[2], { focus: [2], arrow: [6, 5], tag: '넘어온 값 × 내 몫' });
+  assert.equal(d.others.length, 8);
+  // 예전 방식: 장면 2 는 짚은 줄 하나(주황, 번호 3)와 화살표
+  assert.deepEqual(d.classic.map((s) => s.kind).sort(), ['arrow', 'focus', 'route']);
+  assert.equal(d.classic.find((s) => s.kind === 'focus').label, '3');
+  // 전체 보기: 짚은 곳 ①② 와 길(파란 상자 넷, 화살표 셋)
+  const all = K.previewData(pm, 'classic', null);
+  assert.equal(all.classic.filter((s) => s.kind === 'focus').length, 2);
+  assert.equal(all.classic.filter((s) => s.kind === 'route').length, 4);
+  assert.equal(all.classic.filter((s) => s.kind === 'arrow').length, 3);
+});

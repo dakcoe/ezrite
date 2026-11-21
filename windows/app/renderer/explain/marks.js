@@ -109,6 +109,95 @@
     };
   }
 
+  // ── 표시 상자·예전 방식(classic) 도형 (lib/explain.js 에서 옮겼다: 설정 미리보기도 같은 계산을 쓴다) ──
+
+  /** 겹친 넓이가 작은 상자의 80% 이상이면 같은 자리 (같은 줄을 두 번 짚음) */
+  function sameSpot(a, b) {
+    const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+    const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+    if (w < 0 || h < 0) return false;
+    return w * h >= 0.8 * Math.min(a.w * a.h, b.w * b.h);
+  }
+
+  /**
+   * 글자 상자(화면 좌표)를 조금 넓혀 그릴 상자로. 이웃 상자와 겹치면 그쪽 여백을 사이 간격의 절반까지 줄인다.
+   * 원래부터 조금 겹치게 잡힌 줄은 겹친 부분 한가운데를 경계로 나눈다(여백이 음수)
+   */
+  function padded(raw, dx = 8, dy = 6) {
+    return raw.map((a, i) => {
+      let left = dx;
+      let right = dx;
+      let top = dy;
+      let bottom = dy;
+      raw.forEach((b, j) => {
+        if (j === i || sameSpot(a, b)) return;
+        const gapX = Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w)); // 양수면 떨어져 있고, 음수면 겹친 폭
+        const gapY = Math.max(b.y - (a.y + a.h), a.y - (b.y + b.h));
+        if (gapY >= gapX) { // 위아래로 나누는 쪽이 덜 깎인다
+          if (b.y + b.h / 2 >= a.y + a.h / 2) bottom = Math.min(bottom, gapY / 2 - 0.5);
+          else top = Math.min(top, gapY / 2 - 0.5);
+        } else if (b.x + b.w / 2 >= a.x + a.w / 2) right = Math.min(right, gapX / 2 - 0.5);
+        else left = Math.min(left, gapX / 2 - 0.5);
+      });
+      // 너무 깎여 뒤집히지 않게 글자 상자의 절반까지만
+      top = Math.max(top, -a.h / 2);
+      bottom = Math.max(bottom, -a.h / 2);
+      left = Math.max(left, -a.w / 2);
+      right = Math.max(right, -a.w / 2);
+      return { x: a.x - left, y: a.y - top, w: a.w + left + right, h: a.h + top + bottom };
+    });
+  }
+
+  /** 함께 그릴 줄들의 상자 (줄 번호 → 화면 좌표). 화면 밖으로 나간 줄(hide)은 뺀다 */
+  function layout(lines, size, hide = []) {
+    const seen = new Set(hide);
+    const unique = [];
+    for (const l of lines) {
+      if (seen.has(l.id)) continue;
+      seen.add(l.id);
+      unique.push(l);
+    }
+    const raw = unique.map((l) => ({ x: l.box.x * size.width, y: l.box.y * size.height, w: l.box.w * size.width, h: l.box.h * size.height }));
+    const out = new Map();
+    padded(raw).forEach((r, i) => out.set(unique[i].id, r));
+    return out;
+  }
+
+  const arrowShape = (a, b) => ({ kind: 'arrow', from: edge(a, mid(b)), to: edge(b, mid(a)) });
+
+  /**
+   * 표시 창에 그릴 도형. 장면을 고르면 그 장면의 짚은 곳(주황, 장면 번호)과 화살표(파랑)만,
+   * 아니면 전체: 짚은 곳 ①②③ 과 그림 속 경로(파란 상자·순서 번호·화살표)
+   *   { kind: 'focus'|'route', rect, label } · { kind: 'arrow', from, to }
+   */
+  function shapes(model, size) {
+    const hide = model.missing ?? [];
+    const out = [];
+    const sc = model.scene != null ? model.scenes?.[model.scene] : null;
+    if (sc) {
+      const r = layout([...sc.focus, ...(sc.arrow ? [sc.arrow.from, sc.arrow.to] : [])], size, hide);
+      if (sc.arrow && r.has(sc.arrow.from.id) && r.has(sc.arrow.to.id)) {
+        const a = r.get(sc.arrow.from.id);
+        out.push({ kind: 'route', rect: a, label: null }, arrowShape(a, r.get(sc.arrow.to.id)));
+      }
+      for (const l of sc.focus) if (r.has(l.id)) out.push({ kind: 'focus', rect: r.get(l.id), label: String(model.scene + 1) });
+      return out;
+    }
+    const steps = model.path?.steps ?? [];
+    const r = layout([...(model.marks ?? []).map((m) => m.line), ...steps], size, hide);
+    // 경로는 한 칸이라도 화면 밖이면 통째로 숨긴다 (끊긴 화살표는 헷갈린다)
+    if (steps.length && steps.every((l) => r.has(l.id))) {
+      const rects = steps.map((l) => r.get(l.id));
+      for (let i = 0; i + 1 < rects.length; i++) out.push(arrowShape(rects[i], rects[i + 1]));
+      rects.forEach((rect, i) => out.push({ kind: 'route', rect, label: String(i + 1) }));
+    }
+    (model.marks ?? []).forEach((m, i) => {
+      if (r.has(m.line.id)) out.push({ kind: 'focus', rect: r.get(m.line.id), label: String(i + 1) });
+    });
+    return out;
+  }
+
+
   /** 지금 무엇을 보여 주나 (맥 MarksRenderer 의 current·targets·focusNow …) */
   function Model(d) {
     const R = d.R || {};
@@ -740,7 +829,247 @@
     };
   }
 
-  const api = { settleTime, ease, lerp, edge, arrowParts, trim, quadPts, Model, trailNumbers, spot, paint, Stage, FLOW_CYCLES, BEAT };
+  // ── 예전 방식(classic)을 canvas 로 (설정 미리보기용. 표시 창은 overlay.js 의 SVG — 색·굵기는 overlay.css 와 같다) ──
+  const BLUE = [46, 122, 247];
+  function paintClassic(ctx, list, scene) {
+    const glow = (c, blur) => { ctx.shadowColor = c; ctx.shadowBlur = blur; };
+    const badge = (x, y, label, size, color) => {
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 3; ctx.shadowOffsetY = 1;
+      ctx.beginPath(); ctx.arc(x, y, size / 2, 0, Math.PI * 2); ctx.fillStyle = rgba(color); ctx.fill();
+      ctx.restore();
+      ctx.save();
+      ctx.font = `700 ${size < 24 ? 12 : 13}px 'Segoe UI Variable', 'Segoe UI', sans-serif`;
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, x, y + 0.5);
+      ctx.restore();
+    };
+    for (const s of list) {
+      if (s.kind !== 'arrow') continue;
+      const a = s.from;
+      const b = s.to;
+      const ang = Math.atan2(b.y - a.y, b.x - a.x);
+      const p = (d) => ({ x: b.x - 11 * Math.cos(ang + d), y: b.y - 11 * Math.sin(ang + d) });
+      ctx.save();
+      glow(rgba(BLUE, 0.5), 4);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+      const h1 = p(-Math.PI / 7);
+      const h2 = p(Math.PI / 7);
+      ctx.moveTo(h1.x, h1.y); ctx.lineTo(b.x, b.y); ctx.lineTo(h2.x, h2.y);
+      ctx.strokeStyle = rgba(BLUE); ctx.lineWidth = scene ? 3.5 : 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+      ctx.restore();
+    }
+    for (const s of list) {
+      const r = s.rect;
+      if (s.kind === 'route') {
+        ctx.save(); ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 6); ctx.strokeStyle = rgba(BLUE); ctx.lineWidth = 2.5; ctx.stroke(); ctx.restore();
+        if (s.label) badge(r.x + r.w, r.y, s.label, 22, BLUE);
+      } else if (s.kind === 'focus') {
+        ctx.save(); glow(rgba(ACCENT, 0.6), 6);
+        ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 8); ctx.strokeStyle = rgba(ACCENT); ctx.lineWidth = 3; ctx.stroke(); ctx.restore();
+        badge(r.x, r.y, s.label, 24, ACCENT);
+      }
+    }
+  }
+
+  // ── 설정의 "설명 표시 방식" 미리보기 (1.3.x, 맥 MarkStylePreview.swift) ──
+  // 가짜 슬라이드 위에서 실제 표시 그리기(paint·paintClassic)를 그대로 돌린다. AI·화면 찍기는 쓰지 않는다.
+  // 가상 화면 760×400: 왼쪽 580 은 슬라이드, 오른쪽은 설명 카드 자리(지금 자막). 보일 때는 폭에 맞춰 줄인다
+  const PREVIEW = Object.freeze({
+    width: 760, height: 400, slideWidth: 580,
+    period: 3400, // 장면 하나를 보여 주는 시간 (네 장면 뒤에 전체 보기 한 번)
+    hoverAfter: 1100, // 마우스를 올린 곳만: 장면 중간에 카드 자막에 마우스를 올린 것처럼
+    nodes: [80, 210, 340, 470].map((x) => ({ x, y: 312 })), // 그림의 동그라미 가운데 (x, h, ŷ, L)
+    radius: 30,
+    // 선 긋기: 카드 자리의 자막·목록 위치에서 선이 나간다
+    anchors: { say: { x: 594, y: 62 }, m0: { x: 594, y: 62 }, m1: { x: 594, y: 96 } },
+  });
+  const PREVIEW_FONT = "'Segoe UI Variable', 'Segoe UI', 'Malgun Gothic', sans-serif";
+  const PREVIEW_FONTS = { title: `700 27px ${PREVIEW_FONT}`, body: `19px ${PREVIEW_FONT}`, label: `500 22px ${PREVIEW_FONT}` };
+
+  /**
+   * 가짜 슬라이드의 글자 줄과 설명 (맥 MarkPreviewModel.items·marks·path·scenes). measure(text, font) → { w, h }.
+   * 줄 box 는 화면 비율 (실제 글자 인식 결과와 같은 꼴)
+   */
+  function previewModel(measure) {
+    const { width: W, height: H, nodes } = PREVIEW;
+    const items = [];
+    const item = (id, text, font, x, y) => {
+      const s = measure(text, PREVIEW_FONTS[font]);
+      items.push({ id, text, font, x, y, box: { x: x / W, y: y / H, w: s.w / W, h: s.h / H } });
+    };
+    item(0, '역전파 — 연쇄법칙으로 기울기 구하기', 'title', 36, 30);
+    item(1, '• 순전파: 입력 x → 은닉 h → 출력 ŷ → 손실 L', 'body', 44, 96);
+    item(2, '• ∂L/∂W₁ = ∂L/∂h · ∂h/∂W₁', 'body', 44, 138);
+    item(3, '• 기울기는 출력에서 입력 방향으로 전달된다', 'body', 44, 180);
+    ['x', 'h', 'ŷ', 'L'].forEach((t, k) => {
+      const s = measure(t, PREVIEW_FONTS.label);
+      item(4 + k, t, 'label', nodes[k].x - s.w / 2, nodes[k].y - s.h / 2);
+    });
+    const line = (id) => ({ id, text: items[id].text, box: items[id].box });
+    const scene = (say, focus, arrow, tag) => ({ say, focus: focus.map(line), arrow: arrow ? { from: line(arrow[0]), to: line(arrow[1]) } : null, tag });
+    return {
+      items,
+      marks: [{ line: line(2), note: '연쇄법칙' }, { line: line(7), note: '손실' }],
+      path: { steps: [7, 6, 5, 4].map(line), note: '역전파 길' },
+      scenes: [
+        scene('먼저 입력 x 가 h, ŷ 를 거쳐 손실 L 이 된다', [1], null, '순전파'),
+        scene('역전파는 손실 L 에서 출발한다', [7], null, '출발점'),
+        scene('받은 값에 자기 몫만 곱하면 h 의 기울기', [2], [6, 5], '넘어온 값 × 내 몫'),
+        scene('그래서 기울기는 출력에서 입력 쪽으로', [3], [5, 4], '출력 → 입력'),
+      ],
+    };
+  }
+
+  /** 미리보기 한 장면의 표시 자료 (lib/explain.js markData 와 같은 꼴). scene: 장면 번호 또는 null(전체 보기) */
+  function previewData(pm, style, scene, hover = null) {
+    const size = { width: PREVIEW.width, height: PREVIEW.height };
+    const model = { marks: pm.marks, path: pm.path, scenes: pm.scenes, scene, missing: [] };
+    const px = (b) => ({ x: b.x * size.width, y: b.y * size.height, w: b.w * size.width, h: b.h * size.height });
+    const lines = pm.items.slice(1).map((it) => ({ id: it.id, text: it.text, box: it.box })); // 제목은 짚지 않는다
+    const R = {};
+    for (const [id, r] of layout(lines, size)) R[id] = r;
+    const Q = {};
+    for (const l of lines) Q[l.id] = px(l.box);
+    return {
+      style, R, Q, scene,
+      scenes: pm.scenes.map((s) => ({ focus: s.focus.map((l) => l.id), arrow: s.arrow ? [s.arrow.from.id, s.arrow.to.id] : null, tag: s.tag })),
+      marks: pm.marks.map((m) => m.line.id),
+      path: pm.path.steps.map((l) => l.id),
+      hover, anchors: PREVIEW.anchors, others: pm.items.map((it) => px(it.box)),
+      classic: shapes(model, size), // 예전 방식 도형
+    };
+  }
+
+  /** 미리보기 차례: 장면 0 → 1 → 2 → 3 → 전체 보기(null) → 처음 */
+  const previewScene = (pm, step) => (step % (pm.scenes.length + 1) < pm.scenes.length ? step % (pm.scenes.length + 1) : null);
+
+  /**
+   * 설정 화면에 붙일 미리보기 (브라우저). el 을 한 번 만들어 두고, 화면이 다시 그려져도 같은 el 을 붙인다.
+   * show(style): 방식이 바뀌었거나 멈춰 있었으면 첫 장면부터. 화면에서 떨어지면 다음 차례에 멈춘다
+   */
+  function Preview(doc = document) {
+    const { width: W, height: H, slideWidth: SW } = PREVIEW;
+    const mk = (tag, cls) => { const e = doc.createElement(tag); e.className = cls; return e; };
+    const el = mk('div', 'mark-preview');
+    const stageEl = mk('div', 'mp-stage');
+    const slide = mk('canvas', 'mp-slide');
+    const marksCanvas = mk('canvas', 'mp-marks');
+    const classic = mk('canvas', 'mp-classic');
+    const card = mk('div', 'mp-card');
+    const title = mk('div', 'mp-title');
+    const say = mk('div', 'mp-say');
+    const map = mk('canvas', 'mp-map');
+    title.textContent = '설명';
+    card.append(title, say, map);
+    stageEl.append(slide, marksCanvas, classic, card);
+    el.append(stageEl);
+    // 폭에 맞춰 줄여 보인다 (가상 화면은 늘 760×400)
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(() => { if (el.clientWidth) stageEl.style.transform = `scale(${el.clientWidth / W})`; }).observe(el);
+    }
+    const measureCtx = doc.createElement('canvas').getContext('2d');
+    const measure = (text, font) => {
+      measureCtx.font = font;
+      const m = measureCtx.measureText(text);
+      return { w: m.width, h: (m.fontBoundingBoxAscent ?? 0) + (m.fontBoundingBoxDescent ?? 0) || parseFloat(font.match(/(\d+)px/)[1]) * 1.25 };
+    };
+    let pm = null;
+    const stage = Stage(marksCanvas);
+    let style = null;
+    let step = 0;
+    let timer = 0;
+    let hoverTimer = 0;
+    let running = false;
+
+    const sized = (c, w, h) => {
+      const dpr = devicePixelRatio || 1;
+      c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+      const ctx = c.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return ctx;
+    };
+    function drawSlide(ctx) {
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, SW, H);
+      const ink = '#1f1f1f';
+      for (const it of pm.items) {
+        ctx.font = PREVIEW_FONTS[it.font]; ctx.fillStyle = ink; ctx.textBaseline = 'top';
+        ctx.fillText(it.text, it.x, it.y);
+      }
+      PREVIEW.nodes.forEach((c, k) => {
+        ctx.beginPath(); ctx.arc(c.x, c.y, PREVIEW.radius, 0, Math.PI * 2); ctx.strokeStyle = ink; ctx.lineWidth = 2.5; ctx.stroke();
+        if (k + 1 >= PREVIEW.nodes.length) return;
+        const a = { x: c.x + PREVIEW.radius + 6, y: c.y };
+        const b = { x: PREVIEW.nodes[k + 1].x - PREVIEW.radius - 6, y: c.y };
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+        ctx.moveTo(b.x - 9, b.y - 6); ctx.lineTo(b.x, b.y); ctx.lineTo(b.x - 9, b.y + 6);
+        ctx.strokeStyle = '#808080'; ctx.lineWidth = 2; ctx.stroke();
+      });
+    }
+    /** 카드 속 지도: 슬라이드 축소본 + 지금 짚은 줄 주황 테두리 */
+    function drawMap(scene) {
+      map.hidden = style !== 'minimap';
+      if (map.hidden) return;
+      const w = W - SW - 20 - 28; // 카드 자리 안쪽 폭 (맥 card.width - 28)
+      const k = w / SW;
+      const ctx = sized(map, w, H * k);
+      ctx.scale(k, k);
+      drawSlide(ctx);
+      const lines = scene == null ? pm.marks.map((m) => m.line) : pm.scenes[scene].focus;
+      for (const l of lines) {
+        ctx.beginPath();
+        ctx.roundRect(l.box.x * W - 6, l.box.y * H - 5, l.box.w * W + 12, l.box.h * H + 10, 8);
+        ctx.strokeStyle = rgba(ACCENT); ctx.lineWidth = 6; ctx.stroke();
+      }
+    }
+    function apply() {
+      clearTimeout(hoverTimer);
+      const scene = previewScene(pm, step);
+      say.textContent = scene == null ? '전체 보기' : pm.scenes[scene].say;
+      const data = previewData(pm, style, scene);
+      const cctx = sized(classic, W, H);
+      if (style === 'classic') {
+        stage.clear();
+        paintClassic(cctx, data.classic, scene != null);
+      } else {
+        stage.update(data);
+      }
+      drawMap(scene);
+      if (style === 'hover') {
+        hoverTimer = setTimeout(() => { if (running) stage.update(previewData(pm, style, scene, scene == null ? 'm0' : 'say')); }, PREVIEW.hoverAfter);
+      }
+    }
+    function stop() {
+      running = false;
+      clearInterval(timer);
+      clearTimeout(hoverTimer);
+    }
+    function start(s) {
+      stop();
+      style = s;
+      if (!pm) pm = previewModel(measure);
+      drawSlide(sized(slide, SW, H));
+      step = 0;
+      running = true;
+      apply();
+      timer = setInterval(() => {
+        if (!el.isConnected) { stop(); return; }
+        if (doc.visibilityState === 'hidden') return;
+        step += 1;
+        apply();
+      }, PREVIEW.period);
+    }
+    return {
+      el,
+      show(s) {
+        if (!running || s !== style) start(s);
+      },
+      stop,
+      get step() { return step; },
+    };
+  }
+
+  const api = { settleTime, ease, lerp, edge, intersects, sameSpot, padded, layout, shapes, arrowParts, trim, quadPts, Model, trailNumbers, spot, paint, Stage, FLOW_CYCLES, BEAT,
+    paintClassic, PREVIEW, previewModel, previewData, previewScene, Preview };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Marks = api;
 }(typeof window !== 'undefined' ? window : globalThis));

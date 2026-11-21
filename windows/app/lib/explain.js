@@ -13,6 +13,8 @@
 const Hallucination = require('./hallucination');
 const { graphemes } = require('./text');
 const MarkStyle = require('./markstyle');
+// 표시 상자·도형 계산은 화면 표시 창과 설정 미리보기(브라우저)도 쓰므로 marks.js 한 벌에 둔다
+const { intersects, padded, layout, edge, shapes } = require('../renderer/explain/marks');
 
 const MAX_SCENES = 6;
 const MAX_MARKS = 3;
@@ -95,49 +97,7 @@ function changed(a, b) {
   return diff / a.length > CHANGE_LIMIT;
 }
 
-// --- 표시 상자 여백 ---
-
-/** 겹친 넓이가 있나 (모서리만 닿은 것은 겹친 게 아니다) */
-function intersects(a, b) {
-  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-}
-
-/** 겹친 넓이가 작은 상자의 80% 이상이면 같은 자리 (같은 줄을 두 번 짚음) */
-function sameSpot(a, b) {
-  const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
-  const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
-  if (w < 0 || h < 0) return false;
-  return w * h >= 0.8 * Math.min(a.w * a.h, b.w * b.h);
-}
-
-/**
- * 글자 상자(화면 좌표)를 조금 넓혀 그릴 상자로. 이웃 상자와 겹치면 그쪽 여백을 사이 간격의 절반까지 줄인다.
- * 원래부터 조금 겹치게 잡힌 줄은 겹친 부분 한가운데를 경계로 나눈다(여백이 음수)
- */
-function padded(raw, dx = 8, dy = 6) {
-  return raw.map((a, i) => {
-    let left = dx;
-    let right = dx;
-    let top = dy;
-    let bottom = dy;
-    raw.forEach((b, j) => {
-      if (j === i || sameSpot(a, b)) return;
-      const gapX = Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w)); // 양수면 떨어져 있고, 음수면 겹친 폭
-      const gapY = Math.max(b.y - (a.y + a.h), a.y - (b.y + b.h));
-      if (gapY >= gapX) { // 위아래로 나누는 쪽이 덜 깎인다
-        if (b.y + b.h / 2 >= a.y + a.h / 2) bottom = Math.min(bottom, gapY / 2 - 0.5);
-        else top = Math.min(top, gapY / 2 - 0.5);
-      } else if (b.x + b.w / 2 >= a.x + a.w / 2) right = Math.min(right, gapX / 2 - 0.5);
-      else left = Math.min(left, gapX / 2 - 0.5);
-    });
-    // 너무 깎여 뒤집히지 않게 글자 상자의 절반까지만
-    top = Math.max(top, -a.h / 2);
-    bottom = Math.max(bottom, -a.h / 2);
-    left = Math.max(left, -a.w / 2);
-    right = Math.max(right, -a.w / 2);
-    return { x: a.x - left, y: a.y - top, w: a.w + left + right, h: a.h + top + bottom };
-  });
-}
+// --- 표시 상자 여백: 계산은 renderer/explain/marks.js (설정 미리보기도 같은 것을 쓴다, 1.3.x) ---
 
 // --- 움직인 표시 따라가기 ---
 
@@ -428,68 +388,7 @@ function pulledIn(f, v, margin = 8) {
   return { x, y, w: f.w, h: f.h };
 }
 
-// --- 화면 위 표시 도형 (맥 MarksView) ---
-
-/** 함께 그릴 줄들의 상자 (줄 번호 → 화면 좌표). 화면 밖으로 나간 줄(hide)은 뺀다 */
-function layout(lines, size, hide = []) {
-  const seen = new Set(hide);
-  const unique = [];
-  for (const l of lines) {
-    if (seen.has(l.id)) continue;
-    seen.add(l.id);
-    unique.push(l);
-  }
-  const raw = unique.map((l) => ({ x: l.box.x * size.width, y: l.box.y * size.height, w: l.box.w * size.width, h: l.box.h * size.height }));
-  const out = new Map();
-  padded(raw).forEach((r, i) => out.set(unique[i].id, r));
-  return out;
-}
-
-/** 상자 중심에서 target 쪽으로 나가는 선이 상자 테두리와 만나는 점 (화살표가 상자 안으로 파고들지 않게) */
-function edge(r, target) {
-  const c = center(r);
-  const dx = target.x - c.x;
-  const dy = target.y - c.y;
-  if (dx === 0 && dy === 0) return c;
-  const sx = dx === 0 ? Infinity : r.w / 2 / Math.abs(dx);
-  const sy = dy === 0 ? Infinity : r.h / 2 / Math.abs(dy);
-  const s = Math.min(sx, sy);
-  return { x: c.x + dx * s, y: c.y + dy * s };
-}
-
-const arrowShape = (a, b) => ({ kind: 'arrow', from: edge(a, center(b)), to: edge(b, center(a)) });
-
-/**
- * 표시 창에 그릴 도형. 장면을 고르면 그 장면의 짚은 곳(주황, 장면 번호)과 화살표(파랑)만,
- * 아니면 전체: 짚은 곳 ①②③ 과 그림 속 경로(파란 상자·순서 번호·화살표)
- *   { kind: 'focus'|'route', rect, label } · { kind: 'arrow', from, to }
- */
-function shapes(model, size) {
-  const hide = model.missing ?? [];
-  const out = [];
-  const sc = model.scene != null ? model.scenes?.[model.scene] : null;
-  if (sc) {
-    const r = layout([...sc.focus, ...(sc.arrow ? [sc.arrow.from, sc.arrow.to] : [])], size, hide);
-    if (sc.arrow && r.has(sc.arrow.from.id) && r.has(sc.arrow.to.id)) {
-      const a = r.get(sc.arrow.from.id);
-      out.push({ kind: 'route', rect: a, label: null }, arrowShape(a, r.get(sc.arrow.to.id)));
-    }
-    for (const l of sc.focus) if (r.has(l.id)) out.push({ kind: 'focus', rect: r.get(l.id), label: String(model.scene + 1) });
-    return out;
-  }
-  const steps = model.path?.steps ?? [];
-  const r = layout([...(model.marks ?? []).map((m) => m.line), ...steps], size, hide);
-  // 경로는 한 칸이라도 화면 밖이면 통째로 숨긴다 (끊긴 화살표는 헷갈린다)
-  if (steps.length && steps.every((l) => r.has(l.id))) {
-    const rects = steps.map((l) => r.get(l.id));
-    for (let i = 0; i + 1 < rects.length; i++) out.push(arrowShape(rects[i], rects[i + 1]));
-    rects.forEach((rect, i) => out.push({ kind: 'route', rect, label: String(i + 1) }));
-  }
-  (model.marks ?? []).forEach((m, i) => {
-    if (r.has(m.line.id)) out.push({ kind: 'focus', rect: r.get(m.line.id), label: String(i + 1) });
-  });
-  return out;
-}
+// --- 화면 위 표시 도형 (맥 MarksView): layout·edge·shapes 는 renderer/explain/marks.js ---
 
 /** 지켜볼 모든 줄 (전체 표시 + 모든 장면). 같은 줄은 한 번만 */
 function allLines(model) {
