@@ -107,9 +107,19 @@ enum Explain {
         var arrow: (from: Line, to: Line)?
         let visual: Int?
         let reveal: Int?
+        /// 화면에 글로 적는 표시 방식용 짧은 꼬리표 (2~4단어). 안 오면 자막 앞부분으로 대신한다 (shortTag)
+        var tag: String? = nil
+
+        /// 꼬리표가 없으면 자막의 첫 마디(쉼표·마침표 앞)를 14자까지
+        var shortTag: String {
+            if let t = tag?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty { return t }
+            let head = say.split(whereSeparator: { ",.!?—·:".contains($0) }).first.map(String.init) ?? say
+            let t = head.trimmingCharacters(in: .whitespaces)
+            return t.count > 14 ? String(t.prefix(13)) + "…" : t
+        }
 
         static func == (a: Scene, b: Scene) -> Bool {
-            a.say == b.say && a.focus == b.focus && a.visual == b.visual && a.reveal == b.reveal
+            a.say == b.say && a.focus == b.focus && a.visual == b.visual && a.reveal == b.reveal && a.tag == b.tag
                 && a.arrow?.from == b.arrow?.from && a.arrow?.to == b.arrow?.to
         }
     }
@@ -368,7 +378,9 @@ enum Explain {
                let t = num(a["to"]).flatMap({ byID[$0] }), f.id != t.id { arrow = (f, t) }
             let visual = num(r["visual"]).flatMap { (0..<visualCount).contains($0) ? $0 : nil }
             let reveal = visual == nil ? nil : num(r["reveal"]).flatMap { $0 > 0 ? $0 : nil }
-            out.append(Scene(say: say, focus: Array(focus.prefix(maxMarks)), arrow: arrow, visual: visual, reveal: reveal))
+            let tag = (r["tag"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            out.append(Scene(say: say, focus: Array(focus.prefix(maxMarks)), arrow: arrow, visual: visual, reveal: reveal,
+                             tag: tag?.isEmpty == false ? tag : nil))
             if out.count == maxScenes { break }
         }
         return out
@@ -378,7 +390,53 @@ enum Explain {
     static func answer(from data: Data) -> String? {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let a = (obj["answer"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !a.isEmpty else { return nil }
-        return a.replacingOccurrences(of: "\\n", with: "\n")
+        return cleanAnswer(a)
+    }
+
+    /// 글자 그대로 온 "\\n" 은 줄바꿈으로. 뒤에 영문자가 오면 수식 명령(\\nabla, \\neq)이라 그대로 둔다
+    static func cleanAnswer(_ a: String) -> String {
+        a.replacingOccurrences(of: #"\\n(?![a-zA-Z])"#, with: "\n", options: .regularExpression)
+    }
+
+    /// 아직 다 오지 않은 JSON 에서 "answer" 글을 지금까지 온 만큼만 꺼낸다 (글자가 오는 대로 보여 주려고).
+    /// 끝이 반쯤 온 이스케이프(\\, \\u00)면 그 앞까지
+    /// "answer" 문자열이 닫는 따옴표까지 다 왔을 때만 그 글 (뒤쪽 JSON 이 깨졌거나 잘려도)
+    static func closedAnswer(_ json: String) -> String? {
+        guard json.range(of: #""answer"\s*:\s*"(?:[^"\\]|\\.)*""#, options: .regularExpression) != nil else { return nil }
+        return partialAnswer(json)
+    }
+
+    static func partialAnswer(_ json: String) -> String? {
+        guard let k = json.range(of: #""answer"\s*:\s*""#, options: .regularExpression) else { return nil }
+        let c = Array(json[k.upperBound...].unicodeScalars)
+        var out = String.UnicodeScalarView(), i = 0
+        loop: while i < c.count {
+            let ch = c[i]
+            if ch == "\"" { break }
+            if ch != "\\" { out.append(ch); i += 1; continue }
+            guard i + 1 < c.count else { break }
+            let e = c[i + 1]
+            // lenientJSON 과 같은 기준: 뒤에 영문자가 이어지는 \n \f \t … 는 수식 명령(\nabla, \frac)을 역슬래시 하나로 쓴 것
+            let cmd = i + 2 < c.count && c[i + 2].isASCII && c[i + 2].properties.isAlphabetic
+            switch e {
+            case "\"", "\\", "/": out.append(e)
+            case "n" where !cmd: out.append("\n")
+            case "t" where !cmd: out.append("\t")
+            case "r" where !cmd: out.append("\r")
+            case "b" where !cmd: out.append("\u{8}")
+            case "f" where !cmd: out.append("\u{C}")
+            case "u":
+                guard i + 5 < c.count else { break loop }
+                // shortcut: 서로게이트 짝(이모지 등)은 버린다. 답 글에 거의 안 나온다, 보이면 짝을 모아 합친다
+                if let v = UInt32(String(String.UnicodeScalarView(c[(i + 2)...(i + 5)])), radix: 16),
+                   let u = Unicode.Scalar(v) { out.append(u) }
+                i += 6; continue
+            default: out.append("\\"); out.append(e)      // 잘못된 이스케이프(\le, \int)는 글자 그대로
+            }
+            i += 2
+        }
+        let a = cleanAnswer(String(out)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return a.isEmpty ? nil : a
     }
 
     /// 설명 카드에 넣을 요약과 그림. 그림은 웹 화면(explain.html)이 그리므로 사전 형태 그대로 넘긴다.

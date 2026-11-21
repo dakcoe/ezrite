@@ -16,16 +16,18 @@ final class Explainer: ObservableObject {
     private var model: OverlayModel?
     private var watch: Task<Void, Never>?          // 표시 자리가 바뀌는지 지켜본다
     private var card: ExplainCard?
+    /// 화면 표시 방식 (설정). 떠 있는 표시도 바로 바꾼다. 카드의 목록 모양은 다음 설명부터
+    var style: MarkStyle = .fallback { didSet { model?.style = style; card?.restyle(style) } }
 
     /// transcript: 최근 받아 적은 문장(오래된 것부터). provider 가 Groq 가 아니면 그 서비스에 한 번에 묻고,
     /// 실패하면(키 오류 제외) Groq 로 대신한다. onNotice: 대신 처리했다는 알림
-    /// split: 화면 나누기 — 보던 창을 왼쪽으로 줄이고 카드를 오른쪽에 붙인 뒤 찍는다 (줄인 뒤 화면이라 표시 자리가 맞는다)
-    func run(transcript: [String], provider: Provider = .groq, model: String = "", split: Bool = false,
+    func run(transcript: [String], provider: Provider = .groq, model: String = "",
              onNotice: @escaping (String) -> Void = { _ in }) async {
         guard !busy else { return }
         busy = true
         defer { busy = false }
         hideMarks()
+        GroqClient.sceneTags = style.wantsTags
         let card = self.card ?? ExplainCard { [weak self] in self?.clear() }
         self.card = card
         history = []
@@ -35,27 +37,23 @@ final class Explainer: ObservableObject {
         do {
             let mouse = NSEvent.mouseLocation
             let target = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main
-            var docked = false
-            if split, let target, WindowDock.shared.dock(on: target) {
-                docked = true
-                try? await Task.sleep(nanoseconds: 350_000_000)      // 창이 줄고 내용이 다시 그려질 때까지
-            }
             let shot = try await ScreenGrab.capture(on: target)
             screen = shot.screen
-            card.show(on: shot.screen, avoid: AppDelegate.shared?.popupFrame, docked: docked)
+            card.show(on: shot.screen, avoid: AppDelegate.shared?.popupFrame)
             card.render(["loading": "화면을 읽는 중…"])
             let lines = await Task.detached { Explain.readText(shot.image) }.value
+            card.place(avoiding: lines.map(\.box), on: shot.screen, popup: AppDelegate.shared?.popupFrame)
             card.render(["loading": "설명을 만드는 중…"])
             let jpeg = Self.jpeg(shot.image, maxWidth: 1280)   // 이미지 토큰은 크기와 상관없이 한 장에 약 1,800 (640·1024·1280 실측 같음)
 
             if provider != .groq, !model.isEmpty {
-                // 생각 단계가 출력 토큰을 다 쓰면 JSON 이 중간에 잘려 요약이 비고 카드가 빈 채로 뜬다.
+                // 생각 단계가 출력 토큰을 다 쓰면 JSON 이 중간에 잘려 요약이 비고 카드가 빈 채로 뜬다 (한도 3000 에서 잘려 8000 으로 올렸다).
                 // 읽지 못하면 생각을 끄고 한 번 더, 그래도 안 되면 Groq 로 대신한다 (질문 ask 와 같다)
                 let prompt = GroqClient.unifiedPrompt(lines: lines, transcript: transcript, rich: true)
                 do {
                     for think in [true, false] {
                         let text = try await AI.complete(provider, model: model, prompt: prompt,
-                                                         image: jpeg, json: true, maxTokens: 3000, think: think)
+                                                         image: jpeg, json: true, maxTokens: 8000, think: think)
                         let data = Data(text.utf8)
                         if !Explain.visuals(from: data).summary.isEmpty {
                             return present(card: card, lines: lines, shot: shot, marks: data, visuals: .success(data))
@@ -94,7 +92,7 @@ final class Explainer: ObservableObject {
         guard self.card === card else { return }
         let marks = marksData.map { Explain.marks(from: $0, lines: lines) } ?? []
         let path = marksData.flatMap { Explain.path(from: $0, lines: lines) }
-        var payload: [String: Any] = ["marks": marks.map { ["note": $0.note, "text": $0.line.text] }]
+        var payload: [String: Any] = ["marks": marks.map { ["note": $0.note, "text": $0.line.text] }, "style": style.rawValue]
         if let path { payload["path"] = ["note": path.note, "steps": path.steps.map(\.text)] }
         var scenes: [Explain.Scene] = []
         switch visuals {
@@ -106,9 +104,13 @@ final class Explainer: ObservableObject {
             payload["summary"] = summary
             explanation = summary
             payload["visuals"] = list
+            // 개발용(EZRITE_DEMO): 정해 둔 장면부터 ("all" 은 전체 보기)
+            if let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let first = o["scene"] { payload["scene"] = first }
             scenes = Explain.scenes(from: data, lines: lines, visualCount: list.count)
             payload["scenes"] = scenes.map { sc -> [String: Any] in
-                var d: [String: Any] = ["say": sc.say]
+                // mark: 이 장면이 짚은 줄 중 첫 번째 '짚은 곳'의 순번 (색 짝 방식이 자막 번호를 그 색으로 칠한다)
+                let mark = sc.focus.compactMap { f in marks.firstIndex { $0.line.id == f.id } }.first ?? -1
+                var d: [String: Any] = ["say": sc.say, "mark": mark]
                 if let v = sc.visual { d["visual"] = v }
                 if let r = sc.reveal { d["reveal"] = r }
                 return d
@@ -116,15 +118,13 @@ final class Explainer: ObservableObject {
         case .failure(let error):
             payload["error"] = "그림 설명을 만들지 못했습니다: \(error.localizedDescription)"
         }
+        payload["map"] = Self.minimap(shot.image, marks: marks, path: path, scenes: scenes)
         // 화면 표시: 장면이 있으면 카드가 알려 주는 장면을 따라 바뀌고, 다 본 뒤엔 전체 표시
-        let model = OverlayModel(marks: marks, path: path, scenes: scenes)
+        let model = OverlayModel(marks: marks, path: path, scenes: scenes, style: style)
+        model.others = lines.map(\.box)
         if model.hasContent {
             if !scenes.isEmpty { model.scene = 0 }
-            let o = MarksOverlay(model: model, screen: shot.screen)
-            o.orderFrontRegardless()
-            overlay = o
-            self.model = model
-            watchMarks(shot: shot)
+            show(model, on: shot)
         }
         card.onScene = { [weak self] i in
             guard let m = self?.model else { return }
@@ -150,14 +150,31 @@ final class Explainer: ObservableObject {
             let prompt = ask(true)
             var data: Data?
             if ctx.provider != .groq, !ctx.model.isEmpty {
-                // 답을 읽지 못하면 저절로 한 번 더 묻는다. 두 번째는 생각 단계를 꺼서 토큰이 모자라 답이 잘리는 일을 막는다
+                // 답을 읽지 못하면 저절로 한 번 더 묻는다. 두 번째는 생각 단계를 꺼서 토큰이 모자라 답이 잘리는 일을 막는다.
+                // 한도 8000: 생각 + LaTeX 단계별 답이 3000 에서 잘렸다
                 for think in [true, false] where data.flatMap(Explain.answer) == nil {
                     do {
-                        let text = try await AI.complete(ctx.provider, model: ctx.model, prompt: prompt,
-                                                         image: Self.jpeg(shot.image, maxWidth: 1280), json: true,
-                                                         maxTokens: 3000, think: think)
-                        data = Data(text.utf8)
-                        if Explain.answer(from: data!) == nil { NSLog("Ezrite 질문 답을 읽지 못함: %@", String(text.prefix(400))) }
+                        // 답 글은 오는 대로 카드에 채운다. 화면 표시·그림은 다 받은 뒤에 붙는다
+                        let text = try await AI.stream(ctx.provider, model: ctx.model, prompt: prompt,
+                                                       image: Self.jpeg(shot.image, maxWidth: 1280), json: true,
+                                                       maxTokens: 8000, think: think) { soFar in
+                            guard let a = Explain.partialAnswer(soFar) else { return }
+                            let shown = Explain.dropLineRefs(a, lines: lines)
+                            Task { @MainActor in card.partial(shown) }
+                        }
+                        // 줄 번호("8번 줄")는 학생에게 뜻이 없다. Groq 답처럼 그 줄 글자로 바꾼다
+                        data = Data(Explain.dropLineRefs(text, lines: lines).utf8)
+                        // 수식 역슬래시를 하나만 써서(\le) 깨진 JSON 은 고쳐 읽는다
+                        if Explain.answer(from: data!) == nil, let fixed = Explain.lenientJSON(String(decoding: data!, as: UTF8.self)) {
+                            data = fixed
+                        }
+                        // 그래도 못 읽었지만 답 글은 끝까지 받았으면 그 글로 끝낸다 (다시 물으면 보던 답이 지워지고 처음부터 다시 채워진다)
+                        if Explain.answer(from: data!) == nil, let a = Explain.closedAnswer(text),
+                           let d = try? JSONSerialization.data(withJSONObject: ["answer": a]) {
+                            NSLog("Ezrite 질문 JSON 은 깨졌지만 답 글만 씀 (%d자): … %@", text.count, String(text.suffix(300)))
+                            data = d
+                        }
+                        if Explain.answer(from: data!) == nil { NSLog("Ezrite 질문 답을 읽지 못함 (%d자): %@ … %@", text.count, String(text.prefix(200)), String(text.suffix(200))) }
                     } catch let e as AI.Failure where AI.shouldFallback(status: e.status) {
                         break
                     }
@@ -179,19 +196,81 @@ final class Explainer: ObservableObject {
             let path = Explain.path(from: data, lines: lines)
             // 화면 표시를 이 답이 짚은 곳으로 바꾼다
             hideMarks()
-            let model = OverlayModel(marks: marks, path: path, scenes: [])
-            if model.hasContent {
-                let o = MarksOverlay(model: model, screen: shot.screen)
-                o.orderFrontRegardless()
-                overlay = o
-                self.model = model
-                watchMarks(shot: shot)
-            }
-            card.answer(["answer": text, "marks": marks.map { ["note": $0.note, "text": $0.line.text] },
+            let model = OverlayModel(marks: marks, path: path, scenes: [], style: style)
+            model.others = lines.map(\.box)
+            if model.hasContent { show(model, on: shot) }
+            card.answer(["answer": text, "marks": marks.map { ["note": $0.note, "text": $0.line.text] }, "style": style.rawValue,
                          "visuals": Explain.visuals(from: data).visuals])
         } catch {
             card.answer(["error": error.localizedDescription])
         }
+    }
+
+    /// 화면 표시 창을 띄우고, 카드의 마우스·글 위치를 표시에 잇는다
+    private func show(_ model: OverlayModel, on shot: ScreenGrab.Shot) {
+        let o = MarksOverlay(model: model, screen: shot.screen)
+        o.orderFrontRegardless()
+        overlay = o
+        self.model = model
+        card?.onHover = { [weak model] ref in model?.hover = ref }
+        let frame = shot.screen.frame
+        card?.onAnchors = { [weak model] pts in
+            // 카드가 다른 화면에 있으면 선을 긋지 않는다
+            model?.anchors = pts.filter { frame.contains($0.value) }
+                .mapValues { CGPoint(x: $0.x - frame.minX, y: frame.maxY - $0.y) }
+        }
+        card?.requestAnchors()
+        watchMarks(shot: shot)
+    }
+
+    /// 카드 속 지도 방식: 찍은 화면을 작게 줄여 넣고, 장면마다 짚은 줄·화살표를 비율 좌표로 준다
+    static func minimap(_ image: CGImage, marks: [Explain.Mark], path: Explain.Path?, scenes: [Explain.Scene]) -> [String: Any] {
+        let box = { (l: Explain.Line) -> [Double] in [l.box.minX, l.box.minY, l.box.width, l.box.height].map { Double($0) } }
+        let jpeg = Self.jpeg(image, maxWidth: 560)
+        return [
+            "img": "data:image/jpeg;base64," + jpeg.base64EncodedString(),
+            "aspect": Double(image.width) / Double(max(1, image.height)),
+            "marks": marks.map { box($0.line) },
+            "path": (path?.steps ?? []).map(box),
+            "scenes": scenes.map { sc -> [String: Any] in
+                var d: [String: Any] = ["focus": sc.focus.map(box)]
+                if let a = sc.arrow { d["arrow"] = [box(a.from), box(a.to)] }
+                return d
+            },
+        ]
+    }
+
+    /// 개발용(EZRITE_DEMO): AI 없이 정해 둔 설명을 지금 화면에 띄운다. JSON 은 AI 답과 같은 모양이되 줄 번호 대신 글자로 적는다
+    /// {"summary", "marks":[{"text","note"}], "path":{"texts":[…],"note"}, "scenes":[{"say","focus":[글자],"arrow":{"from","to"},"tag"}]}
+    func demoScreen(_ url: URL) async {
+        guard let raw = FileManager.default.contents(atPath: url.path),
+              var obj = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any] else { NSLog("Ezrite 데모 JSON 을 읽지 못함"); return }
+        hideMarks()
+        let card = self.card ?? ExplainCard { [weak self] in self?.clear() }
+        self.card = card
+        do {
+            let shot = try await ScreenGrab.capture()
+            screen = shot.screen
+            card.show(on: shot.screen, avoid: AppDelegate.shared?.popupFrame)
+            let lines = await Task.detached { Explain.readText(shot.image) }.value
+            card.place(avoiding: lines.map(\.box), on: shot.screen, popup: AppDelegate.shared?.popupFrame)
+            func id(_ text: Any?) -> Int? {
+                guard let t = (text as? String)?.replacingOccurrences(of: " ", with: ""), !t.isEmpty else { return nil }
+                let flat = { (s: String) in s.replacingOccurrences(of: " ", with: "") }
+                // 한두 글자(그림 속 라벨)는 정확히 같은 줄만. 긴 글은 그 글을 품은 줄
+                return (lines.first { flat($0.text) == t } ?? (t.count >= 3 ? lines.first { flat($0.text).contains(t) } : nil))?.id
+            }
+            obj["marks"] = ((obj["marks"] as? [[String: Any]]) ?? []).compactMap { m in id(m["text"]).map { ["id": $0, "note": m["note"] ?? ""] } }
+            if let p = obj["path"] as? [String: Any] { obj["path"] = ["ids": ((p["texts"] as? [Any]) ?? []).compactMap(id), "note": p["note"] ?? ""] }
+            obj["scenes"] = ((obj["scenes"] as? [[String: Any]]) ?? []).map { sc in
+                var d = sc
+                d["focus"] = ((sc["focus"] as? [Any]) ?? []).compactMap(id)
+                if let a = sc["arrow"] as? [String: Any], let f = id(a["from"]), let t = id(a["to"]) { d["arrow"] = ["from": f, "to": t] } else { d["arrow"] = NSNull() }
+                return d
+            }
+            let data = try JSONSerialization.data(withJSONObject: obj)
+            present(card: card, lines: lines, shot: shot, marks: data, visuals: .success(data))
+        } catch { card.render(["error": error.localizedDescription]) }
     }
 
     /// 개발용: AI 없이 카드에 내용을 바로 띄운다 (그림 틀 모양 확인용)
@@ -228,6 +307,7 @@ final class Explainer: ObservableObject {
                     continue
                 }
                 model.move(to: Dictionary(found.map { ($0.id, $0.box) }, uniquingKeysWith: { a, _ in a }))
+                model.others = lines.map(\.box)
                 model.missing = Set(targets.map(\.id)).subtracting(found.map(\.id))
                 baseline = model.allLines.map { Explain.thumbnail(now.image, box: $0.box) }
                 if hidden { overlay.orderFrontRegardless(); hidden = false }
@@ -244,10 +324,9 @@ final class Explainer: ObservableObject {
         model = nil
     }
 
-    /// 카드를 닫으면 화면 표시도 지우고, 줄였던 창을 원래대로
+    /// 카드를 닫으면 화면 표시도 지운다
     func clear() {
         hideMarks()
-        WindowDock.shared.restore()
         card?.close()
         card = nil
     }
@@ -272,14 +351,47 @@ final class OverlayModel: ObservableObject {
     @Published var marks: [Explain.Mark]
     @Published var path: Explain.Path?
     @Published var scenes: [Explain.Scene]
-    @Published var scene: Int?
+    @Published var scene: Int? {
+        didSet {
+            guard scene != oldValue else { return }
+            previous = oldValue.map { i in scenes.indices.contains(i) ? scenes[i].focus.map(\.id) + [scenes[i].arrow?.from.id, scenes[i].arrow?.to.id].compactMap { $0 } : [] } ?? []
+            restart()
+        }
+    }
     /// 화면 밖으로 나가 지금 못 찾은 줄 (그 표시만 숨긴다)
     @Published var missing: Set<Int> = []
+    /// 표시 방식. 바꾸면 처음부터 다시 그린다
+    @Published var style: MarkStyle { didSet { if style != oldValue { previous = []; restart() } } }
+    /// 카드에서 마우스를 올린 항목 ("m0", "s2", "p1", "say")
+    @Published var hover: String?
+    /// 카드 글의 위치 (오버레이 좌표). 선 긋기 방식이 쓴다
+    @Published var anchors: [String: CGPoint] = [:]
+    /// 화면의 다른 글자 줄 (비율). 글을 놓을 빈 자리를 찾을 때 피한다
+    @Published var others: [CGRect] = []
+    /// 장면·방식이 바뀐 때 (움직임 시간 기준)와, 움직임이 다 끝나 다시 그리지 않아도 되는지
+    @Published private(set) var started = Date()
+    @Published private(set) var settled = false
+    /// 바로 전 장면이 짚은 줄 (스포트라이트가 그 자리에서 미끄러져 온다)
+    private(set) var previous: [Int] = []
+    private var token = 0
 
-    init(marks: [Explain.Mark], path: Explain.Path?, scenes: [Explain.Scene]) {
+    init(marks: [Explain.Mark], path: Explain.Path?, scenes: [Explain.Scene], style: MarkStyle = .classic) {
         self.marks = marks
         self.path = path
         self.scenes = scenes
+        self.style = style
+        restart()
+    }
+
+    /// 움직임을 처음부터. 정해진 시간이 지나면 멈춘다 (전체 화면 창을 계속 다시 그리지 않게)
+    func restart() {
+        token += 1
+        let mine = token
+        started = Date()
+        settled = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + MarksRenderer.settleTime(style)) { [weak self] in
+            if self?.token == mine { self?.settled = true }
+        }
     }
 
     var hasContent: Bool { !allLines.isEmpty }
@@ -329,12 +441,26 @@ final class MarksOverlay: NSPanel {
     }
 }
 
-private struct MarksView: View {
+struct MarksView: View {
     @ObservedObject var model: OverlayModel
     static let accent = Color(red: 1, green: 0.42, blue: 0.17)
     static let route = Color(red: 0.18, green: 0.48, blue: 0.97)     // 경로는 파랑: 주황 ①②③ 과 헷갈리지 않게
 
     var body: some View {
+        if model.style == .classic { classic } else { drawn }
+    }
+
+    /// 예전 방식 밖의 표시는 Canvas 한 장에 그린다. 움직임이 끝나면(settled) 다시 그리지 않는다
+    private var drawn: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 40, paused: model.settled)) { tl in
+            Canvas { g, size in
+                MarksRenderer(model: model, t: tl.date.timeIntervalSince(model.started), size: size).draw(&g)
+            }
+        }
+        .ignoresSafeArea()
+    }
+
+    private var classic: some View {
         GeometryReader { geo in
             if let i = model.scene, model.scenes.indices.contains(i) {
                 let sc = model.scenes[i]
@@ -431,12 +557,20 @@ final class ExplainCard: NSObject, NSWindowDelegate {
     var onScene: ((Int) -> Void)?
     /// 질문 칸에서 묻기를 누르면
     var onAsk: ((String) -> Void)?
+    /// 카드 항목에 마우스를 올리면 ("m0" 짚은 곳, "s2" 장면, "p1" 경로 칸, "say" 지금 자막, nil 내려놓음)
+    var onHover: ((String?) -> Void)?
+    /// 카드 글의 화면 위치 (맥 화면 좌표, 카드 왼쪽 가장자리). 선 긋기 표시가 쓴다
+    var onAnchors: (([String: CGPoint]) -> Void)?
     /// 질문을 시작하면 카드 크기를 더 바꾸지 않는다 (대화가 길어지면 카드 안에서 스크롤)
     private var sizeLocked = false
     /// 직접 닫기 전까지 1초마다 카드가 보이는지 확인한다
     private var keepAlive: Timer?
-    /// 화면 나누기로 오른쪽에 붙은 상태: 높이를 화면에 맞춰 두고 내용 길이로 바꾸지 않는다
-    private var docked = false
+    /// 새로 뜬 카드는 글자를 읽은 뒤 빈 쪽으로 옮긴다. 사용자가 끌어 옮기면 그 자리를 지킨다
+    private var autoPlace = false
+    /// 접기: 자막 한 줄만 남긴다. 펼치면 접기 전 높이로
+    private var folded = false
+    private var unfoldedHeight: CGFloat?
+    private let foldButton = NSButton()
 
     init(onClose: @escaping () -> Void) {
         self.onClose = onClose
@@ -448,7 +582,7 @@ final class ExplainCard: NSObject, NSWindowDelegate {
         // 도구창(utilityWindow) 버튼은 너무 작아 누르기 어렵다. 일반 크기 닫기만 남긴다
         panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
         panel.standardWindowButton(.zoomButton)?.isHidden = true
-        // 맨 위: 녹음 팝업(floating+2)과 ①②③ 표시(floating+3)가 설명 글을 가리지 않게
+        // 맨 위: ①②③ 표시(floating+3)가 설명 글을 가리지 않게. 녹음 팝업과 같은 층이라 둘 중 누른 쪽이 앞에 온다
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 4)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]   // 어느 데스크톱에서도 보인다 (위 MarksOverlay 와 같은 이유)
         panel.hidesOnDeactivate = false
@@ -458,8 +592,20 @@ final class ExplainCard: NSObject, NSWindowDelegate {
         web.configuration.userContentController.add(HeightRelay(card: self), name: "height")
         web.configuration.userContentController.add(SceneRelay(card: self), name: "scene")
         web.configuration.userContentController.add(AskRelay(card: self), name: "ask")
+        web.configuration.userContentController.add(TypingRelay(card: self), name: "typing")
+        web.configuration.userContentController.add(HoverRelay(card: self), name: "hover")
+        web.configuration.userContentController.add(AnchorRelay(card: self), name: "anchors")
         web.navigationDelegate = self
         panel.contentView = web
+        foldButton.isBordered = false
+        foldButton.target = self
+        foldButton.action = #selector(toggleFold)
+        foldButton.frame = NSRect(x: 0, y: 0, width: 30, height: 22)
+        let bar = NSTitlebarAccessoryViewController()
+        bar.view = foldButton
+        bar.layoutAttribute = .trailing
+        panel.addTitlebarAccessoryViewController(bar)
+        setFold(false)
         if let page = Bundle.main.url(forResource: "explain", withExtension: "html", subdirectory: "web") {
             web.loadFileURL(page, allowingReadAccessTo: page.deletingLastPathComponent())
         }
@@ -467,13 +613,9 @@ final class ExplainCard: NSObject, NSWindowDelegate {
 
     /// 처음 한 번만 화면 오른쪽에 놓는다. 그 뒤로는 사용자가 옮긴 자리를 지킨다
     /// avoid: 녹음 팝업 자리. 처음 뜰 때 오른쪽 위에 놓되 팝업과 겹치면 그 왼쪽에 놓는다
-    func show(on screen: NSScreen, avoid: NSRect?, docked: Bool = false) {
-        self.docked = docked
-        if docked {
-            var frame = WindowDock.cardFrame(on: screen)
-            if let avoid, frame.intersects(avoid) { frame.size.height = max(300, avoid.minY - 8 - frame.minY) }  // 녹음 팝업 아래로
-            panel.setFrame(frame, display: true)
-        } else if !panel.isVisible {
+    func show(on screen: NSScreen, avoid: NSRect?) {
+        if !panel.isVisible {
+            autoPlace = true
             let f = screen.visibleFrame
             let h: CGFloat = 150                            // 로딩 중엔 작게. 내용이 오면 그 길이만큼 늘어난다 (fit)
             var frame = NSRect(x: f.maxX - 440, y: f.maxY - h - 20, width: 420, height: h)
@@ -488,6 +630,58 @@ final class ExplainCard: NSObject, NSWindowDelegate {
         keepAlive = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.stayOnScreen() }
     }
 
+    /// 글자를 읽은 뒤: 카드를 화면 글자가 가장 적게 가려지는 자리로 옮긴다 (창은 건드리지 않는다).
+    /// boxes 는 스크린샷 기준 0~1 (왼쪽 위 원점)
+    func place(avoiding boxes: [CGRect], on screen: NSScreen, popup: NSRect?) {
+        guard autoPlace else { return }
+        let f = screen.frame
+        var text = boxes.map { CGRect(x: f.minX + $0.minX * f.width, y: f.maxY - $0.maxY * f.height,
+                                      width: $0.width * f.width, height: $0.height * f.height) }
+        if let popup { text.append(contentsOf: Array(repeating: popup, count: 20)) }     // 녹음 팝업은 글자 여러 줄만큼 피한다
+        let origin = Self.freeSpot(text: text, in: screen.visibleFrame, card: panel.frame.size)
+        guard origin != panel.frame.origin else { return }
+        panel.setFrame(NSRect(origin: origin, size: panel.frame.size), display: true, animate: true)
+    }
+
+    /// 카드가 화면 글자를 가리는 넓이가 가장 작은 자리 (카드 왼쪽 아래, 화면 좌표).
+    /// 카드는 내용이 오면 위 가장자리를 고정한 채 아래로 늘어나므로, 늘어난 높이(화면의 60%)로 가린 넓이를 잰다. 같으면 오른쪽 위
+    nonisolated static func freeSpot(text: [CGRect], in visible: CGRect, card: CGSize) -> CGPoint {
+        let w = card.width, grown = max(card.height, visible.height * 0.6), m: CGFloat = 20
+        var best = CGPoint(x: visible.maxX - w - m, y: visible.maxY - card.height - m), least = CGFloat.infinity
+        for top in [visible.maxY - m, visible.minY + m + grown] {
+            var x = visible.maxX - w - m
+            while x >= visible.minX + m {
+                let r = CGRect(x: x, y: top - grown, width: w, height: grown)
+                let hidden = text.reduce(CGFloat(0)) { s, t in
+                    let i = r.intersection(t)
+                    return i.isNull ? s : s + i.width * i.height
+                }
+                if hidden < least - 1 { least = hidden; best = CGPoint(x: x, y: top - card.height) }
+                x -= 20
+            }
+        }
+        return best
+    }
+
+    @objc private func toggleFold() { setFold(!folded) }
+
+    private func setFold(_ on: Bool) {
+        let was = folded
+        folded = on
+        foldButton.image = NSImage(systemSymbolName: on ? "chevron.down" : "chevron.up", accessibilityDescription: on ? "펼치기" : "접기")
+        foldButton.toolTip = on ? "펼치기" : "접기 — 지금 자막 한 줄만 남깁니다"
+        guard was != on else { return }
+        if on { unfoldedHeight = panel.frame.height }
+        else if let h = unfoldedHeight {
+            var f = panel.frame
+            f.origin.y = f.maxY - h
+            f.size.height = h
+            panel.setFrame(f, display: true, animate: true)
+            unfoldedHeight = nil
+        }
+        if ready { web.evaluateJavaScript("fold(\(on))") }
+    }
+
     private func stayOnScreen() {
         if !panel.isVisible { panel.orderFrontRegardless() }
         if let visible = OnScreen.visibleFrame(for: panel.frame),
@@ -496,8 +690,24 @@ final class ExplainCard: NSObject, NSWindowDelegate {
         }
     }
 
+    private var pendingPartial: String?
+
+    /// 받는 중인 답 글. 조각마다 다시 그리면 무거워서 0.08초에 한 번만 그린다
+    func partial(_ text: String) {
+        let scheduled = pendingPartial != nil
+        pendingPartial = text
+        guard !scheduled else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            guard let self, let t = self.pendingPartial,
+                  let lit = try? JSONSerialization.data(withJSONObject: [t]) else { return }
+            self.pendingPartial = nil
+            self.web.evaluateJavaScript("partial(\(String(decoding: lit, as: UTF8.self))[0])")
+        }
+    }
+
     /// 질문의 답을 대화에 붙인다
     func answer(_ payload: [String: Any]) {
+        pendingPartial = nil        // 다 받은 답 뒤에 늦은 조각이 덮어쓰지 않게
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let json = String(data: data, encoding: .utf8) else { return }
         web.evaluateJavaScript("answer(\(json))")
@@ -509,9 +719,14 @@ final class ExplainCard: NSObject, NSWindowDelegate {
         web.evaluateJavaScript("q.value = \(lit)[0]; ask()")
     }
 
+    fileprivate func typing() {
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKey()
+    }
+
     /// 질문을 시작하면 카드를 최대 높이로 늘린 뒤 고정한다 (답이 길어도 카드가 들쭉날쭉하지 않게)
     fileprivate func asked(_ q: String) {
-        if !sizeLocked, !docked, let screen = panel.screen ?? NSScreen.main {
+        if !sizeLocked, let screen = panel.screen ?? NSScreen.main {
             let visible = screen.visibleFrame
             var f = panel.frame
             let top = f.maxY, h = visible.height * 0.75
@@ -523,7 +738,13 @@ final class ExplainCard: NSObject, NSWindowDelegate {
         onAsk?(q)
     }
 
+    /// 표시 방식이 바뀌면 카드의 목록 모양·마우스 반응도 맞춘다 (질문 대화는 그대로)
+    func restyle(_ style: MarkStyle) { if ready { web.evaluateJavaScript("restyle('\(style.rawValue)')") } }
+    /// 카드 글 위치를 다시 알려 달라고 한다 (화면 표시를 새로 띄울 때)
+    func requestAnchors() { if ready { web.evaluateJavaScript("postAnchors()") } }
+
     func render(_ payload: [String: Any]) {
+        setFold(false)          // 새 설명은 펼쳐서 보여 준다
         sizeLocked = false
         guard ready else { pending = payload; return }
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
@@ -538,15 +759,16 @@ final class ExplainCard: NSObject, NSWindowDelegate {
         web.configuration.userContentController.removeScriptMessageHandler(forName: "height")
         web.configuration.userContentController.removeScriptMessageHandler(forName: "scene")
         web.configuration.userContentController.removeScriptMessageHandler(forName: "ask")
+        for name in ["typing", "hover", "anchors"] { web.configuration.userContentController.removeScriptMessageHandler(forName: name) }
         panel.close()
     }
 
     /// 내용 높이에 맞춰 카드를 늘리거나 줄인다. 위쪽 가장자리는 그대로 두고, 화면 높이를 넘지 않는다
     fileprivate func fit(contentHeight: CGFloat) {
-        guard !sizeLocked, !docked, let screen = panel.screen ?? NSScreen.main else { return }
+        guard !sizeLocked || folded, let screen = panel.screen ?? NSScreen.main else { return }
         let visible = screen.visibleFrame
         let chrome = panel.frame.height - panel.contentLayoutRect.height     // 제목 막대
-        let h = min(max(contentHeight + chrome, 110), visible.height * 0.75)
+        let h = min(max(contentHeight + chrome, folded ? 40 : 110), visible.height * 0.75)
         var f = panel.frame
         let top = f.maxY
         f.size.height = h
@@ -555,6 +777,23 @@ final class ExplainCard: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) { onClose() }
+    /// 사용자가 제목 막대를 끌기 시작할 때만 온다 (코드로 옮길 땐 오지 않는다)
+    func windowWillMove(_ notification: Notification) { autoPlace = false }
+    /// 카드를 옮기면 글 위치를 다시 알린다 (선 긋기 표시가 따라온다)
+    func windowDidMove(_ notification: Notification) { web.evaluateJavaScript("postAnchors && postAnchors()") }
+    func windowDidResize(_ notification: Notification) { web.evaluateJavaScript("postAnchors && postAnchors()") }
+
+    /// 웹 화면 안 세로 위치(CSS 픽셀, 보이는 영역 위 기준) → 맥 화면 좌표. 보이는 영역 밖이면 버린다
+    fileprivate func anchors(_ raw: [String: Any]) {
+        let content = panel.contentLayoutRect
+        var out: [String: CGPoint] = [:]
+        for (k, v) in raw {
+            guard let y = (v as? NSNumber).map({ CGFloat($0.doubleValue) }), y >= 0, y <= content.height else { continue }
+            out[k] = CGPoint(x: panel.frame.minX, y: panel.frame.minY + content.maxY - y)
+        }
+        onAnchors?(out)
+    }
+
 }
 
 extension ExplainCard: WKNavigationDelegate {
@@ -615,7 +854,35 @@ private final class SceneRelay: NSObject, WKScriptMessageHandler {
     }
 }
 
+/// 카드 항목에 올린 마우스 → 화면 표시
+private final class HoverRelay: NSObject, WKScriptMessageHandler {
+    weak var card: ExplainCard?
+    init(card: ExplainCard) { self.card = card }
+    func userContentController(_ c: WKUserContentController, didReceive message: WKScriptMessage) {
+        let ref = message.body as? String
+        card?.onHover?(ref?.isEmpty == false ? ref : nil)
+    }
+}
+
+/// 카드 글의 위치 {"say": y, "m0": y, …} (CSS 픽셀)
+private final class AnchorRelay: NSObject, WKScriptMessageHandler {
+    weak var card: ExplainCard?
+    init(card: ExplainCard) { self.card = card }
+    func userContentController(_ c: WKUserContentController, didReceive message: WKScriptMessage) {
+        if let d = message.body as? [String: Any] { card?.anchors(d) }
+    }
+}
+
 /// 질문 칸에서 보낸 질문을 앱으로 전한다
+/// 질문 칸을 누르면: 앱을 앞으로 가져와 키 입력이 카드에만 가게 한다
+private final class TypingRelay: NSObject, WKScriptMessageHandler {
+    weak var card: ExplainCard?
+    init(card: ExplainCard) { self.card = card }
+    func userContentController(_ c: WKUserContentController, didReceive message: WKScriptMessage) {
+        card?.typing()
+    }
+}
+
 private final class AskRelay: NSObject, WKScriptMessageHandler {
     weak var card: ExplainCard?
     init(card: ExplainCard) { self.card = card }

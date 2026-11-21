@@ -59,7 +59,7 @@ enum AI {
     /// 한 번의 요청. image 가 있으면 JPEG 로 붙이고, json 이면 JSON 으로만 답하게 한다
     /// think: false 면 Claude 의 생각 단계를 끈다. 번역처럼 단순한 일에 출력 토큰(비용)이 몇 배로 늘지 않게
     static func request(_ p: Provider, model: String, key: String, prompt: String, image: Data?,
-                        json: Bool, maxTokens: Int, think: Bool = true) throws -> URLRequest {
+                        json: Bool, maxTokens: Int, think: Bool = true, stream: Bool = false) throws -> URLRequest {
         var req: URLRequest
         var body: [String: Any]
         switch p {
@@ -94,6 +94,11 @@ enum AI {
             // GPT 의 추론 모델은 max_tokens 대신 max_completion_tokens 만 받는다
             body[p == .openai ? "max_completion_tokens" : "max_tokens"] = maxTokens
             if json { body["response_format"] = ["type": "json_object"] }
+        }
+        if stream {
+            body["stream"] = true
+            // GPT 는 이걸 켜야 마지막 조각에 쓴 토큰 수가 온다
+            if p == .openai { body["stream_options"] = ["include_usage": true] }
         }
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -319,6 +324,118 @@ enum AI {
         Usage.spent?(model, .tokens, Double(r.tokens))
         Usage.paid?(cost(p, model: model, data))
         return json ? stripFences(r.text) : r.text
+    }
+
+    /// complete 와 같지만 답 글을 받는 대로 onText 에 지금까지 온 글 전체를 넘긴다 (설명 카드 질문에 글자가 바로 보이게)
+    static func stream(_ p: Provider, model: String, prompt: String, image: Data? = nil, json: Bool, maxTokens: Int,
+                       think: Bool = true, onText: @escaping @Sendable (String) -> Void) async throws -> String {
+        guard let key = APIKey.read(p) else {
+            throw Failure(status: 401, errorDescription: "\(p.label) API 키가 없습니다. 설정에서 키를 입력하세요.")
+        }
+        let req = try request(p, model: model, key: key, prompt: prompt, image: image, json: json,
+                              maxTokens: maxTokens, think: think, stream: true)
+        // 글이 오는 동안에도 전체 시간으로 끊는다 (timeoutInterval 은 멈춘 시간 기준)
+        let text = try await withThrowingTaskGroup(of: String?.self) { group in
+            group.addTask { try await readStream(req, p, model: model, onText: onText) }
+            group.addTask { try? await Task.sleep(nanoseconds: streamTimeout); return nil }
+            let first = try await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+        guard let text else {
+            throw Failure(status: nil, errorDescription: "\(p.label) 가 \(Int(streamTimeout / 1_000_000_000))초 안에 답을 끝내지 않았습니다")
+        }
+        return json ? stripFences(text) : text
+    }
+
+    static let streamTimeout: UInt64 = 120_000_000_000
+
+    private static func readStream(_ req: URLRequest, _ p: Provider, model: String,
+                                   onText: @Sendable (String) -> Void) async throws -> String {
+        do {
+            var (bytes, resp) = try await URLSession.shared.bytes(for: req)
+            var code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            if code != 200 {
+                var body = try await collect(bytes)
+                // 생각 끄는 방식이 틀렸다고 거절당하면 한 번 바꿔 다시 보낸다 (send 와 같다)
+                if let retry = thinkingOffRetry(req, status: code, body: body) {
+                    (bytes, resp) = try await URLSession.shared.bytes(for: retry)
+                    code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+                    if code != 200 { body = try await collect(bytes) }
+                }
+                if code != 200 {
+                    if keyRejected(status: code, body: body) {
+                        throw Failure(status: 401, errorDescription: "\(p.label) API 키가 맞지 않습니다. 설정에서 다시 확인하세요.")
+                    }
+                    throw Failure(status: code, errorDescription: "\(p.label) 오류 \(code): \(errorMessage(body))")
+                }
+            }
+            var s = StreamState()
+            for try await line in bytes.lines {
+                guard line.hasPrefix("data:") else { continue }
+                let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                if payload == "[DONE]" { break }
+                guard let obj = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any] else { continue }
+                if try s.take(p, obj) { onText(s.text) }
+            }
+            Usage.spent?(model, .tokens, Double(s.tokens(p)))
+            Usage.paid?(cost(p, model: model, s.usageJSON))
+            return s.text
+        } catch let e as Failure {
+            throw e
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // 연결이 끊기면 Groq 로 대신하도록 상태 코드 없이 던진다
+            throw Failure(status: nil, errorDescription: "\(p.label) 연결 오류: \(error.localizedDescription)")
+        }
+    }
+
+    private static func collect(_ bytes: URLSession.AsyncBytes) async throws -> Data {
+        var d = Data()
+        for try await b in bytes { d.append(b) }
+        return d
+    }
+
+    /// 스트리밍 조각(SSE 의 data 한 줄)을 모은다. Claude 와 OpenAI 꼴(GPT·Gemini·Groq) 두 가지
+    struct StreamState {
+        var text = ""
+        var input = 0, output = 0, total = 0
+
+        /// 글이 늘었으면 true. 서버가 중간에 오류 조각을 보내면 던진다
+        mutating func take(_ p: Provider, _ obj: [String: Any]) throws -> Bool {
+            if let err = obj["error"] as? [String: Any] {
+                throw Failure(status: nil, errorDescription: "\(p.label) 오류: \(err["message"] as? String ?? "")")
+            }
+            let num = { (d: Any?, k: String) in ((d as? [String: Any])?[k] as? NSNumber)?.intValue }
+            if p == .claude {
+                switch obj["type"] as? String {
+                case "message_start":
+                    input = num((obj["message"] as? [String: Any])?["usage"], "input_tokens") ?? input
+                case "message_delta":
+                    output = num(obj["usage"], "output_tokens") ?? output
+                case "content_block_delta":
+                    let d = obj["delta"] as? [String: Any]
+                    if d?["type"] as? String == "text_delta", let t = d?["text"] as? String, !t.isEmpty { text += t; return true }
+                default: break
+                }
+                return false
+            }
+            if let u = obj["usage"] as? [String: Any] {
+                input = num(u, "prompt_tokens") ?? input
+                output = num(u, "completion_tokens") ?? output
+                total = num(u, "total_tokens") ?? total
+            }
+            let delta = (obj["choices"] as? [[String: Any]])?.first?["delta"] as? [String: Any]
+            if let t = delta?["content"] as? String, !t.isEmpty { text += t; return true }
+            return false
+        }
+
+        func tokens(_ p: Provider) -> Int { p == .claude ? input + output : total }
+        /// cost() 가 읽는 꼴 (응답 본문의 usage)
+        var usageJSON: Data {
+            (try? JSONSerialization.data(withJSONObject: ["usage": ["input_tokens": input, "output_tokens": output]])) ?? Data()
+        }
     }
 
     /// 키 확인 겸 고를 수 있는 모델 목록

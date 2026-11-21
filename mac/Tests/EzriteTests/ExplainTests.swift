@@ -129,6 +129,38 @@ struct ScenesTests {
         #expect(s[2].arrow == nil)
     }
 
+    @Test func 꼬리표가_오면_쓰고_없으면_자막_첫_마디로_대신한다() {
+        let json = #"{"scenes":[{"say":"출발점은 손실 L. 가장 쉬운 한 칸","focus":[1],"tag":" 출발점 "},{"say":"받은 값에 자기 몫만 곱하면 끝나는 아주 긴 첫 마디입니다, 그 다음","focus":[2]}]}"#
+        let s = Explain.scenes(from: Data(json.utf8), lines: Self.lines, visualCount: 0)
+        #expect(s[0].tag == "출발점" && s[0].shortTag == "출발점")
+        #expect(s[1].tag == nil)
+        #expect(s[1].shortTag.count == 14 && s[1].shortTag.hasSuffix("…"))
+    }
+
+    @Test func 꼬리표는_말풍선_메모_판서에서만_요청한다() {
+        #expect(MarkStyle.allCases.filter(\.wantsTags) == [.bubble, .notes, .pen])
+        GroqClient.sceneTags = false
+        #expect(!GroqClient.scenesGuide.contains("\"tag\""))
+        #expect(((GroqClient.visualsSchema["properties"] as? [String: Any]).flatMap { ($0["scenes"] as? [String: Any])?["items"] as? [String: Any] }?["required"] as? [String])?.contains("tag") == false)
+        GroqClient.sceneTags = true
+        #expect(GroqClient.scenesGuide.contains("\"tag\""))
+        #expect(((GroqClient.visualsSchema["properties"] as? [String: Any]).flatMap { ($0["scenes"] as? [String: Any])?["items"] as? [String: Any] }?["required"] as? [String])?.contains("tag") == true)
+        GroqClient.sceneTags = false
+    }
+
+    @Test func 설명_카드는_글자가_적은_쪽에_뜬다() {
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 900), card = CGSize(width: 420, height: 150)
+        // 빈 화면: 예전처럼 오른쪽 위
+        let empty = ExplainCard.freeSpot(text: [], in: screen, card: card)
+        #expect(empty == CGPoint(x: 1000, y: 730))
+        // 오른쪽 절반이 글자로 차 있으면 왼쪽으로
+        let right = ExplainCard.freeSpot(text: [CGRect(x: 720, y: 0, width: 720, height: 900)], in: screen, card: card)
+        #expect(right.x + card.width <= 720)
+        // 위쪽 전체가 글자면 아래쪽에 붙는다 (늘어난 높이가 아래로 화면을 넘지 않게)
+        let top = ExplainCard.freeSpot(text: [CGRect(x: 0, y: 500, width: 1440, height: 400)], in: screen, card: card)
+        #expect(top.y + card.height < 900 * 0.7)
+    }
+
     @Test func 장면은_6개까지() {
         let one = #"{"say":"a","focus":[1]}"#
         let json = "{\"scenes\":[" + Array(repeating: one, count: 9).joined(separator: ",") + "]}"

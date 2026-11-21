@@ -237,9 +237,23 @@ struct TranscriptList: View {
     var onPlay: ((ClosedRange<Double>) -> Void)? = nil
     @StateObject private var bottom = BottomWatch()
 
-    /// 맨 아래 표시가 화면에 보이는지. 위쪽 옛 줄을 읽는 중이면 새 줄이 와도 따라 내려가지 않는다
+    /// 새 줄을 따라 내려갈지. 위쪽 옛 줄을 읽는 중이면 새 줄이 와도 따라 내려가지 않는다.
+    /// 맨 아래 표시의 onAppear/onDisappear 로 재면 줄이 길어져 표시가 밀려날 때도 꺼져서 다시 켜지지 않았다.
+    /// 그래서 내용의 위끝이 내려갔을 때(사용자가 위로 올렸을 때)만 끄고, 맨 아래에 닿으면 다시 켠다
     final class BottomWatch: ObservableObject {
-        var visible = true
+        var following = true
+        private var lastTop: CGFloat = 0
+
+        func update(content: CGRect, viewport: CGFloat) {
+            if content.maxY - viewport <= 24 { following = true }
+            else if content.minY > lastTop + 1 { following = false }
+            lastTop = content.minY
+        }
+    }
+
+    private struct ContentFrame: PreferenceKey {
+        static var defaultValue: CGRect = .zero
+        static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
     }
 
     private var scrollKey: String {
@@ -247,6 +261,7 @@ struct TranscriptList: View {
     }
 
     var body: some View {
+        GeometryReader { outer in
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
@@ -257,21 +272,24 @@ struct TranscriptList: View {
                         Text("받아 적는 중…").font(.system(size: 11.5)).foregroundStyle(.tertiary)
                     }
                     Color.clear.frame(height: 1).id("bottom")
-                        .onAppear { bottom.visible = true }
-                        .onDisappear { bottom.visible = false }
                 }
                 .padding(16)
                 .textSelection(.enabled)
+                .background(GeometryReader { g in
+                    Color.clear.preference(key: ContentFrame.self, value: g.frame(in: .named("transcript")))
+                })
             }
+            .coordinateSpace(name: "transcript")
+            .onPreferenceChange(ContentFrame.self) { bottom.update(content: $0, viewport: outer.size.height) }
             .onAppear { if follow { proxy.scrollTo("bottom", anchor: .bottom) } }
             // 새 줄뿐 아니라 번역이 나중에 붙을 때(같은 줄이 길어짐)와 "받아 적는 중…" 이 바뀔 때도 따라간다.
-            // 늘어난 높이가 자리 잡은 다음에 내려가도록 한 박자 미룬다
+            // 늘어난 높이가 자리 잡은 다음에 내려가도록 한 박자 미룬다.
+            // 애니메이션은 넣지 않는다: 줄 배치 계산이 끝나지 않고 앱이 멈춘 일이 있었고, 움직이는 도중 줄이 또 길어지는 것이 원인 후보다
             .onChange(of: scrollKey) { _ in
-                guard follow, bottom.visible else { return }
-                DispatchQueue.main.async {
-                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
-                }
+                guard follow, bottom.following else { return }
+                DispatchQueue.main.async { proxy.scrollTo("bottom", anchor: .bottom) }
             }
+        }
         }
     }
 }

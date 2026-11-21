@@ -141,12 +141,9 @@ final class AppState: ObservableObject {
     @Published var autoPauseQuiet: Bool = defaults.object(forKey: "autoPauseQuiet") as? Bool ?? true {
         didSet { Self.defaults.set(autoPauseQuiet, forKey: "autoPauseQuiet") }
     }
-    /// 설명할 때 화면 나누기 (WindowDock). 켤 때 손쉬운 사용 권한이 없으면 시스템 안내 창을 띄운다
-    @Published var splitScreen: Bool = defaults.object(forKey: "splitScreen") as? Bool ?? false {
-        didSet {
-            Self.defaults.set(splitScreen, forKey: "splitScreen")
-            if splitScreen { _ = WindowDock.trusted(ask: true) }
-        }
+    /// 설명해줘 화면 표시 방식 (MarkStyle). 바꾸면 떠 있는 표시도 바로 바뀐다
+    @Published var markStyle: String = defaults.string(forKey: "markStyle") ?? MarkStyle.fallback.rawValue {
+        didSet { Self.defaults.set(markStyle, forKey: "markStyle") }
     }
     @Published var askBeforeRecord: Bool = defaults.object(forKey: "askBeforeRecord") as? Bool ?? true {
         didSet { Self.defaults.set(askBeforeRecord, forKey: "askBeforeRecord") }
@@ -211,6 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let updater = Updater()               // 창을 닫았다 열어도 보던 화면이 남는다
     private var transcriber: Transcriber!
     private var explainer: Explainer!
+    private var styleSink: AnyCancellable?
     private var statusBar: StatusBar!
     private(set) var retx: Retranscriber!
     private var main: NSWindow?
@@ -222,6 +220,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Theme.apply(state.theme)
         AppDelegate.shared = self
+        // 팝업·설명 카드는 앱을 앞으로 가져오지 않는 창이라 눌러도 앞으로 나오지 않는다. 누른 창을 같은 층 맨 앞으로
+        NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { e in
+            if let w = e.window as? NSPanel { w.orderFrontRegardless() }
+            return e
+        }
         Notes.dir = state.notesDir
         GroqClient.guide = state.userGuide
         Notes.prune()
@@ -292,6 +295,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.state.choosing = true }        // 팝업이 뜬 뒤에
         }
         if let page = ProcessInfo.processInfo.environment["EZRITE_PREVIEW"] { showPreview(page) }   // 개발용
+        styleSink = state.$markStyle.sink { [weak self] s in
+            let style = MarkStyle(rawValue: s) ?? .fallback
+            MainActor.assumeIsolated { self?.explainer.style = style }
+        }
+        if let path = ProcessInfo.processInfo.environment["EZRITE_DEMO"] {                                // 개발용
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                MainActor.assumeIsolated { Task { await self?.explainer.demoScreen(URL(fileURLWithPath: path)) } }
+            }
+        }
         if let path = ProcessInfo.processInfo.environment["EZRITE_CARD"],                                // 개발용
            let data = FileManager.default.contents(atPath: path),
            let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -309,7 +321,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        MainActor.assumeIsolated { transcriber.stop(); WindowDock.shared.restore() }
+        MainActor.assumeIsolated { transcriber.stop() }
         // 녹음 조각을 하나로 합치는 중이면 끝날 때까지 기다린다 (2시간 녹음도 10초 안쪽). 못 기다려도 다음 실행 때 합친다
         Notes.AudioRecorder.waitForMerges()
     }
@@ -332,7 +344,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         state.explaining = true
         Task { @MainActor in
             await explainer.run(transcript: Array(recent), provider: state.explainProvider, model: state.explainModel,
-                                split: state.splitScreen, onNotice: { [weak self] in self?.state.notice = $0 })
+                                onNotice: { [weak self] in self?.state.notice = $0 })
             state.explaining = false
         }
     }

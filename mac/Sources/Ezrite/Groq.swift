@@ -329,6 +329,10 @@ extension GroqClient {
 
             Answer in Korean, clearly and thoroughly enough to actually resolve the question — explain the why, \
             and work through any formula or calculation step by step. Point at the screen lines your answer refers to.
+            Format the answer for reading: short paragraphs separated by \\n\\n; start each step's paragraph with a bold label \
+            like **1단계**; put the key idea in **bold**. Write every formula in LaTeX — inline as $...$, and each key \
+            equation or derivation line as its own paragraph $$...$$. In the JSON string escape every backslash (\\\\frac, \\\\int). \
+            Never write line ids or "N번 줄" in the answer — quote the words or formula instead.
             Return JSON only: {"answer":"Korean answer, paragraphs separated by \\n", \(marksShape),
             "visuals":[0 to 2 items]}
             \(visualsGuide(rich: rich))
@@ -353,8 +357,12 @@ extension GroqClient {
         "why it is true or needed, what it assumes, an intuition or small worked example, and the usual point of confusion. " +
         "Use your own words; the student already has the speech and the screen."
     static let visualsShape = #""summary":"3-5 Korean sentences: what it is, why it matters, and a simple example or intuition","visuals":[0 to 2 items],"scenes":[2 to 6 scenes]"#
+    /// 장면마다 짧은 꼬리표("tag")도 받는다. 화면에 글로 적는 표시 방식(말풍선·여백 메모·판서)을 골랐을 때만 켠다 (출력 토큰 절약)
+    nonisolated(unsafe) static var sceneTags = false
+    static let tagGuide = #" Also give each scene "tag": 2-4 Korean words — the point of this scene as a tutor's short margin note (e.g. "출발점", "넘어온 값 × 내 몫")."#
     /// 장면 대본: 설명을 짧은 영상처럼 순서대로 보여준다
-    static let scenesGuide = """
+    static var scenesGuide: String { scenesBase + (sceneTags ? tagGuide : "") }
+    static let scenesBase = """
         Scenes play like a short explainer video, in the order the lecturer explained it (follow the speech; with no \
         speech, follow the screen's logical order). Each scene: {"say":"1-2 Korean sentences that teach this step (meaning and reason, not just what is on screen, and not a sentence the lecturer already said)", \
         "focus":[screen line ids to highlight, 0-2], "arrow":{"from":line id,"to":line id} or null (connect two \
@@ -402,7 +410,7 @@ extension GroqClient {
         "(humanities, social science, science, engineering, arts)."
     /// Groq 모델에만 붙인다: qwen 은 줄 번호("5번 줄")를 그대로 말하고, 답 글에 LaTeX 를 써서 카드에 기호가 그대로 보인다
     static let groqRules = "\nLine ids are only for you to point at lines — never write ids or \"line N\" in any text the student reads. " +
-        "In text the student reads, write math in plain Unicode (δ, Σ, ², ᵀ, √, →); never LaTeX or $ (KaTeX only in a card \"formula\"). " +
+        "In text the student reads, write math in plain Unicode (δ, Σ, ², ᵀ, √, →); never LaTeX or $ (KaTeX only in a card \"formula\" and in a follow-up answer whose task asks for LaTeX). " +
         "Break long text into short paragraphs of 2-3 sentences separated by \\n\\n; put derivation steps on their own lines. " +
         // qwen 이 가끔 한국어 답에 한자(核 등)를 섞는다. 32번 시험에서는 재현되지 않았지만 예방으로 둔다
         "Write every student-facing text in Korean (Hangul) only. Never use Chinese characters or Japanese, not even for technical terms. " +
@@ -493,7 +501,7 @@ extension GroqClient {
     }
 
     /// 네 가지 그림 틀 (Groq 는 움직이는 그림을 쓰지 않는다). strict 모드는 모든 칸이 required 여야 해서, 빠질 수 있는 칸은 null 을 허용한다
-    static let visualsSchema: [String: Any] = {
+    static var visualsSchema: [String: Any] {
         func obj(_ props: [String: Any]) -> [String: Any] {
             ["type": "object", "additionalProperties": false, "required": Array(props.keys).sorted(), "properties": props]
         }
@@ -509,12 +517,14 @@ extension GroqClient {
         ]
         let int: [String: Any] = ["type": "integer"]
         let nullInt: [String: Any] = ["type": ["integer", "null"]]
-        let scene = obj(["say": str, "focus": ["type": "array", "items": int],
-                         "arrow": ["anyOf": [obj(["from": int, "to": int]), ["type": "null"]]],
-                         "visual": nullInt, "reveal": nullInt])
+        var sceneProps: [String: Any] = ["say": str, "focus": ["type": "array", "items": int],
+                                         "arrow": ["anyOf": [obj(["from": int, "to": int]), ["type": "null"]]],
+                                         "visual": nullInt, "reveal": nullInt]
+        if sceneTags { sceneProps["tag"] = str }
+        let scene = obj(sceneProps)
         return obj(["summary": str, "visuals": ["type": "array", "items": ["anyOf": items]],
                     "scenes": ["type": "array", "items": scene]])
-    }()
+    }
 
     /// 화면 위 표시: 강사가 지금 말하는 줄 번호를 고른다. 이미지가 막히면(한도) 글자만으로 고른다
     func explainMarks(jpeg: Data, lines: [Explain.Line], transcript: [String]) async throws -> Data {

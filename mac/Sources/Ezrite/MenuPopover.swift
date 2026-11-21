@@ -628,9 +628,7 @@ private struct SettingsPage: View {
                 ToggleCard(icon: "pause.circle", title: "조용하면 자동 일시정지",
                            detail: "말소리가 30초 동안 없으면 잠시 멈추고, 다시 들리면 같은 기록에 이어서 녹음합니다. 쉬는 동안은 녹음 파일에 넣지 않습니다.",
                            isOn: $state.autoPauseQuiet)
-                ToggleCard(icon: "rectangle.split.2x1", title: "설명할 때 화면 나누기",
-                           detail: "설명해줘를 누르면 보던 창을 왼쪽으로 줄이고 오른쪽에 설명 카드를 붙여 슬라이드를 가리지 않습니다. 카드를 닫으면 창이 원래대로 돌아옵니다. 손쉬운 사용 권한이 필요하고, 전체 화면 창은 그대로 둡니다.",
-                           isOn: $state.splitScreen)
+                MarkStyleCard(selection: $state.markStyle)
                 ToggleCard(icon: "slider.horizontal.3", title: "녹음할 때마다 묻기",
                            detail: "녹음 버튼을 누르면 소리 출처와 인식 언어를 먼저 고릅니다.",
                            isOn: $state.askBeforeRecord)
@@ -1011,6 +1009,39 @@ struct PickerRow: View {
             .fixedSize()
         }
     }
+}
+
+/// 설명해줘 화면 표시 방식 고르기. 묶음별 메뉴와 고른 방식의 한 줄 설명
+struct MarkStyleCard: View {
+    @Binding var selection: String
+
+    private var current: MarkStyle { MarkStyle(rawValue: selection) ?? .fallback }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "scribble.variable").font(.system(size: 14)).foregroundStyle(.blue)
+                .frame(width: 18).padding(.top, 1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("설명 표시 방식").font(.system(size: 13, weight: .semibold))
+                Text(current.detail).font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Picker("", selection: $selection) {
+                ForEach(Self.groups, id: \.self) { g in
+                    Section(g) {
+                        ForEach(MarkStyle.allCases.filter { $0.group == g }, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
+                    }
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+        }
+        .padding(12)
+        .background(CardBackground())
+    }
+
+    static let groups: [String] = MarkStyle.allCases.reduce(into: [String]()) { if !$0.contains($1.group) { $0.append($1.group) } }
 }
 
 struct ToggleCard: View {

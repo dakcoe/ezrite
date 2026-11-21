@@ -37,8 +37,11 @@ open -a "Ezrite"
 ## 설명해줘 (화면 위 표시 + 설명 카드)
 
 - 흐름: ScreenCaptureKit 스크린샷(우리 앱 창 제외) → Vision 글자 인식 → Groq 두 요청을 동시에 (`qwen3.8-27b` 이미지+글자로 짚을 줄 번호, `gpt-oss-120b` 글자로 요약·그림) → 투명 창에 ①②③, 설명 카드(WKWebView `Resources/web/explain.html`).
-- 화면 나누기(설정 토글, `Dock.swift`): 켜져 있으면 찍기 전에 그 화면의 모든 창을 손쉬운 사용 API 로 같은 비율(가로 s 배)로 왼쪽에 줄여 넣고 카드를 오른쪽 기둥에 붙인다. 픽셀을 누르는 공개 API 는 없어 창 자리·크기만 바꾼다. 줄인 뒤 찍어서 표시 자리가 맞는다. 카드를 닫거나 앱이 끝나면 원래 자리·크기로 돌린다. 전체 화면 창·권한 없음이면 예전처럼 떠 있는 카드.
+- 카드 자리: 창은 건드리지 않는다(창 너비만 줄이면 웹페이지 오른쪽이 잘려서 화면 나누기를 없앴다). 새로 뜬 카드는 글자를 읽은 뒤 화면 글자를 가장 적게 가리는 자리로 옮긴다(`ExplainCard.freeSpot`, 늘어날 높이 60% 기준, 같으면 오른쪽 위). 사용자가 끌어 옮기면 그 자리를 지킨다. 제목 막대 오른쪽 접기 버튼(`NSTitlebarAccessoryViewController`)은 지금 자막 두 줄만 남기고(explain.html `fold()`, `body.folded`), 펼치면 접기 전 높이로 돌린다. 새 설명이 오면 저절로 펼친다.
 - 움직이는 그림(anim) 배치: row·column·cycle·layers(층=열)·grid(cols 칸)·graph(자료 값 좌표의 곡선·점, set 으로 옮기면 미끄러진다).
+- 표시 방식(설정 "설명 표시 방식", `defaults` 키 `markStyle`, 기본 `trail`): `MarkStyle.swift` 가 13가지 목록·이름·설명. classic 만 예전 `MarksView.classic`(상자+번호+파란 경로)이고, 나머지는 `MarksRenderer.swift` 가 `TimelineView`+`Canvas` 로 그린다. 그리기가 끝나면(`settleTime`) 다시 그리기를 멈춘다. 카드(explain.html)도 같은 `style` 을 받아 목록 번호·색·지도·장면 목록을 바꾼다.
+- 카드 ↔ 화면 표시 연결: 카드의 `data-ref` 에 마우스를 올리면 `hover` 메시지로 그 표시만 진하게(spotlight·highlighter·corners·hover·leader·trail). leader 는 카드 글 위치(`anchors`)를 받아 선을 긋는다. 메모·말풍선 자리는 다른 글자 줄(`others`)과 이미 놓은 메모를 피해 고른다.
+- 장면 꼬리표(`tag`, 2~4단어): bubble·notes·pen 일 때만 AI 에게 요청한다(`GroqClient.sceneTags`). 없으면 자막 첫 마디로 대신한다.
 - AI 가 화면 좌표를 직접 말하게 하면 빗나간다. 글자 인식으로 찾은 줄 번호만 고르게 한다.
 - 그림 형식은 과목을 가리지 않는 steps · table · card(KaTeX) · mermaid · anim 다섯 가지. anim 은 물체(items)를 id 로 정의하고 단계(frames)마다 나타나기·강조·잇기·자리 바꾸기·글 바꾸기만 지시하는 움직이는 그림이다. 자리는 explain.html 이 layout(row·column·cycle)으로 계산한다 — AI 에게 좌표를 맡기지 않는다. mermaid·KaTeX 는 `Resources/web` 에 넣어 두어 인터넷 없이 그린다.
 
@@ -63,6 +66,7 @@ API 키를 키체인에 두지 않는 이유: 자체 서명 앱은 빌드마다 
 | `EZRITE_UPDATE_ZIP=<zip>` | `EZRITE_UPDATE_JSON` 과 함께. [업데이트] 가 이 zip 으로 바꿔 끼운다 (버전을 올려 같은 인증서로 다시 서명한 앱) |
 | `EZRITE_ASK=<질문>` | `EZRITE_EXPLAIN` 설명이 뜬 6초 뒤 질문 칸에 그 질문을 넣고 묻는다 |
 | `EZRITE_SCRIPT=pop@1;choose@3;source@5=Google Chrome;start@7;explain@40;stop@60` | 정해 둔 시각(초)에 팝업 열기·녹음 말풍선·소리 출처·시작·설명해줘·끝내기를 한다. 홍보 영상 녹화용(`promo/`). `EZRITE_TESTFILE` 소리를 흘려 넣고, 이때는 바로 시작하지 않는다 |
+| `EZRITE_DEMO=<json>` | AI 없이 지금 화면을 찍어 글자 인식만 하고, JSON(`{summary, marks, path, scenes}`)의 글자를 인식한 줄에 맞춰 표시 방식을 띄운다. `"scene": 3` 은 시작 장면, `"all"` 은 전체 보기. `open -a Ezrite --env EZRITE_DEMO=...` 로도 먹는다. 방식은 `defaults write com.dakcoe.ezrite markStyle -string pen` |
 | `EZRITE_SPEED=2` | 위 파일을 2배속으로 흘린다 |
 | `EZRITE_PREVIEW=mini\|live\|history\|record\|settings\|onboarding` | onboarding 은 처음 쓰는 사람 안내 창. record 는 가장 최근 기록을 연 화면. mini 는 메뉴바 팝업을 연다. 나머지는 전체 창을 그 탭으로 연다 |
 

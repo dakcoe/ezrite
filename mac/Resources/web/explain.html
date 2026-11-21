@@ -28,7 +28,11 @@
   .qa { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 4px; }
   .q { align-self: flex-end; background: var(--accent-soft); color: var(--fg); border-radius: 12px 12px 4px 12px;
        padding: 8px 11px; margin: 0 0 10px 40px; font-weight: 600; white-space: pre-wrap; }
-  .a { white-space: pre-line; margin: 0 0 8px; }
+  .a { margin: 0 0 8px; font-size: 15px; }
+  .a p { white-space: pre-line; margin: 0 0 11px; }
+  .a strong { font-weight: 700; }
+  .math.disp .katex-display { margin: 0; }
+  .math.disp { display: block; text-align: center; margin: 4px 0; overflow-x: auto; overflow-y: hidden; font-size: 1.12em; }
   #ask { display: none; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); background: var(--bg); }
   #ask.on { display: flex; }
   #ask textarea { flex: 1; resize: none; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px;
@@ -94,7 +98,23 @@
   .sdots button.on { background: var(--accent); width: 20px; border-radius: 5px; }
   .bar { height: 2px; background: var(--line); margin-top: 8px; border-radius: 1px; overflow: hidden; }
   .bar i { display: block; height: 100%; width: 0; background: var(--accent); }
+  /* 접기(제목 막대 버튼): 지금 자막 한 줄만. 재생기가 없으면 요약 첫 문장만 */
+  body.folded #chat, body.folded #ask, body.folded #root > :not(:first-child),
+  body.folded .player > :not(.say):not(.bar), body.folded .summary > :not(.lead) { display: none !important; }
+  body.folded .player { position: static; border: 0; margin: 0; padding: 0 0 8px; }
+  body.folded .say { height: 50px; min-height: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  body.folded .summary { margin: 0; }
   .hidden { display: none !important; }
+  /* 화면 표시 방식(style)에 맞춘 목록: 번호 대신 점·색 막대, 마우스를 올린 항목 */
+  .marks .dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); opacity: .6; margin: 9px 8px 0 6px; }
+  .marks .cbar { flex: none; width: 4px; align-self: stretch; border-radius: 2px; margin-right: 4px; }
+  body.hov [data-ref] { border-radius: 8px; transition: background .15s; }
+  body.hov [data-ref]:hover { background: var(--accent-soft); }
+  .chip.plain { background: none; color: var(--fg); border: 1.5px solid var(--line); }
+  .order-cap { font-size: 12.5px; color: var(--muted); margin: 2px 0 6px; }
+  .mm { position: relative; margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .mm img { display: block; width: 100%; height: auto; }
+  .mm svg { position: absolute; inset: 0; width: 100%; height: 100%; }
   .dim { opacity: .28; }
   /* 주고받기 그림: 설정값보다 그림 도구 기본 스타일이 우선해서 직접 정한다. 칸 글씨는 크게, 화살표 글씨는 그보다 작게 */
   .diagram svg text.actor, .diagram svg text.actor > tspan { font-size: 17px !important; font-weight: 600; }
@@ -157,13 +177,15 @@
   // 글 속 수식 \(…\) \[…\] $$…$$ $…$ 을 KaTeX 로 그린다. 프롬프트로 막아도 모델이 LaTeX 를 쓸 때가 있다.
   // 못 그리면 원래 글 그대로. 글은 텍스트 노드로만 넣는다 (innerHTML 아님)
   // 마지막 갈래: 기호 없이 쓴 LaTeX 덩어리 (Z^{(l)}=W^{(l)}a^{(l-1)}). 공백·한글 없는 덩어리에 ^{ _{ \명령 이 있을 때만
-  const MATH = /\\\((.+?)\\\)|\\\[(.+?)\\\]|\$\$(.+?)\$\$|\$([^$\n]*[\\^_{}][^$\n]*?)\$|([^\s가-힣$]*(?:[\^_]\{|\\[a-zA-Z]{2,})[^\s가-힣$]*)/gs;
+  const MATH = /\\\((.+?)\\\)|\\\[(.+?)\\\]|\$\$(.+?)\$\$|\$([^$\s](?:[^$\n]*[^$\s])?)\$|([^\s가-힣$]*(?:[\^_]\{|\\[a-zA-Z]{2,})[^\s가-힣$]*)/gs;
   const withMath = (e, text) => {
     let last = 0;
     for (const m of text.matchAll(MATH)) {
       e.append(document.createTextNode(text.slice(last, m.index)));
-      const tex = m[1] ?? m[2] ?? m[3] ?? m[4] ?? m[5], span = el("span", "math");
-      try { katex.render(tex, span, { displayMode: false, throwOnError: true }); } catch { span.textContent = m[0]; }
+      // $$…$$ \[…\] 는 따로 한 줄 가운데에 크게
+      const display = m[2] != null || m[3] != null;
+      const tex = fixCtl(m[1] ?? m[2] ?? m[3] ?? m[4] ?? m[5]), span = el("span", display ? "math disp" : "math");
+      try { katex.render(tex, span, { displayMode: display, throwOnError: true }); } catch { span.textContent = m[0]; }
       e.append(span);
       last = m.index + m[0].length;
     }
@@ -177,11 +199,11 @@
                                      return e; };
   // AI 가 JSON 에 "\times", "\frac" 를 역슬래시 하나로 쓰면 해석하면서 \t(탭) \f \b \r \n 제어 문자가 된다.
   // 수식에는 제어 문자가 올 일이 없으니 원래 명령으로 되돌린다
-  const fixTex = t => t.replace(/\t/g, "\\t").replace(/\f/g, "\\f").replace(/\x08/g, "\\b")
-                       .replace(/\r/g, "\\r").replace(/\n/g, "\\n");
+  const fixCtl = t => t.replace(/\t/g, "\\t").replace(/\f/g, "\\f").replace(/\x08/g, "\\b").replace(/\r/g, "\\r");
+  const fixTex = t => fixCtl(t).replace(/\n/g, "\\n");
   // 글에 "\n" 이 글자 그대로 들어오면 줄바꿈으로, "\u03b4" 처럼 한 번 더 감싼 글자는 원래 글자(δ)로
   const fixText = t => String(t).replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
-                                .replace(/\\n/g, "\n");
+                                .replace(/\\n(?![a-zA-Z])/g, "\n");   // \nabla \neq 같은 수식 명령은 그대로
   // 긴 글이 줄바꿈 없이 오면 세 문장마다 문단을 나눈다 (모델이 문단 지시를 안 지킬 때)
   // 문장 끝(. ? !) 뒤 빈칸에서 자른다. 0.5 처럼 숫자 사이 점은 빈칸이 없어 자르지 않는다 (lookbehind 없이 — Safari 16.4 전)
   const sentences = t => t.replace(/([.?!])\s+(?=\S)/g, "$1\u0000").split("\u0000").map(x => x.trim()).filter(Boolean);
@@ -219,12 +241,81 @@
     });
   }
 
+  // 화면 표시 방식 (MarkStyle rawValue). 목록 번호·색·마우스 반응·지도를 여기에 맞춘다
+  let style = "trail", lastD = null, curScene = 0;
+  const PALETTE = ["#7c5cff", "#0f9d8a", "#e5484d"];
+  const HOVER = ["spotlight", "highlighter", "corners", "hover", "leader", "trail"];
+  function setStyle(s) { style = s || "trail"; document.body.classList.toggle("hov", HOVER.includes(style)); }
+  // 짚은 곳 목록. numbered: 번호가 화면 번호와 짝일 때만 (예전 방식, 장면 없는 발자취)
+  function markList(marks, numbered) {
+    const ul = el("ul", "marks");
+    marks.forEach((m, i) => {
+      const li = el("li"); li.dataset.ref = li.dataset.anchor = "m" + i;
+      if (style === "colors") { const b = el("span", "cbar"); b.style.background = PALETTE[i % 3]; li.append(b); }
+      else if (numbered) li.append(el("span", "badge", String(i + 1)));
+      else li.append(el("span", "dot"));
+      const t = el("div"); t.append(withMath(el("div"), fixText(m.note || "")));
+      li.append(t); ul.append(li);
+    });
+    return ul;
+  }
+  // 카드 글의 세로 위치를 앱에 알린다 (선 긋기 방식). 보이는 항목만
+  function postAnchors() {
+    if (style !== "leader") return;
+    const out = {};
+    document.querySelectorAll("[data-anchor]").forEach(e => {
+      if (e.closest(".hidden")) return;
+      const r = e.getBoundingClientRect(); if (!r.height) return;
+      const y = r.top + Math.min(r.height / 2, 14);
+      if (y >= 0 && y <= innerHeight) out[e.dataset.anchor] = y;
+    });
+    post("anchors", out);
+  }
+  document.getElementById("scroll").addEventListener("scroll", () => requestAnimationFrame(postAnchors));
+  let hoverRef = "";
+  document.addEventListener("mouseover", e => {
+    const r = e.target.closest?.("[data-ref]")?.dataset.ref || "";
+    if (r !== hoverRef) { hoverRef = r; post("hover", r); }
+  });
+  document.documentElement.addEventListener("mouseleave", () => { if (hoverRef) { hoverRef = ""; post("hover", ""); } });
+  // 설정에서 방식을 바꾸면: 질문 대화가 없을 때만 같은 장면으로 다시 그린다
+  function restyle(s) {
+    setStyle(s);
+    if (lastD && !chat.children.length) { lastD.style = s; lastD.scene = curScene; render(lastD); }
+  }
+  // 카드 속 지도: 찍은 화면 위에 장면마다 짚은 줄(주황)·지난 화살표(회색)·번호
+  function drawMap(box, map, cur) {
+    if (!box || !map) return;
+    const svg = box.querySelector("svg"), W = 1000, H = 1000 / map.aspect;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("preserveAspectRatio", "none");
+    const R = b => ({ x: b[0] * W, y: b[1] * H, w: b[2] * W, h: b[3] * H });
+    const scs = map.scenes || [];
+    let out = "";
+    const arrow = (a, b, c, w) => {
+      const ax = a.x + a.w / 2, ay = a.y + a.h / 2, bx = b.x + b.w / 2, by = b.y + b.h / 2, t = Math.atan2(by - ay, bx - ax), h = 18;
+      return `<path d="M${ax} ${ay}L${bx} ${by}M${bx - h * Math.cos(t - .45)} ${by - h * Math.sin(t - .45)}L${bx} ${by}L${bx - h * Math.cos(t + .45)} ${by - h * Math.sin(t + .45)}" stroke="${c}" stroke-width="${w}" fill="none" stroke-linecap="round"/>`;
+    };
+    if (scs.length) {
+      scs.forEach((sc, k) => { if (sc.arrow) out += arrow(R(sc.arrow[0]), R(sc.arrow[1]), k === cur ? "#ff6b2c" : "#8e8e93", k === cur ? 7 : 4); });
+      scs.forEach((sc, k) => sc.focus.forEach(b => { const r = R(b);
+        out += `<rect x="${r.x - 6}" y="${r.y - 5}" width="${r.w + 12}" height="${r.h + 10}" rx="8" fill="${k === cur ? "rgba(255,107,44,.18)" : "none"}" stroke="${k === cur || cur < 0 ? "#ff6b2c" : "#8e8e93"}" stroke-width="${k === cur ? 6 : 3}"/>`;
+        out += `<circle cx="${r.x - 6}" cy="${r.y - 5}" r="20" fill="${k === cur || cur < 0 ? "#ff6b2c" : "#8e8e93"}"/><text x="${r.x - 6}" y="${r.y + 4}" text-anchor="middle" font-size="26" font-weight="700" fill="#fff">${k + 1}</text>`; }));
+    } else {
+      (map.marks || []).forEach((b, k) => { const r = R(b);
+        out += `<rect x="${r.x - 6}" y="${r.y - 5}" width="${r.w + 12}" height="${r.h + 10}" rx="8" fill="none" stroke="#ff6b2c" stroke-width="5"/>`; });
+    }
+    svg.innerHTML = out;
+  }
+
+  function fold(on) { document.body.classList.toggle("folded", on); requestAnimationFrame(reportHeight); }
+
   async function render(d) {
     try { await draw(d); } finally { requestAnimationFrame(reportHeight); }
   }
 
   async function draw(d) {
     stopPlayer();
+    if (!d.loading) { setStyle(d.style); lastD = d; }
     const root = document.getElementById("root");
     root.replaceChildren();
     chat.replaceChildren(); pendingQA = null; send.disabled = false;
@@ -233,27 +324,36 @@
     }
     if (d.error) { root.append(el("div", "error", d.error)); }
     if (d.summary) root.append(summaryBlock(fixText(d.summary)));
-    if (d.marks && d.marks.length) {
+    const hasScenes = !!(d.scenes && d.scenes.length);
+    if (d.marks && d.marks.length) root.append(markList(d.marks, style === "classic" || (style === "trail" && !hasScenes)));
+    // 발자취: 화면 번호 = 장면 번호. 다 본 뒤 목록도 장면 순서로 번호를 단다
+    if (style === "trail" && hasScenes) {
+      const box = el("div"); box.append(el("div", "order-cap", "설명 순서 — 번호는 화면의 번호와 같습니다"));
       const ul = el("ul", "marks");
-      d.marks.forEach((m, i) => {
-        const li = el("li"); li.append(el("span", "badge", String(i + 1)));
-        const t = el("div"); t.append(withMath(el("div"), fixText(m.note || "")));
-        li.append(t); ul.append(li);
-      });
-      root.append(ul);
+      d.scenes.forEach((sc, i) => { const li = el("li"); li.dataset.ref = "s" + i; li.append(el("span", "badge", String(i + 1)));
+                                    li.append(withMath(el("div"), fixText(sc.say))); ul.append(li); });
+      box.append(ul); root.append(box);
     }
-    if (d.path && d.path.steps && d.path.steps.length) {
+    if (d.path && d.path.steps && d.path.steps.length && !["trail", "minimap"].includes(style)) {
       const r = el("div", "route");
       r.append(el("div", null, d.path.note || "그림 속 순서"));
       const c = el("div", "chips");
-      d.path.steps.forEach((s, i) => { if (i) c.append(el("span", "arrow", "→")); c.append(el("span", "chip", (i + 1) + " " + s)); });
+      d.path.steps.forEach((s, i) => {
+        if (i) c.append(el("span", "arrow", "→"));
+        const chip = el("span", style === "classic" ? "chip" : "chip plain", style === "classic" ? (i + 1) + " " + s : s);
+        chip.dataset.ref = "p" + i; c.append(chip);
+      });
       r.append(c); root.append(r);
+    }
+    if (style === "minimap" && d.map && !hasScenes) {
+      const mm = el("div", "mm"); const img = el("img"); img.src = d.map.img;
+      mm.append(img, document.createElementNS("http://www.w3.org/2000/svg", "svg")); root.append(mm); drawMap(mm, d.map, -1);
     }
     const boxes = [];
     for (const v of d.visuals || []) { const box = await visual(v); boxes.push(box); root.append(box); }
     if (!d.loading) { document.getElementById("ask").classList.add("on"); }
     if (d.scenes && d.scenes.length) startPlayer(d, root, boxes);
-    else { post("scene", -1); boxes.forEach(b => b._anim?.play()); }
+    else { post("scene", -1); boxes.forEach(b => b._anim?.play()); requestAnimationFrame(postAnchors); }
   }
 
   const post = (name, v) => window.webkit?.messageHandlers?.[name]?.postMessage(v);
@@ -637,22 +737,37 @@
     qa.scrollIntoView({ block: "start", behavior: "smooth" });
     post("ask", text);
   }
+  const answerBlock = t => { const a = el("div", "a");
+                             paragraphs(fixText(t)).split(/\n{2,}/).forEach(p => a.append(rich("p", null, p.trim())));
+                             return a; };
+  // 카드 폭보다 넓은 블록 수식은 폭에 맞게 줄인다 (70% 까지, 그보다 넓으면 옆으로 밀어서 본다)
+  const fitMath = root => root.querySelectorAll(".math.disp").forEach(m => {
+    if (m.scrollWidth > m.clientWidth) m.style.fontSize = `${1.12 * Math.max(0.7, m.clientWidth / m.scrollWidth)}em`;
+  });
+  // 받는 중인 답 글: 올 때마다 통째로 다시 그린다. 다 받으면 answer() 가 바꿔 끼운다
+  function partial(t) {
+    const qa = pendingQA; if (!qa) return;
+    qa.querySelector(".loading")?.remove();
+    const a = answerBlock(t); a.classList.add("live");
+    const old = qa.querySelector(".a.live");
+    old ? old.replaceWith(a) : qa.append(a);
+    fitMath(a);
+  }
   async function answer(d) {
     const qa = pendingQA; if (!qa) return;
     qa.querySelector(".loading")?.remove();
+    qa.querySelector(".a.live")?.remove();
     if (d.error) qa.append(el("div", "error", d.error));
-    if (d.answer) qa.append(rich("p", "a", paragraphs(fixText(d.answer))));
+    if (d.answer) { const a = answerBlock(d.answer); qa.append(a); fitMath(a); }
     if (d.marks && d.marks.length) {
-      const ul = el("ul", "marks");
-      d.marks.forEach((m, i) => {
-        const li = el("li"); li.append(el("span", "badge", String(i + 1)));
-        const t = el("div"); t.append(withMath(el("div"), fixText(m.note || "")));
-        li.append(t); ul.append(li);
-      });
-      qa.append(ul);
+      // 화면 표시가 이 답의 짚은 곳으로 바뀌었다. 앞 목록의 마우스·선 기준(m0…)은 이 목록으로 옮긴다
+      document.querySelectorAll("[data-ref^=m],[data-anchor^=m]").forEach(e => { delete e.dataset.ref; delete e.dataset.anchor; });
+      if (d.style) setStyle(d.style);
+      qa.append(markList(d.marks, style === "classic" || style === "trail"));
     }
     for (const v of d.visuals || []) { const box = await visual(v); qa.append(box); box._anim?.play(); }
     pendingQA = null; send.disabled = false; q.focus();
+    requestAnimationFrame(postAnchors);
   }
   send.onclick = ask;
   // 입력이 길어지면 칸이 위로 커진다 (3.5줄까지, 그 뒤로는 칸 안에서 스크롤)
@@ -665,6 +780,9 @@
     requestAnimationFrame(reportHeight);
   }
   q.addEventListener("input", growInput);
+  // 입력칸을 직접 누르면 앱을 앞으로 가져온다. 카드는 포커스를 뺏지 않는 창이라, 그대로 치면 뒤의 브라우저도 키를 받아
+  // 유튜브가 f 마다 전체 화면을 오갔다. 답이 온 뒤의 q.focus() 는 누른 게 아니라서 부르지 않는다
+  q.addEventListener("pointerdown", () => post("typing", 1));
   q.addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); ask(); }   // 한글 조합 중 Enter 는 글자 확정
   });
@@ -678,6 +796,7 @@
     const extras = [...root.children].filter(c => !boxes.includes(c));      // 요약, 짚은 곳 목록, 오류
     const player = el("div", "player");
     const say = el("div", "say");
+    say.dataset.ref = say.dataset.anchor = "say";
     const ctrl = el("div", "ctrl");
     const prev = el("button", null, "‹"), play = el("button", null, "⏸"), next = el("button", null, "›");
     const dots = el("div", "sdots");
@@ -687,6 +806,12 @@
     const dotEls = scenes.map((_, i) => { const b = el("button"); b.onclick = () => { playing = false; show(i); }; dots.append(b); return b; });
     ctrl.append(prev, play, dots, next, all);
     player.append(say, ctrl, bar);
+    let mm = null;
+    if (style === "minimap" && d.map) {
+      mm = el("div", "mm"); const img = el("img"); img.src = d.map.img;
+      mm.append(img, document.createElementNS("http://www.w3.org/2000/svg", "svg")); player.append(mm);
+      img.onload = () => requestAnimationFrame(reportHeight);
+    }
     root.prepend(player);
     let cur = 0, playing = true, swap = null;
 
@@ -713,9 +838,13 @@
       say.classList.add("fade");
       const text = fixText(scenes[cur].say), n = String(cur + 1);
       swap = setTimeout(() => {
-        say.replaceChildren(el("span", "n", n)); withMath(say, text);
+        const badge = el("span", "n", n);
+        if (style === "colors") { const k = scenes[cur].mark; badge.style.background = k >= 0 ? PALETTE[k % 3] : "var(--muted)"; }
+        say.replaceChildren(badge); withMath(say, text);
         say.classList.remove("fade");
+        requestAnimationFrame(postAnchors);
       }, 250);
+      curScene = cur; drawMap(mm, d.map, cur);
       dotEls.forEach((b, k) => b.classList.toggle("on", k === cur));
       prev.disabled = cur === 0; next.disabled = false;
       play.textContent = playing ? "⏸" : "▶";
@@ -740,14 +869,16 @@
       extras.forEach(e => e.classList.remove("hidden"));
       fill.style.width = "100%";
       cur = scenes.length;
+      curScene = cur; drawMap(mm, d.map, -1);
       post("scene", -1);
+      requestAnimationFrame(postAnchors);
       requestAnimationFrame(reportHeight);
     }
     prev.onclick = () => { playing = false; show(cur - 1); };
     next.onclick = () => { playing = false; cur + 1 < scenes.length ? show(cur + 1) : showAll(); };
     play.onclick = () => { playing = !playing; cur >= scenes.length ? (playing = true, show(0)) : show(cur); };
     all.onclick = showAll;
-    show(Number(d.scene) || 0);           // d.scene: 개발용 — 그 장면부터 (스크린샷 확인)
+    d.scene === "all" ? showAll() : show(Number(d.scene) || 0);   // d.scene: 개발용 — 그 장면부터 (스크린샷 확인)
   }
 </script>
 </body>

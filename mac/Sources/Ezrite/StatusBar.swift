@@ -21,8 +21,9 @@ final class StatusBar: NSObject {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        // 메뉴바 층(.statusBar)은 전체 화면에서 메뉴바와 함께 숨는다. 화면 표시(floating+3)·설명 카드(floating+4) 아래
-        panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 2)
+        // 메뉴바 층(.statusBar)은 전체 화면에서 메뉴바와 함께 숨는다. 설명 카드와 같은 층(floating+4):
+        // 둘이 겹치면 누른 쪽이 앞에 온다 (AppDelegate 의 클릭 감시)
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 4)
         // 열 때마다 지금 보는 화면(전체 화면 영상 포함)으로 데려온다. 창이 있는 데스크톱으로 화면이 넘어가지 않게 한다
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         panel.hidesOnDeactivate = false
