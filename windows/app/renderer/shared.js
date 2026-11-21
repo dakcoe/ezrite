@@ -152,8 +152,15 @@
     el.append(bannerBox, empty, list);
     let shownError;
     let rows = new Map(); // id → { el, translation }
-    let follow = true; // 맨 아래를 보고 있나 (위로 올려 읽는 중이면 따라가지 않는다)
-    list.addEventListener('scroll', () => { follow = F.atBottom(list); });
+    // 새 줄을 따라 내려갈지 (1.3.0 맥 BottomWatch.following). 맨 아래 닿으면 켜고, 사용자가 위로 올렸을 때만 끈다.
+    // 스크롤마다 맨 아래인지로 정하면 줄이 길어져 밀려날 때도 꺼져서 다시 켜지지 않았다
+    let follow = true;
+    let lastTop = 0;
+    list.addEventListener('scroll', () => {
+      if (F.atBottom(list)) follow = true;
+      else if (list.scrollTop < lastTop - 1) follow = false;
+      lastTop = list.scrollTop;
+    });
 
     function update(s) {
       if (s.error !== shownError) {

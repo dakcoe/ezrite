@@ -1,6 +1,6 @@
 {
   "body" : {
-    "max_completion_tokens" : 3000,
+    "max_completion_tokens" : 8000,
     "messages" : [
       {
         "content" : [

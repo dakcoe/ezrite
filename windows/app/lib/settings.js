@@ -6,6 +6,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { PROVIDERS, FEATURES } = require('./ai');
+const MarkStyle = require('./markstyle');
 
 const LANGUAGES = ['한국어', 'English', '日本語'];
 const THEMES = ['system', 'light', 'dark']; // 화면 테마 (설정 → 옵션)
@@ -53,8 +54,9 @@ const DEFAULTS = Object.freeze({
   theme: 'system',
   welcomed: false, // 처음 한 번 팝업과 사용 가이드를 보여줬나 (맥 welcomed)
   // autoPauseQuiet: 말소리가 30초 없으면 녹음을 저절로 쉬고, 다시 들리면 이어 간다 (1.1.5, 맥 autoPauseQuiet)
-  // splitScreen: 설명할 때 화면 나누기 — 보던 창을 왼쪽으로 줄이고 카드를 오른쪽에 붙인다 (1.2.1, 맥 splitScreen, 기본 꺼짐)
-  options: Object.freeze({ autoTranslate: true, askBeforeRecord: true, includeMic: false, autoPauseQuiet: true, splitScreen: false }),
+  // 설명할 때 화면 나누기(1.2.1 splitScreen)는 1.3.0 에서 없앴다 (맥과 같다). 예전 설정 파일의 값은 읽지 않는다
+  options: Object.freeze({ autoTranslate: true, askBeforeRecord: true, includeMic: false, autoPauseQuiet: true }),
+  markStyle: MarkStyle.FALLBACK, // 설명 표시 방식 (1.3.0, 맥 markStyle). 모르는 값이면 발자취
   ai: AI_DEFAULTS,
 });
 
@@ -78,6 +80,7 @@ function load(file) {
     theme: theme(raw.theme),
     welcomed: raw.welcomed === true,
     options,
+    markStyle: MarkStyle.normalize(raw.markStyle),
     ai: ai(raw.ai),
   };
 }
@@ -91,7 +94,8 @@ function save(file, settings) {
     userGuide: guide(settings.userGuide),
     theme: theme(settings.theme),
     welcomed: settings.welcomed === true,
-    options: { ...DEFAULTS.options, ...settings.options },
+    options: Object.fromEntries(Object.keys(DEFAULTS.options).map((k) => [k, settings.options?.[k] ?? DEFAULTS.options[k]])),
+    markStyle: MarkStyle.normalize(settings.markStyle),
     ai: ai(settings.ai),
   };
   fs.mkdirSync(path.dirname(file), { recursive: true });

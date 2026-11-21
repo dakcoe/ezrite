@@ -154,7 +154,7 @@ const BUILD = {
   }),
   'ask-retry-nothink': (p, model) => AI.request(p, {
     model, key: KEY, prompt: G.questionPrompt('H 가 왜 필요해?', [], '커널 행렬을 중심화합니다.', LINES, TRANSCRIPT, '', true),
-    image: SLIDE, json: true, maxTokens: AI.EXPLAIN_MAX_TOKENS, think: false,
+    image: SLIDE, json: true, maxTokens: AI.EXPLAIN_MAX_TOKENS, think: false, stream: true, // 1.3.0 카드 질문은 받는 대로
   }),
   check: (p, model) => AI.checkRequest(p, model, KEY),
 };

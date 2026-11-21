@@ -96,8 +96,10 @@ async function enterKey(wc, inputSel, saveSel, p, value) {
   const btn = await center(wc, saveSel, '저장');
   if (!btn) return { ok: false, why: '저장 단추 없음' };
   await click(wc, btn);
-  await wait(400);
-  const saved = fs.existsSync(keyFile(p)) && fs.readFileSync(keyFile(p), 'utf8') === value;
+  // 키 파일은 main 이 저장한다. 시험을 여러 개 같이 돌려 느릴 때는 400ms 로 모자라 5초까지 기다린다
+  const done = () => fs.existsSync(keyFile(p)) && fs.readFileSync(keyFile(p), 'utf8') === value;
+  for (let i = 0; i < 50 && !done(); i++) await wait(100);
+  const saved = done();
   const left = await wc.executeJavaScript(`[...document.querySelectorAll(${JSON.stringify(inputSel)})][0]?.value ?? ''`);
   return { ok: at.disabled === false && focused && btn.disabled === false && saved && left === '', disabled: at.disabled, focused, saveEnabled: !btn.disabled, saved, fieldCleared: left === '' };
 }

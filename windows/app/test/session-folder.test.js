@@ -177,7 +177,8 @@ test('30일 정리: 예전 형식도 지우고, 최근 기록·다른 폴더는 
   file(path.join(d, '2026-01-02_10-00-00.txt'), { daysOld: 40 }); // 예전 형식도 지운다
   const keep = file(path.join(d, NAME, `${NAME}.txt`));
   file(path.join(d, '사진', 'a.txt'), { daysOld: 40 });
-  N.prune(d, { autoDelete: true, now: Date.now() });
+  // 지금은 NAME 기록 다음 날로 고정한다 (실제 오늘로 두면 그 기록도 30일이 지나 시험이 날짜에 따라 깨진다)
+  N.prune(d, { autoDelete: true, now: AT.getTime() + 86400_000 });
   // 시각은 이름이 아니라 시작 시각으로 본다 — 2026-01 기록은 30일이 지났다
   assert.deepEqual(names(d), [NAME, '사진'].sort());
   assert.ok(fs.existsSync(keep));

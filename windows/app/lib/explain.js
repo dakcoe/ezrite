@@ -12,6 +12,7 @@
 
 const Hallucination = require('./hallucination');
 const { graphemes } = require('./text');
+const MarkStyle = require('./markstyle');
 
 const MAX_SCENES = 6;
 const MAX_MARKS = 3;
@@ -314,17 +315,81 @@ function scenes(data, lines, visualCount) {
     const visual = v != null && v >= 0 && v < visualCount ? v : null;
     const rv = int(r.reveal);
     const reveal = visual == null ? null : rv != null && rv > 0 ? rv : null;
-    out.push({ say, focus: focus.slice(0, MAX_MARKS), arrow, visual, reveal });
+    // 화면에 글로 적는 표시 방식용 짧은 꼬리표 (1.3.0, 맥 Scene.tag). 비면 null
+    const tag = typeof r.tag === 'string' && r.tag.trim() ? r.tag.trim() : null;
+    out.push({ say, focus: focus.slice(0, MAX_MARKS), arrow, visual, reveal, tag });
     if (out.length === MAX_SCENES) break;
   }
   return out;
+}
+
+/** 꼬리표가 없으면 자막의 첫 마디(쉼표·마침표 앞)를 14자까지 (맥 Scene.shortTag) */
+function shortTag(scene) {
+  if (scene.tag?.trim()) return scene.tag.trim();
+  const head = scene.say.split(/[,.!?—·:]/).find((x) => x.length) ?? scene.say;
+  const t = [...head.trim()];
+  return t.length > 14 ? `${t.slice(0, 13).join('')}…` : t.join('');
 }
 
 /** 질문에 대한 답 본문 */
 function answer(data) {
   const a = obj(data)?.answer;
   if (typeof a !== 'string' || !a.trim()) return null;
-  return a.trim().replace(/\\n/g, '\n');
+  return cleanAnswer(a.trim());
+}
+
+/** 글자 그대로 온 "\n" 은 줄바꿈으로. 뒤에 영문자가 오면 수식 명령(\nabla, \neq)이라 그대로 둔다 (1.3.0 맥 cleanAnswer) */
+const cleanAnswer = (a) => String(a).replace(/\\n(?![a-zA-Z])/g, '\n');
+
+/**
+ * "answer" 문자열이 닫는 따옴표까지 다 왔을 때만 그 글 (뒤쪽 JSON 이 깨졌거나 잘려도, 1.3.0 맥 closedAnswer).
+ * 생각 끄고 다시 물어도 JSON 이 깨지면 이 글로 끝낸다
+ */
+function closedAnswer(json) {
+  if (!/"answer"\s*:\s*"(?:[^"\\]|\\.)*"/.test(String(json))) return null;
+  return partialAnswer(json);
+}
+
+/**
+ * 아직 다 오지 않은 JSON 에서 "answer" 글을 지금까지 온 만큼만 꺼낸다 (글자가 오는 대로 보여 주려고, 1.3.0 맥 partialAnswer).
+ * 끝이 반쯤 온 이스케이프(\, \u00)면 그 앞까지
+ */
+function partialAnswer(json) {
+  const s = String(json);
+  const k = /"answer"\s*:\s*"/.exec(s);
+  if (!k) return null;
+  const c = [...s.slice(k.index + k[0].length)];
+  let out = '';
+  let i = 0;
+  loop: while (i < c.length) {
+    const ch = c[i];
+    if (ch === '"') break;
+    if (ch !== '\\') { out += ch; i += 1; continue; }
+    if (i + 1 >= c.length) break;
+    const e = c[i + 1];
+    // lenientJSON 과 같은 기준: 뒤에 영문자가 이어지는 \n \f \t … 는 수식 명령(\nabla, \frac)을 역슬래시 하나로 쓴 것
+    const cmd = i + 2 < c.length && /^[A-Za-z]$/.test(c[i + 2]);
+    switch (true) {
+      case e === '"' || e === '\\' || e === '/': out += e; break;
+      case e === 'n' && !cmd: out += '\n'; break;
+      case e === 't' && !cmd: out += '\t'; break;
+      case e === 'r' && !cmd: out += '\r'; break;
+      case e === 'b' && !cmd: out += '\b'; break;
+      case e === 'f' && !cmd: out += '\f'; break;
+      case e === 'u': {
+        if (i + 5 >= c.length) break loop;
+        const v = parseInt(c.slice(i + 2, i + 6).join(''), 16);
+        // 서로게이트 짝(이모지 등)은 버린다 (맥과 같다). 답 글에 거의 안 나온다
+        if (Number.isInteger(v) && (v < 0xd800 || v > 0xdfff)) out += String.fromCodePoint(v);
+        i += 6;
+        continue loop;
+      }
+      default: out += `\\${e}`; // 잘못된 이스케이프(\le, \int)는 글자 그대로
+    }
+    i += 2;
+  }
+  const a = cleanAnswer(out).trim();
+  return a ? a : null;
 }
 
 const strings = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string');
@@ -457,10 +522,11 @@ const hasContent = (model) => allLines(model).length > 0;
  * 설명 결과 → 카드 내용(payload), 화면 표시(model, 그릴 것이 없으면 null), 질문 때 줄 앞의 설명(explanation).
  * visualsResult: { data } 또는 { error } (그림 설명이 실패해도 표시는 보여준다)
  */
-function presentation(marksData, visualsResult, lines) {
+function presentation(marksData, visualsResult, lines, { style } = {}) {
+  const st = MarkStyle.normalize(style);
   const ms = marksData != null ? marks(marksData, lines) : [];
   const p = marksData != null ? path(marksData, lines) : null;
-  const payload = { marks: cardMarks(ms) };
+  const payload = { style: st, marks: cardMarks(ms) };
   if (p) payload.path = { note: p.note, steps: p.steps.map((l) => l.text) };
   let sc = [];
   let explanation = '';
@@ -470,24 +536,77 @@ function presentation(marksData, visualsResult, lines) {
     explanation = v.summary;
     payload.visuals = v.visuals;
     sc = scenes(visualsResult.data, lines, v.visuals.length);
-    payload.scenes = sc.map((s) => ({ say: s.say, ...(s.visual != null ? { visual: s.visual } : {}), ...(s.reveal != null ? { reveal: s.reveal } : {}) }));
+    // mark: 장면의 첫 focus 중 짚은 곳 목록에 있는 줄의 순번 (색으로 짝 맞추기), 없으면 -1
+    const markOf = (s) => {
+      for (const l of s.focus) {
+        const i = ms.findIndex((m) => m.line.id === l.id);
+        if (i >= 0) return i;
+      }
+      return -1;
+    };
+    payload.scenes = sc.map((s) => ({
+      say: s.say, ...(s.visual != null ? { visual: s.visual } : {}), ...(s.reveal != null ? { reveal: s.reveal } : {}), mark: markOf(s),
+    }));
   } else {
     payload.error = `그림 설명을 만들지 못했습니다: ${visualsResult?.error?.message ?? visualsResult?.error ?? ''}`;
   }
-  const model = { marks: ms, path: p, scenes: sc, scene: sc.length ? 0 : null, missing: [] };
+  const model = { marks: ms, path: p, scenes: sc, scene: sc.length ? 0 : null, missing: [], style: st };
   return { payload, model: hasContent(model) ? model : null, explanation };
 }
 
 /** 질문의 답 → 카드에 붙일 답과 그 답이 짚은 곳. 답 글을 못 읽으면 null */
-function answerPresentation(data, lines) {
+function answerPresentation(data, lines, { style } = {}) {
   const text = answer(data);
   if (text == null) return null;
+  const st = MarkStyle.normalize(style);
   const ms = marks(data, lines);
-  const model = { marks: ms, path: path(data, lines), scenes: [], scene: null, missing: [] };
+  const model = { marks: ms, path: path(data, lines), scenes: [], scene: null, missing: [], style: st };
   return {
     text,
-    payload: { answer: text, marks: cardMarks(ms), visuals: visuals(data).visuals },
+    payload: { answer: text, marks: cardMarks(ms), visuals: visuals(data).visuals, style: st },
     model: hasContent(model) ? model : null,
+  };
+}
+
+// --- 설명 표시 방식 (1.3.0, 맥 MarksRenderer · explain.html 지도) ---
+
+const boxArr = (b) => [b.x, b.y, b.w, b.h];
+
+/** 카드 속 지도: 찍은 화면(img, 가로/세로 aspect) 위에 장면마다 짚은 줄·화살표, 장면이 없으면 짚은 곳 (화면 비율 [x, y, w, h]) */
+function mapPayload(model, img, aspect) {
+  return {
+    img, aspect,
+    scenes: (model.scenes ?? []).map((s) => ({
+      focus: s.focus.map((l) => boxArr(l.box)), arrow: s.arrow ? [boxArr(s.arrow.from.box), boxArr(s.arrow.to.box)] : null,
+    })),
+    marks: (model.marks ?? []).map((m) => boxArr(m.line.box)),
+  };
+}
+
+const pxBox = (b, size) => ({ x: b.x * size.width, y: b.y * size.height, w: b.w * size.width, h: b.h * size.height });
+
+/**
+ * 표시 창(marks.js)에 넘길 자료. R = 글자 상자를 조금 넓힌 상자, Q = 글자 상자 그대로 (표시 창 좌표, 화면 밖으로 나간 줄은 뺀다).
+ * 장면·짚은 곳·경로는 줄 번호로. hover: 카드에서 마우스를 올린 항목("m0"·"s2"·"p1"·"say"), anchors: 카드 글의 화면 자리,
+ * others: 화면의 다른 글자 상자 (말풍선·메모를 놓을 빈 자리 찾기)
+ */
+function markData(model, size) {
+  const hide = new Set(model.missing ?? []);
+  const live = allLines(model).filter((l) => !hide.has(l.id));
+  const R = {};
+  for (const [id, r] of layout(live, size)) R[id] = r;
+  const Q = {};
+  for (const l of live) Q[l.id] = pxBox(l.box, size);
+  return {
+    style: MarkStyle.normalize(model.style),
+    R, Q,
+    scene: model.scene ?? null,
+    scenes: (model.scenes ?? []).map((s) => ({ focus: s.focus.map((l) => l.id), arrow: s.arrow ? [s.arrow.from.id, s.arrow.to.id] : null, tag: shortTag(s) })),
+    marks: (model.marks ?? []).map((m) => m.line.id),
+    path: model.path?.steps.map((l) => l.id) ?? [],
+    hover: model.hover || null,
+    anchors: model.anchors ?? {},
+    others: (model.others ?? []).map((b) => pxBox(b, size)),
   };
 }
 
@@ -519,19 +638,45 @@ function cardAsked(frame, work) {
   return withHeight(frame, work.height * CARD.max, work);
 }
 
-/** 화면 나누기 (1.2.1, 맥 WindowDock.cardFrame): 작업 영역 오른쪽 기둥 (폭 440, 높이 전체) */
-const DOCK = { width: 440, min: 300 };
+/**
+ * 카드가 화면 글자를 가리는 넓이가 가장 작은 자리 (카드 왼쪽 위, 1.3.0 맥 ExplainCard.freeSpot — 화면 나누기 대신).
+ * 카드는 내용이 오면 위 가장자리를 고정한 채 아래로 늘어나므로, 늘어난 높이(작업 영역의 60%)로 가린 넓이를 잰다.
+ * 후보는 위에 붙임·아래에 붙임 × 오른쪽부터 왼쪽으로 20 간격 (여백 20). 같으면 오른쪽 위
+ */
+function freeSpot(text, visible, card) {
+  const w = card.width;
+  const grown = Math.max(card.height, visible.height * 0.6);
+  const m = 20;
+  let best = { x: visible.x + visible.width - w - m, y: visible.y + m };
+  let least = Infinity;
+  for (const top of [visible.y + m, visible.y + visible.height - m - grown]) {
+    for (let x = visible.x + visible.width - w - m; x >= visible.x + m; x -= 20) {
+      let hidden = 0;
+      for (const t of text) {
+        const iw = Math.min(x + w, t.x + t.width) - Math.max(x, t.x);
+        const ih = Math.min(top + grown, t.y + t.height) - Math.max(top, t.y);
+        if (iw > 0 && ih > 0) hidden += iw * ih;
+      }
+      if (hidden < least - 1) {
+        least = hidden;
+        best = { x, y: top };
+      }
+    }
+  }
+  return best;
+}
 
-/** 녹음 팝업(avoid)과 겹치면 팝업 위·아래 중 넓은 쪽만 쓴다 (300 은 지킨다) */
-function dockFrame(work, avoid) {
-  const f = { x: work.x + work.width - DOCK.width, y: work.y, width: DOCK.width, height: work.height };
-  if (!avoid || !overlaps(f, avoid)) return f;
-  const bottom = work.y + work.height;
-  const above = avoid.y - 8 - work.y;
-  const below = bottom - (avoid.y + avoid.height + 8);
-  if (above >= below) return { ...f, height: Math.max(DOCK.min, above) };
-  const height = Math.max(DOCK.min, below);
-  return { ...f, y: bottom - height, height };
+/** 녹음 팝업(popup)은 글자 여러 줄만큼(20번) 무겁게 피한다 (맥 place(avoiding:)) */
+function cardSpot(text, visible, card, popup) {
+  return freeSpot(popup ? [...text, ...Array(20).fill(popup)] : text, visible, card);
+}
+
+/** 글자 줄(화면 비율) → 화면 좌표 상자 (display: 그 화면의 bounds) */
+function screenBoxes(lines, display) {
+  return lines.map((l) => ({
+    x: display.x + l.box.x * display.width, y: display.y + l.box.y * display.height,
+    width: l.box.w * display.width, height: l.box.h * display.height,
+  }));
 }
 
 /** AI 에 보낼 사진 크기: 폭이 maxWidth 를 넘을 때만 줄인다 */
@@ -561,7 +706,7 @@ module.exports = {
   OCR_KO_HINT, needsKoreanOcrHint,
   MAX_SCENES, MAX_MARKS, MAX_PATH_STEPS, MAX_VISUALS, THUMB, CHANGE_LIMIT,
   linesFromOcr, thumbnail, changed, intersects, padded, similarity, sameLine, relocate,
-  dropLineRefs, lenientJSON, marks, path, scenes, answer, visuals, pulledIn,
-  layout, edge, shapes, allLines, moveModel,
-  presentation, answerPresentation, CARD, cardFrame, cardFit, cardAsked, DOCK, dockFrame, scaledSize,
+  dropLineRefs, lenientJSON, marks, path, scenes, shortTag, answer, cleanAnswer, closedAnswer, partialAnswer, visuals, pulledIn,
+  layout, edge, shapes, allLines, moveModel, mapPayload, markData,
+  presentation, answerPresentation, CARD, cardFrame, withHeight, cardFit, cardAsked, freeSpot, cardSpot, screenBoxes, scaledSize,
 };

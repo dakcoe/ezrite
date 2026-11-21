@@ -26,7 +26,7 @@ test('EZRITE_PREVIEW·EZRITE_THEME·EZRITE_SHOT을 읽는다', () => {
   });
 });
 
-test('EZRITE_DOCK_ONLY: 화면 나누기 시험에서 줄일 창의 pid 들 (쉼표로). 숫자가 아니면 버린다', () => {
+test('EZRITE_DOCK_ONLY: 가상 데스크톱 시험에서 기준으로 삼을 창의 pid 들 (쉼표로). 숫자가 아니면 버린다', () => {
   assert.deepEqual(parseDevEnv({ EZRITE_DOCK_ONLY: '123, 456' }).dockOnly, [123, 456]);
   assert.deepEqual(parseDevEnv({ EZRITE_DOCK_ONLY: '7,abc,-1,0' }).dockOnly, [7]);
   assert.equal(parseDevEnv({ EZRITE_DOCK_ONLY: 'abc' }).dockOnly, null);

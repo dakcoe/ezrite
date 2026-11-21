@@ -380,7 +380,9 @@ test('[mac present] 표시·경로·요약·그림·장면을 카드 내용으�
   assert.deepEqual(p.payload.path, { note: '순서', steps: ['Pareto 효율성', 'MRS_A = MRS_B'] });
   assert.equal(p.payload.summary, '요약');
   assert.equal(p.payload.visuals.length, 1);
-  assert.deepEqual(p.payload.scenes, [{ say: '첫 장면', visual: 0, reveal: 1 }, { say: '둘째' }]);
+  // mark: 장면이 짚은 줄의 짚은 곳 순번 (1.3.0 색으로 짝 맞추기) — 9 번 줄은 짚은 곳 목록에 없어서 -1
+  assert.deepEqual(p.payload.scenes, [{ say: '첫 장면', visual: 0, reveal: 1, mark: -1 }, { say: '둘째', mark: -1 }]);
+  assert.equal(p.payload.style, 'trail');
   assert.equal(p.explanation, '요약');
   assert.equal(p.model.scene, 0);
   assert.deepEqual(E.allLines(p.model).map((l) => l.id), [7, 9]);
@@ -398,7 +400,8 @@ test('[mac ask] 답 글이 있으면 답·짚은 곳·그림, 화면 표시는 �
   const data = '{"answer":"한계대체율이에요\\n둘째 문단","marks":[{"id":9,"note":"조건"}],"visuals":[]}';
   const a = E.answerPresentation(data, lines);
   assert.equal(a.text, '한계대체율이에요\n둘째 문단');
-  assert.deepEqual(a.payload, { answer: a.text, marks: [{ note: '조건', text: 'MRS_A = MRS_B' }], visuals: [] });
+  assert.deepEqual(a.payload, { answer: a.text, marks: [{ note: '조건', text: 'MRS_A = MRS_B' }], visuals: [], style: 'trail' });
+  assert.equal(E.answerPresentation(data, lines, { style: 'pen' }).payload.style, 'pen');
   assert.equal(a.model.scene, null);
   assert.deepEqual(E.allLines(a.model).map((l) => l.id), [9]);
   assert.equal(E.answerPresentation('{"marks":[]}', lines), null);
@@ -468,18 +471,4 @@ test('[mac ExplainTests] 움직이는_그림은_물체와_단계가_있어야_�
   assert.equal(E.visuals(ok).visuals.length, 1);
   assert.equal(E.visuals(empty).visuals.length, 0);
   assert.equal(E.visuals(broken).visuals.length, 0);
-});
-
-test('1.2.1 화면 나누기: 카드는 작업 영역 오른쪽 기둥(폭 440, 높이 전체). 녹음 팝업과 겹치면 위·아래 중 넓은 쪽', () => {
-  const work = { x: 0, y: 0, width: 1920, height: 1040 };
-  assert.deepEqual(E.dockFrame(work, null), { x: 1480, y: 0, width: 440, height: 1040 });
-  assert.deepEqual(E.dockFrame(work, { x: 0, y: 0, width: 300, height: 200 }), { x: 1480, y: 0, width: 440, height: 1040 }, '안 겹치면 그대로');
-  // 팝업이 오른쪽 아래 (Windows 기본 자리): 그 위로
-  assert.deepEqual(E.dockFrame(work, { x: 1560, y: 760, width: 340, height: 260 }), { x: 1480, y: 0, width: 440, height: 752 });
-  // 팝업이 오른쪽 위: 그 아래로
-  assert.deepEqual(E.dockFrame(work, { x: 1560, y: 20, width: 340, height: 260 }), { x: 1480, y: 288, width: 440, height: 752 });
-  // 남는 자리가 300 보다 작으면 300 은 지킨다 (팝업과 조금 겹쳐도)
-  assert.equal(E.dockFrame({ x: 0, y: 0, width: 1280, height: 600 }, { x: 900, y: 0, width: 340, height: 500 }).height, 300);
-  // 두 번째 화면(음수 좌표)
-  assert.deepEqual(E.dockFrame({ x: -1280, y: 100, width: 1280, height: 984 }, null), { x: -440, y: 100, width: 440, height: 984 });
 });

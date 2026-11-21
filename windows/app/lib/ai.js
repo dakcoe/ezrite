@@ -29,13 +29,15 @@ const MODELS_URL = Object.freeze({
   gemini: 'https://generativelanguage.googleapis.com/v1beta/openai/models',
 });
 
-// 맥과 같은 값: 번역 2000, 설명·질문 3000, 키 확인 16
+// 맥과 같은 값: 번역 2000, 설명·질문 8000 (1.3.0, 전엔 3000 — 긴 답이 잘려 JSON 이 깨졌다), 키 확인 16
 const TRANSLATE_MAX_TOKENS = 2000;
-const EXPLAIN_MAX_TOKENS = 3000;
+const EXPLAIN_MAX_TOKENS = 8000;
 const CHECK_MAX_TOKENS = 16;
 // 전체 시간으로 끊는다 (연결만 붙들고 답을 안 주는 모델이 있다 — Gemini 무료 등급 일부)
 const REQUEST_MS = 60_000;
 const CHECK_MS = 15_000;
+// 받는 대로 보여 주는 답(카드 질문)은 글이 오는 동안에도 전체 120초로 끊는다 (맥 streamTimeout)
+const STREAM_MS = 120_000;
 
 const isProvider = (p) => PROVIDERS.includes(p);
 
@@ -59,9 +61,19 @@ function redact(text, keys) {
 
 /**
  * 한 번의 요청 { url, method, headers, body }. image(Buffer) 가 있으면 JPEG 로 붙이고, json 이면 JSON 으로만 답하게 한다.
- * think=false 면 Claude 의 생각 단계를 끈다 (번역처럼 단순한 일에 출력 토큰이 몇 배로 늘지 않게)
+ * think=false 면 Claude 의 생각 단계를 끈다 (번역처럼 단순한 일에 출력 토큰이 몇 배로 늘지 않게).
+ * stream: 답을 조각(SSE)으로 받는다 (1.3.0 카드 질문). GPT 는 include_usage 를 켜야 마지막 조각에 쓴 토큰 수가 온다
  */
-function request(p, { model, key, prompt, image = null, json = false, maxTokens, think = true }) {
+function request(p, { model, key, prompt, image = null, json = false, maxTokens, think = true, stream = false }) {
+  const req = baseRequest(p, { model, key, prompt, image, json, maxTokens, think });
+  if (stream) {
+    req.body.stream = true;
+    if (p === 'openai') req.body.stream_options = { include_usage: true };
+  }
+  return req;
+}
+
+function baseRequest(p, { model, key, prompt, image, json, maxTokens, think }) {
   if (!isProvider(p)) throw new TypeError(`모르는 서비스: ${p}`);
   const b64 = image ? Buffer.from(image).toString('base64') : null;
   if (p === 'claude') {
@@ -145,6 +157,46 @@ function reply(p, obj) {
   }
   const msg = Array.isArray(obj.choices) ? obj.choices[0]?.message?.content : undefined;
   return { text: typeof msg === 'string' ? msg : '', tokens: num(usage.total_tokens), input: num(usage.prompt_tokens), output: num(usage.completion_tokens) };
+}
+
+/**
+ * 스트리밍 조각(SSE 의 data 한 줄)을 모은다. Claude 와 OpenAI 꼴(GPT·Gemini·Groq) 두 가지 (맥 StreamState).
+ * take(obj): 글이 늘었으면 true. 서버가 중간에 오류 조각을 보내면 던진다 (상태 코드 없이 → Groq 로 대신)
+ */
+class StreamState {
+  constructor(p) {
+    Object.assign(this, { p, text: '', input: 0, output: 0, total: 0 });
+  }
+
+  take(obj) {
+    if (!isObject(obj)) return false;
+    if (isObject(obj.error)) throw new AIFailure(null, `${LABEL[this.p]} 오류: ${typeof obj.error.message === 'string' ? obj.error.message : ''}`);
+    const n = (d, k) => (isObject(d) && typeof d[k] === 'number' ? Math.trunc(d[k]) : null);
+    if (this.p === 'claude') {
+      if (obj.type === 'message_start') this.input = n(obj.message?.usage, 'input_tokens') ?? this.input;
+      else if (obj.type === 'message_delta') this.output = n(obj.usage, 'output_tokens') ?? this.output;
+      else if (obj.type === 'content_block_delta' && obj.delta?.type === 'text_delta' && typeof obj.delta.text === 'string' && obj.delta.text) {
+        this.text += obj.delta.text;
+        return true;
+      }
+      return false;
+    }
+    if (isObject(obj.usage)) {
+      this.input = n(obj.usage, 'prompt_tokens') ?? this.input;
+      this.output = n(obj.usage, 'completion_tokens') ?? this.output;
+      this.total = n(obj.usage, 'total_tokens') ?? this.total;
+    }
+    const t = Array.isArray(obj.choices) ? obj.choices[0]?.delta?.content : undefined;
+    if (typeof t === 'string' && t) {
+      this.text += t;
+      return true;
+    }
+    return false;
+  }
+
+  get tokens() {
+    return this.p === 'claude' ? this.input + this.output : this.total;
+  }
 }
 
 /** ```json … ``` 처럼 감싸 오거나 앞뒤에 말을 붙여 온 답에서 JSON 객체만 꺼낸다 */
@@ -264,9 +316,10 @@ const pick = (models, feature) => ranked(models, feature)[0] ?? null;
  *   onCost(provider, model, input, output): 이번 실행 AI 비용 (1.2.3, lib/cost.js)
  */
 class AIClient {
-  constructor({ fetch = globalThis.fetch, getKey, onSpent = () => {}, onCost = () => {}, requestMs = REQUEST_MS, checkMs = CHECK_MS } = {}) {
+  constructor({ fetch = globalThis.fetch, getKey, onSpent = () => {}, onCost = () => {}, requestMs = REQUEST_MS, checkMs = CHECK_MS,
+    streamMs = STREAM_MS } = {}) {
     if (typeof getKey !== 'function') throw new TypeError('AIClient: getKey 함수가 필요합니다');
-    Object.assign(this, { fetch, getKey, onSpent, onCost, requestMs, checkMs });
+    Object.assign(this, { fetch, getKey, onSpent, onCost, requestMs, checkMs, streamMs });
   }
 
   /** 전체 시간 안에 끝나지 않거나 연결이 끊기면 null. { status, text } */
@@ -309,6 +362,63 @@ class AIClient {
     return json ? stripFences(r.text) : r.text;
   }
 
+  /**
+   * complete 와 같지만 답 글을 받는 대로 onText 에 지금까지 온 글 전체를 넘긴다 (1.3.0 설명 카드 질문에 글자가 바로 보이게, 맥 AI.stream).
+   * 글이 오는 동안에도 전체 시간(streamMs)으로 끊는다. 연결이 끊기면 상태 코드 없이 던진다 (Groq 로 대신)
+   */
+  async stream(p, { model, prompt, image = null, json = false, maxTokens, think = true }, onText = () => {}) {
+    const label = LABEL[p];
+    const key = this.getKey(p);
+    if (!key) throw new AIFailure(401, `${label} API 키가 없습니다. 설정에서 키를 입력하세요.`);
+    const req = request(p, { model, key, prompt, image, json, maxTokens, think, stream: true });
+    const signal = AbortSignal.timeout(this.streamMs);
+    const open = (r) => this.fetch(r.url, { method: r.method, headers: r.headers, body: JSON.stringify(r.body), signal });
+    const s = new StreamState(p);
+    try {
+      let res = await open(req);
+      if (res.status !== 200) {
+        let body = await res.text();
+        // 생각 끄는 방식이 틀렸다고 거절당하면 한 번 바꿔 다시 보낸다 (send 와 같다)
+        const retry = thinkingOffRetry(req, res.status, body);
+        if (retry) {
+          res = await open(retry);
+          if (res.status !== 200) body = await res.text();
+        }
+        if (res.status !== 200) {
+          if (keyRejected(res.status, body)) throw new AIFailure(401, `${label} API 키가 맞지 않습니다. 설정에서 다시 확인하세요.`);
+          throw new AIFailure(res.status, redact(`${label} 오류 ${res.status}: ${errorMessage(body)}`, key));
+        }
+      }
+      const decoder = new TextDecoder();
+      let rest = '';
+      let done = false;
+      const line = (l) => {
+        if (!l.startsWith('data:')) return;
+        const payload = l.slice(5).trim();
+        if (payload === '[DONE]') { done = true; return; }
+        const obj = parseJSON(payload);
+        if (s.take(obj)) onText(s.text);
+      };
+      for await (const chunk of res.body) {
+        const parts = (rest + decoder.decode(chunk, { stream: true })).split(/\r?\n/);
+        rest = parts.pop();
+        for (const l of parts) {
+          line(l);
+          if (done) break;
+        }
+        if (done) break;
+      }
+      if (!done && rest) line(rest);
+    } catch (e) {
+      if (e instanceof AIFailure) throw e;
+      if (signal.aborted) throw new AIFailure(null, `${label} 가 ${Math.round(this.streamMs / 1000)}초 안에 답을 끝내지 않았습니다`);
+      throw new AIFailure(null, redact(`${label} 연결 오류: ${e?.message ?? e}`, key));
+    }
+    this.onSpent(model, 'tokens', s.tokens);
+    this.onCost(p, model, s.input, s.output);
+    return json ? stripFences(s.text) : s.text;
+  }
+
   /** 키 확인 겸 고를 수 있는 모델 목록 */
   async models(p) {
     const key = this.getKey(p);
@@ -345,6 +455,6 @@ class AIClient {
 
 module.exports = {
   PROVIDERS, FEATURES, LABEL, KEY_PAGE, ANTHROPIC_VERSION, TRANSLATE_MAX_TOKENS, EXPLAIN_MAX_TOKENS, CHECK_MAX_TOKENS,
-  REQUEST_MS, CHECK_MS, AIFailure, AIClient, isProvider, redact, request, checkRequest, modelsRequest, reply, stripFences,
+  REQUEST_MS, CHECK_MS, STREAM_MS, AIFailure, AIClient, StreamState, isProvider, redact, request, checkRequest, modelsRequest, reply, stripFences,
   errorMessage, keyRejected, shouldFallback, fallsBack, modelIds, ranked, pick, version, thinkingOffRetry, olderClaude,
 };

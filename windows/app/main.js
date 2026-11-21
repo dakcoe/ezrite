@@ -54,7 +54,7 @@ const PKG = require('./package.json');
 const E = require('./lib/explain');
 const { Explainer } = require('./lib/explainer');
 const ExplainUI = require('./explain-ui');
-const { WindowDock, CARD_WIDTH: DOCK_CARD, GAP: DOCK_GAP } = require('./lib/dock');
+const MarkStyle = require('./lib/markstyle');
 const { DesktopWatch } = require('./lib/desktop');
 
 // 녹음 듣기용 주소 ezrite-note://audio/<기록이름>.m4a 또는 /<기록 폴더>/<기록이름>.m4a.
@@ -99,7 +99,9 @@ const state = {
   recordedBefore: 0,
   notice: null,
   error: null,
-  options: { autoTranslate: true, askBeforeRecord: true, includeMic: false, autoPauseQuiet: true, splitScreen: false },
+  options: { autoTranslate: true, askBeforeRecord: true, includeMic: false, autoPauseQuiet: true },
+  markStyle: MarkStyle.FALLBACK, // 설명 표시 방식 (1.3.0, 맥 markStyle)
+  markStyles: MarkStyle.groups(), // 설정 목록 (묶음별)
   compact: false,
   page: 'live',
   entries: [],
@@ -139,7 +141,7 @@ const keepSettings = !dev.preview && !dev.shot;
   const saved = Settings.load(SETTINGS_FILE);
   Object.assign(state, {
     language: saved.language, options: saved.options, notesFolder: saved.notesFolder, sourceId: saved.sourceId, userGuide: saved.userGuide, theme: saved.theme,
-    ai: saved.ai,
+    ai: saved.ai, markStyle: saved.markStyle,
   });
   state.welcomed = saved.welcomed;
 }
@@ -163,7 +165,7 @@ function persistSettings() {
   try {
     Settings.save(SETTINGS_FILE, {
       language: state.language, sourceId: state.sourceId, notesFolder: state.notesFolder, options: state.options,
-      userGuide: state.userGuide, welcomed: state.welcomed, theme: state.theme, ai: state.ai,
+      userGuide: state.userGuide, welcomed: state.welcomed, theme: state.theme, ai: state.ai, markStyle: state.markStyle,
     });
   } catch {
     // 설정을 못 써도 앱은 돈다
@@ -541,18 +543,12 @@ function physical(r) {
   return { x: p.x, y: p.y, w: p.width, h: p.height };
 }
 
-// 설명할 때 화면 나누기 (1.2.1, 맥 WindowDock). 창 목록·옮기기는 helper (windows·place)
+// 창 목록은 helper (windows). 가상 데스크톱 지켜보기(1.2.2)가 쓴다
 async function listWindows() {
   const list = JSON.parse(await runHelper(['windows'], 10_000));
   if (dev.dockOnly) list.windows = list.windows.filter((w) => dev.dockOnly.includes(w.pid));
   return list;
 }
-
-const windowDock = new WindowDock({
-  me: process.pid,
-  list: listWindows,
-  place: (items) => runHelper(['place', '--json', JSON.stringify(items)], 10_000),
-});
 
 /** 오래 도는 helper (desktop-watch): stdout 한 줄마다 onLine. 실패해도 조용히 (표시는 예전처럼 보인다) */
 function helperLines(args, onLine) {
@@ -591,24 +587,18 @@ const explainer = new Explainer({
     guide: state.userGuide,
     provider: state.ai.explainProvider,
     model: state.ai.explainModel,
-    split: state.options.splitScreen,
+    style: state.markStyle,
   }),
-  // 마우스가 있는 화면의 창들을 줄이고, 창이 줄고 내용이 다시 그려질 때까지 잠깐 기다린다 (맥 0.35초)
-  dock: {
-    async dock() {
-      const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-      const geom = { area: physical(d.workArea), bounds: physical(d.bounds), reserve: Math.round((DOCK_CARD + DOCK_GAP) * d.scaleFactor) };
-      if (!(await windowDock.dock(geom))) return null;
-      await new Promise((r) => setTimeout(r, 350));
-      return d;
-    },
-    restore: () => windowDock.restore(),
-  },
   desktop: { watch: (display, onChange) => desktopWatch.watch(physical(display.bounds), onChange) },
   popupFrame: () => (popup && !popup.isDestroyed() && popup.isVisible() ? popup.getBounds() : null),
   createCard: (hooks) => ExplainUI.createCard(hooks, { capturable: dev.capturable }),
   createOverlay: (display, model) => ExplainUI.createOverlay(display, model, {
-    capturable: dev.capturable, onShown: () => explainer.card?.raise(),
+    // 표시 창은 녹음 팝업·카드보다 아래 (맥 floating+3 < +4). 띄운 뒤 팝업과 카드를 다시 위로
+    capturable: dev.capturable,
+    onShown: () => {
+      if (popup && !popup.isDestroyed() && popup.isVisible()) popup.moveTop();
+      explainer.card?.raise();
+    },
   }),
   devQuestion: dev.ask,
   // EZRITE_CAPTURABLE 은 카드·표시를 녹화에 보이게 두는 대신 찍을 때마다 뺀다. 0.4초마다 지켜보면 녹화에서 깜박이므로 끈다
@@ -987,6 +977,7 @@ function applyPatch(patch) {
   if (typeof patch.compact === 'boolean') next.compact = patch.compact;
   if (typeof patch.userGuide === 'string') next.userGuide = patch.userGuide.slice(0, Settings.GUIDE_MAX);
   if (Settings.THEMES.includes(patch.theme)) next.theme = patch.theme;
+  if (MarkStyle.IDS.includes(patch.markStyle)) next.markStyle = patch.markStyle;
   if (typeof patch.openAtLogin === 'boolean' && state.loginItemAvailable) next.openAtLogin = setOpenAtLogin(patch.openAtLogin);
   if (patch.options && typeof patch.options === 'object') {
     const options = { ...state.options };
@@ -1000,7 +991,9 @@ function applyPatch(patch) {
   const quietBefore = state.options.autoPauseQuiet;
   const languageChanged = next.language && next.language !== state.language;
   setState(next);
-  if (next.sourceId || next.language || next.options || next.userGuide != null || next.theme) persistSettings();
+  if (next.sourceId || next.language || next.options || next.userGuide != null || next.theme || next.markStyle) persistSettings();
+  // 떠 있는 설명에도 바로 (화면 표시 다시 그리기 + 카드 restyle. 질문 답이 떠 있으면 카드는 그대로)
+  if (next.markStyle) explainer.restyle(next.markStyle);
   // 열려 있는 창(팝업·설정·안내·가이드)이 바로 바뀐다. 색이 실제로 안 바뀌면 nativeTheme 'updated' 가 안 오므로 직접 부른다
   if (next.theme) {
     nativeTheme.themeSource = themeSource(next.theme, dev.theme);
@@ -1555,16 +1548,14 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 
-// 끝낼 때: 녹음을 마무리하고, m4a 로 바꾸는 일과 줄였던 창 되돌리기가 끝날 때까지(최대 30초) 기다린다.
+// 끝낼 때: 녹음을 마무리하고, m4a 로 바꾸는 일이 끝날 때까지(최대 30초) 기다린다.
 // 그래도 못 끝내면 .pcm 이 남아 다음 실행 때 바꾼다
 let quitting = false;
 app.on('before-quit', (e) => {
   app.isQuitting = true;
   session.stop();
-  // 화면 나누기로 줄였던 창도 원래대로 돌려 놓고 끝낸다 (맥 applicationWillTerminate)
-  const docking = !windowDock.idle;
-  const restored = explainer.clear();
-  const waits = [...encoding, ...(docking ? [restored] : [])];
+  explainer.clear();
+  const waits = [...encoding];
   if (quitting || waits.length === 0) return;
   e.preventDefault();
   quitting = true;

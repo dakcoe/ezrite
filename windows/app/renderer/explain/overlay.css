@@ -1,5 +1,6 @@
 html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
 svg { position: fixed; inset: 0; width: 100%; height: 100%; overflow: visible; }
+canvas { position: fixed; inset: 0; width: 100%; height: 100%; }
 /* 맥 MarksView 색: 짚은 곳 주황 (1, 0.42, 0.17), 경로 파랑 (0.18, 0.48, 0.97) */
 .focus { fill: none; stroke: #ff6b2b; stroke-width: 3; filter: drop-shadow(0 0 3px rgba(255, 107, 43, .6)); }
 .route { fill: none; stroke: #2e7af7; stroke-width: 2.5; }

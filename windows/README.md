@@ -13,7 +13,7 @@
 - **✨ 설명해줘** — 마우스가 있는 화면을 찍어 글자를 읽고(Windows OCR), 화면 사진·글자·최근 강의 말을 Groq 에 보내 설명을 받습니다.
   화면 위에 ①②③ 로 짚고, 오른쪽 설명 카드에서 장면별로 보여 주며 그림(단계·표·공식·관계도)을 그립니다. 카드 아래 칸에서 이어 묻기.
   화면 설명을 Claude·Gemini·GPT 로 고르면 움직이는 그림(상자가 나타나고 자리를 바꾸고 화살표로 흐르는 그림, 층·칸·좌표 그래프)도 그립니다.
-  요약은 문장마다 한 줄로 보여 줍니다. "설명할 때 화면 나누기"(기본 꺼짐)를 켜면 보던 창을 왼쪽으로 줄이고 카드를 오른쪽에 붙였다가, 카드를 닫으면 되돌립니다.
+  요약은 문장마다 한 줄로 보여 줍니다. 카드는 글자를 읽은 뒤 화면 글자를 가장 적게 가리는 자리로 옮기고(끌어 옮기면 그대로), ⌃ 로 지금 자막 두 줄만 남기고 접습니다. 화면을 짚는 모양은 설정 → "설명 표시 방식"에서 13가지 중에 고릅니다(기본 발자취, `lib/markstyle.js`·`renderer/explain/marks.js`). 1.2.1 의 "설명할 때 화면 나누기"는 1.3.0 에서 없앴습니다 (맥과 같다). 카드 질문은 Claude·Gemini·GPT 를 고르면 답 글이 오는 대로 채워지고(SSE, 0.08초마다 다시 그림, 한도 8000), 카드는 질문 칸을 누를 때만 키 입력을 받으며 녹음 팝업과 같은 층에서 누른 쪽이 앞에 옵니다.
   설정 → AI 지침에 원하는 설명 방식을 적어 두면 함께 보냅니다. 설명 카드와 화면 표시는 녹화·화면 공유에 찍히지 않습니다.
   다른 가상 데스크톱으로 넘어가면 카드는 따라오고, ①②③ 표시는 설명한 데스크톱에서만 보입니다.
 - **기록** — 받아 적은 글(.txt)과 녹음 소리(.m4a)를 저절로 저장합니다. 지난 기록 탭에서 열어 이름 붙이기, 전체 듣기와 줄마다 듣기,
@@ -39,7 +39,7 @@
   - `capture --pid N` 그 프로그램(과 하위 프로세스)의 소리만 받기 (WASAPI process loopback, Windows 10 Build 20348 이상 = Windows 11) · `capture --mic <id>`.
     16kHz mono s16le 를 stdout 으로 흘립니다
   - `ocr <그림> [--lang]` Windows.Media.Ocr 로 글자와 줄 상자 (언어를 안 정하면 한국어 → 사용자 언어 → 영어 순서로 설치된 것) · `encode --in pcm --out m4a` (Media Foundation AAC) · `corner --hwnd` (둥근 모서리)
-  - `windows` 보이는 최상위 창 목록(물리 픽셀, 맨 앞부터) · `place --json <목록>` 창 자리·크기 바꾸기 (설명할 때 화면 나누기)
+  - `windows` 보이는 최상위 창 목록(물리 픽셀, 맨 앞부터) · `place --json <목록>` 창 자리·크기 바꾸기 (1.2.1 화면 나누기용. 1.3.0 부터 앱은 쓰지 않는다)
   - `desktop-watch --hwnd <후보,…>` 후보 가운데 가상 데스크톱이 정해진 첫 창의 데스크톱이 지금 보이는지, 바뀔 때마다 JSON 한 줄 (IVirtualDesktopManager)
 - `app/` — Electron 앱
   - `main.js` 창·트레이·IPC, `explain-ui.js` 설명 카드·화면 표시 창·화면 찍기
@@ -97,7 +97,7 @@ npm run lint           # cargo clippy -D warnings + node --check
 | `EZRITE_EXPLAIN=<초>` · `EZRITE_ASK=<질문>` | 그 시간 뒤 "설명해줘"를 누른다 · 설명이 뜬 6초 뒤 그 질문을 묻는다 |
 | `EZRITE_CARD=<json 또는 파일>` | AI 없이 설명 카드에 그 내용을 띄운다 (`EZRITE_SHOT` 과 함께면 카드를 찍는다) |
 | `EZRITE_CAPTURABLE=1` | 설명 카드·화면 표시를 화면 캡처에 보이게 둔다 |
-| `EZRITE_DOCK_ONLY=<pid,…>` | 화면 나누기·가상 데스크톱 시험용: 그 프로세스들의 창만 줄였다 되돌리고 기준 창으로 삼는다 (`app/scripts/check-split.js`, `check-desktops.js`) |
+| `EZRITE_DOCK_ONLY=<pid,…>` | 가상 데스크톱 시험용: 그 프로세스들의 창만 기준 창으로 삼는다 (`app/scripts/check-desktops.js`) |
 | `EZRITE_UPDATE_JSON=<json 또는 파일>` | GitHub 대신 그 릴리스 JSON 으로 "새 버전" 띠를 띄운다 |
 | `EZRITE_UPDATE_EXE=<Ezrite-Setup-<버전>.exe>` · `EZRITE_UPDATE_NOW=1` | 앱 안 업데이트 시험: [업데이트] 가 받지 않고 그 로컬 설치 파일을 쓴다 · 띠가 뜨면 [업데이트] 를 한 번 누른다 |
 

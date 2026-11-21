@@ -4,12 +4,15 @@
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
 <!-- "설명해줘" 화면 위 표시 (맥 MarksOverlay). 화면 전체를 덮는 투명 창, 클릭은 아래 창으로 통과한다.
-     앱이 draw({ shapes, scene }) 로 그린다 (lib/explain.js shapes) -->
+     앱이 draw(payload) 로 그린다. 예전 방식(classic)은 SVG 도형 (lib/explain.js shapes),
+     그 밖의 설명 표시 방식(1.3.0)은 canvas (marks.js, 자료는 lib/explain.js markData) -->
 <title>Ezrite 표시</title>
 <link rel="stylesheet" href="overlay.css">
 </head>
 <body>
+<canvas id="canvas"></canvas>
 <svg id="marks" xmlns="http://www.w3.org/2000/svg"></svg>
+<script src="marks.js"></script>
 <script src="overlay.js"></script>
 </body>
 </html>

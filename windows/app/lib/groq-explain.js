@@ -43,6 +43,10 @@ const SCENES_GUIDE = 'Scenes play like a short explainer video, in the order the
   + 'have played (1 = first frame), or null}. Build visuals up gradually '
   + 'across scenes. Every scene says something new — never repeat an earlier scene. Use only line ids from the list.';
 
+/** 장면마다 짧은 꼬리표("tag")도 받는다. 화면에 글로 적는 표시 방식(말풍선·여백 메모·판서)을 골랐을 때만 켠다 (출력 토큰 절약, 1.3.0 맥 tagGuide) */
+const TAG_GUIDE = ' Also give each scene "tag": 2-4 Korean words — the point of this scene as a tutor\'s short margin note (e.g. "출발점", "넘어온 값 × 내 몫").';
+const scenesGuide = (tags = false) => SCENES_GUIDE + (tags ? TAG_GUIDE : '');
+
 /** 네 가지 그림 틀 (Groq 도 쓰는 것) */
 const BASE_KINDS = [
   'Visual item types — pick only what genuinely helps, or none:',
@@ -133,15 +137,16 @@ function marksPrompt(lines, transcript, guide = '') {
   return `${AUDIENCE}\n${context(lines, transcript, guide)}\n\n${MARKS_TASK}\nReturn JSON only: {${MARKS_SHAPE}}`;
 }
 
-function visualsPrompt(lines, transcript, guide = '') {
+/** tags: 장면 꼬리표도 받는다 (말풍선·여백 메모·판서) */
+function visualsPrompt(lines, transcript, guide = '', tags = false) {
   return `${AUDIENCE}\n${context(lines, transcript, guide)}\n\n${VISUALS_TASK}\n`
-    + `Return JSON only: {${VISUALS_SHAPE}}\n${visualsGuide(false)}\n${SCENES_GUIDE}`;
+    + `Return JSON only: {${VISUALS_SHAPE}}\n${visualsGuide(false)}\n${scenesGuide(tags)}`;
 }
 
-/** 화면 이미지와 글자를 보고 표시·요약·그림을 한 번에. rich: Claude·Gemini·GPT 갈래 (움직이는 그림까지) */
-function unifiedPrompt(lines, transcript, guide = '', rich = false) {
+/** 화면 이미지와 글자를 보고 표시·요약·그림을 한 번에. rich: Claude·Gemini·GPT 갈래 (움직이는 그림까지), tags: 장면 꼬리표 */
+function unifiedPrompt(lines, transcript, guide = '', rich = false, tags = false) {
   return `${AUDIENCE}\n${context(lines, transcript, guide)}\n\nDo two things.\n1. ${MARKS_TASK}\n`
-    + `2. ${VISUALS_TASK}\nReturn ONE JSON object only: {${MARKS_SHAPE},\n${VISUALS_SHAPE}}\n${visualsGuide(rich)}\n${SCENES_GUIDE}`;
+    + `2. ${VISUALS_TASK}\nReturn ONE JSON object only: {${MARKS_SHAPE},\n${VISUALS_SHAPE}}\n${visualsGuide(rich)}\n${scenesGuide(tags)}`;
 }
 
 const imageUrl = (jpeg) => `data:image/jpeg;base64,${Buffer.from(jpeg).toString('base64')}`;
@@ -157,8 +162,11 @@ function visionBody(prompt, jpeg) {
   };
 }
 
-/** 네 가지 그림 틀 (Groq 는 움직이는 그림을 쓰지 않는다). strict 모드는 모든 칸이 required 여야 해서, 빠질 수 있는 칸은 null 을 허용한다 */
-const VISUALS_SCHEMA = (() => {
+/**
+ * 네 가지 그림 틀 (Groq 는 움직이는 그림을 쓰지 않는다). strict 모드는 모든 칸이 required 여야 해서, 빠질 수 있는 칸은 null 을 허용한다.
+ * tags: 장면에 꼬리표(tag) 칸을 더한다 (required 는 칸 이름 전부라 같이 들어간다)
+ */
+function visualsSchema(tags = false) {
   const obj = (props) => ({ type: 'object', additionalProperties: false, required: Object.keys(props).sort(), properties: props });
   const str = { type: 'string' };
   const strs = { type: 'array', items: str };
@@ -175,15 +183,17 @@ const VISUALS_SCHEMA = (() => {
     say: str, focus: { type: 'array', items: integer },
     arrow: { anyOf: [obj({ from: integer, to: integer }), { type: 'null' }] },
     visual: nullInt, reveal: nullInt,
+    ...(tags ? { tag: str } : {}),
   });
   return obj({ summary: str, visuals: { type: 'array', items: { anyOf: items } }, scenes: { type: 'array', items: scene } });
-})();
+}
+const VISUALS_SCHEMA = visualsSchema(false);
 
 /** 그림·요약 요청. gpt-oss 는 엄격한 스키마(structured outputs)를 지원해서 칸 이름·구조가 반드시 맞게 온다 */
-function visualsBody(prompt) {
+function visualsBody(prompt, tags = false) {
   return {
     model: REASONING, messages: [{ role: 'user', content: prompt }], temperature: 0.2, reasoning_effort: 'medium',
-    response_format: { type: 'json_schema', json_schema: { name: 'explanation', strict: true, schema: VISUALS_SCHEMA } },
+    response_format: { type: 'json_schema', json_schema: { name: 'explanation', strict: true, schema: visualsSchema(tags) } },
   };
 }
 
@@ -224,9 +234,9 @@ async function fixScript(groq, text, src) {
 }
 
 /** 설명: qwen 이 화면 사진과 글자를 보고 표시·요약·그림을 한 번에. 한도에 걸리면 RateLimitedError 를 그대로 던진다 */
-async function explainUnified(groq, { jpeg, lines, transcript, guide = '', onUsed = () => {} }) {
+async function explainUnified(groq, { jpeg, lines, transcript, guide = '', tags = false, onUsed = () => {} }) {
   const k = key(groq);
-  const text = await groq.chat(visionBody(unifiedPrompt(lines, transcript, guide), jpeg), k);
+  const text = await groq.chat(visionBody(unifiedPrompt(lines, transcript, guide, false, tags), jpeg), k);
   onUsed('explain', groq.lastTokens); // 한 번에 쓴 토큰 (맥 Usage.used — 남은 횟수 평균)
   return E.dropLineRefs(await fixScript(groq, text, source(lines, transcript)), lines);
 }
@@ -282,9 +292,9 @@ async function explainMarks(groq, { jpeg, lines, transcript, guide = '' }) {
 }
 
 /** 엄격한 형식으로 한 번 더 묻고, 그래도 형식이 어긋나면 느슨한 JSON 으로 받아 고쳐 쓴다 */
-async function visualsCall(groq, prompt, model, k) {
+async function visualsCall(groq, prompt, model, k, tags = false) {
   const body = (p) => {
-    const b = visualsBody(p);
+    const b = visualsBody(p, tags);
     b.model = model;
     if (model === VISION) b.reasoning_effort = 'none'; // qwen 은 low·medium 을 받지 않는다
     return b;
@@ -302,15 +312,15 @@ async function visualsCall(groq, prompt, model, k) {
 }
 
 /** 설명 카드: 요약과 그림 0~2개. 120b 가 막히면 한도가 따로인 qwen 으로 */
-async function explainVisuals(groq, { lines, transcript, guide = '' }) {
+async function explainVisuals(groq, { lines, transcript, guide = '', tags = false }) {
   const k = key(groq);
-  const prompt = visualsPrompt(lines, transcript, guide) + GROQ_RULES;
+  const prompt = visualsPrompt(lines, transcript, guide, tags) + GROQ_RULES;
   try {
-    return E.dropLineRefs(await visualsCall(groq, prompt, REASONING, k), lines);
+    return E.dropLineRefs(await visualsCall(groq, prompt, REASONING, k, tags), lines);
   } catch (first) {
     if (!(first instanceof RateLimitedError)) throw first;
     try {
-      return E.dropLineRefs(await visualsCall(groq, prompt, VISION, k), lines);
+      return E.dropLineRefs(await visualsCall(groq, prompt, VISION, k, tags), lines);
     } catch (second) {
       if (second instanceof RateLimitedError) throw new RateLimitedError(minRetry(first, second));
       throw second;
@@ -319,8 +329,8 @@ async function explainVisuals(groq, { lines, transcript, guide = '' }) {
 }
 
 module.exports = {
-  AUDIENCE, MARKS_TASK, MARKS_SHAPE, VISUALS_TASK, VISUALS_SHAPE, SCENES_GUIDE, BASE_KINDS, ANIM_KIND, VISUAL_RULES, visualsGuide,
-  GROQ_RULES, VISUALS_SCHEMA,
+  AUDIENCE, MARKS_TASK, MARKS_SHAPE, VISUALS_TASK, VISUALS_SHAPE, SCENES_GUIDE, TAG_GUIDE, scenesGuide, BASE_KINDS, ANIM_KIND, VISUAL_RULES, visualsGuide,
+  GROQ_RULES, VISUALS_SCHEMA, visualsSchema,
   context, questionPrompt, marksPrompt, visualsPrompt, unifiedPrompt, visionBody, visualsBody, asVisualsObject, source,
   fixScript, explainUnified, answer, answerText, explainMarks, explainVisuals,
 };

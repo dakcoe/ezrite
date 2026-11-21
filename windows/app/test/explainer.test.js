@@ -38,6 +38,8 @@ function rig({ replies = [], grab, ocr, context, devQuestion = null, sleep, watc
     createCard: (hooks) => {
       const c = { hooks, shows: [], renders: [], answers: [], devAsks: [], closed: false };
       c.show = (display, avoid) => c.shows.push({ display, avoid });
+      c.place = () => {};
+      c.restyle = () => {};
       c.render = (p) => c.renders.push(p);
       c.answer = (p) => c.answers.push(p);
       c.devAsk = (q) => c.devAsks.push(q);
@@ -151,7 +153,7 @@ test('질문: 같은 화면을 다시 찍어 앞의 설명·앞의 대화와 함
   const p1 = calls[1].messages[0].content[0].text;
   assert.ok(p1.includes('Explanation already shown to the student:\n파레토 효율 설명'));
   assert.ok(p1.includes('The student now asks: MRS가 뭐야?'));
-  assert.deepEqual(cards[0].answers[0], { answer: '한계대체율이에요', marks: [{ note: '제목', text: '제목' }], visuals: [] });
+  assert.deepEqual(cards[0].answers[0], { answer: '한계대체율이에요', marks: [{ note: '제목', text: '제목' }], visuals: [], style: 'trail' });
   assert.ok(overlays[0].closed);
   assert.deepEqual(E.allLines(overlays[1].models[0]).map((l) => l.id), [0]);
   await ex.ask('그럼?');
@@ -443,5 +445,5 @@ test('글자 인식 실패: 설명·질문 모두 오류로 멈추지 않고 줄
   assert.equal(overlays.length, 0, '표시할 줄이 없으면 표시 창도 없다');
   assert.equal(card.renders.at(-1).hint, undefined, '한국어 팩 안내도 붙이지 않는다');
   await ex.ask('뭐야?');
-  assert.deepEqual(card.answers[0], { answer: '이렇게요', marks: [], visuals: [] });
+  assert.deepEqual(card.answers[0], { answer: '이렇게요', marks: [], visuals: [], style: 'trail' });
 });

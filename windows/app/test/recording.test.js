@@ -95,14 +95,14 @@ test('설정: 없으면 기본값, 저장한 값은 다음에 그대로', () => 
   const s = Settings.load(file);
   assert.equal(s.language, 'English');
   assert.equal(s.notesFolder, 'D:\\수업');
-  assert.deepEqual(s.options, { autoTranslate: false, askBeforeRecord: true, includeMic: true, autoPauseQuiet: false, splitScreen: false });
+  assert.deepEqual(s.options, { autoTranslate: false, askBeforeRecord: true, includeMic: true, autoPauseQuiet: false });
 });
 
 test('설정: 조용하면 자동 일시정지(1.1.5)는 기본 켜짐. 전에 저장한 설정 파일에 없어도 켜짐', () => {
   assert.equal(Settings.DEFAULTS.options.autoPauseQuiet, true);
   const file = path.join(tempDir(), 'settings.json');
   fs.writeFileSync(file, JSON.stringify({ options: { autoTranslate: false, askBeforeRecord: false, includeMic: false } }));
-  assert.deepEqual(Settings.load(file).options, { autoTranslate: false, askBeforeRecord: false, includeMic: false, autoPauseQuiet: true, splitScreen: false });
+  assert.deepEqual(Settings.load(file).options, { autoTranslate: false, askBeforeRecord: false, includeMic: false, autoPauseQuiet: true });
   fs.writeFileSync(file, JSON.stringify({ options: { autoPauseQuiet: 'no' } }));
   assert.equal(Settings.load(file).options.autoPauseQuiet, true, '참/거짓이 아니면 기본값');
 });
@@ -139,11 +139,20 @@ test('설정: 깨진 파일·모르는 값·틀린 형식은 기본값으로', (
   assert.equal('extra' in s, false);
 });
 
-test('설정: 설명할 때 화면 나누기(1.2.1)는 기본 꺼짐. 전에 저장한 설정 파일에 없어도 꺼짐', () => {
-  assert.equal(Settings.DEFAULTS.options.splitScreen, false);
+test('설정: 설명할 때 화면 나누기(1.2.1)는 1.3.0 에서 없앴다 — 예전 파일에 켜 둔 값이 있어도 읽지도 남기지도 않는다', () => {
+  assert.equal('splitScreen' in Settings.DEFAULTS.options, false);
   const file = path.join(tempDir(), 'settings.json');
-  fs.writeFileSync(file, JSON.stringify({ options: { autoPauseQuiet: false } }));
-  assert.equal(Settings.load(file).options.splitScreen, false);
   fs.writeFileSync(file, JSON.stringify({ options: { splitScreen: true } }));
-  assert.equal(Settings.load(file).options.splitScreen, true);
+  assert.equal('splitScreen' in Settings.load(file).options, false);
+  Settings.save(file, { ...Settings.DEFAULTS, options: { ...Settings.DEFAULTS.options, splitScreen: true } });
+  assert.equal('splitScreen' in JSON.parse(fs.readFileSync(file, 'utf8')).options, false);
+});
+
+test('설정: 설명 표시 방식(1.3.0, 맥 markStyle)은 기본 발자취, 모르는 값도 발자취, 고른 값은 다음에 그대로', () => {
+  assert.equal(Settings.DEFAULTS.markStyle, 'trail');
+  const file = path.join(tempDir(), 'settings.json');
+  fs.writeFileSync(file, JSON.stringify({ markStyle: 'laser' }));
+  assert.equal(Settings.load(file).markStyle, 'trail');
+  Settings.save(file, { ...Settings.DEFAULTS, markStyle: 'notes' });
+  assert.equal(Settings.load(file).markStyle, 'notes');
 });

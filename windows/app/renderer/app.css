@@ -367,6 +367,8 @@ html.material .caption { background: var(--popup-bg); }
 .toggle-card .detail { font-size: 11px; color: var(--secondary); line-height: 1.35; }
 .toggle-card.disabled { opacity: 0.5; }
 .toggle-card .switch { margin-left: 8px; }
+/* 설명 표시 방식 (1.3.0): 제목 줄 오른쪽에 목록, 설명은 아래 넓게 */
+.toggle-card.mark-style .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .path { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .key-row { display: flex; flex-direction: column; gap: 4px; }
 .key-row .line { display: flex; align-items: center; gap: 8px; }

@@ -28,8 +28,23 @@ function arrow(g, a, b, scene) {
   node('path', { d: `M${a.x},${a.y} L${b.x},${b.y} M${p(-Math.PI / 7)} L${b.x},${b.y} L${p(Math.PI / 7)}`, class: `arrow${scene ? ' scene' : ''}` }, g);
 }
 
-/** shapes: lib/explain.js shapes() 결과. 화살표를 먼저 그려 상자·번호가 위에 오게 한다 */
-function draw({ shapes, scene }) {
+const stage = Marks.Stage(document.getElementById('canvas'));
+
+/**
+ * 예전 방식(classic): shapes = lib/explain.js shapes() 결과를 SVG 로. 그 밖의 방식(1.3.0): data = markData() 를 canvas 로 (marks.js)
+ */
+function draw({ style, shapes, scene, data }) {
+  if (style !== 'classic' && data) {
+    svg.replaceChildren();
+    stage.update(data);
+    return;
+  }
+  stage.clear();
+  drawShapes({ shapes, scene });
+}
+
+/** 화살표를 먼저 그려 상자·번호가 위에 오게 한다 */
+function drawShapes({ shapes, scene }) {
   const g = document.createElementNS(NS, 'g');
   for (const s of shapes) if (s.kind === 'arrow') arrow(g, s.from, s.to, scene);
   for (const s of shapes) {

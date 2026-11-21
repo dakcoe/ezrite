@@ -135,6 +135,21 @@
       h('div', { class: 'body' }, h('div', { class: 'title' }, title), h('div', { class: 'detail' }, detail)),
       toggle(value, (v) => window.ezrite.set({ options: { [key]: v } }), { disabled }));
   }
+  /** 설명 표시 방식 (1.3.0, 맥 MarkStyle): 묶음별 선택 목록. 아래 글은 고른 방식의 설명 */
+  function markStyleCard(s) {
+    const groups = s.markStyles ?? [];
+    const now = groups.flatMap((g) => g.styles).find((x) => x.id === s.markStyle);
+    const sel = h('select', { title: '설명 표시 방식', onchange: (e) => window.ezrite.set({ markStyle: e.target.value }) },
+      groups.map((g) => h('optgroup', { label: g.group }, g.styles.map((x) => h('option', { value: x.id }, x.label)))));
+    sel.value = s.markStyle;
+    // 이름이 길어 목록을 오른쪽에 두면 설명 글이 좁게 꺾인다. 제목 줄에 목록, 설명은 그 아래 넓게
+    return h('div', { class: 'toggle-card mark-style' },
+      h('span', { class: 'ico', html: icon('sparkles', 16) }),
+      h('div', { class: 'body' },
+        h('div', { class: 'head' }, h('div', { class: 'title' }, '설명 표시 방식'),
+          h('span', { class: 'picker' }, sel, h('span', { class: 'chev', html: icon('chevronsUpDown', 12, 2.6) }))),
+        h('div', { class: 'detail' }, now?.detail ?? '')));
+  }
   // 맥 Provider.allCases 순서. 값은 main 의 서비스 이름, 글은 보이는 이름
   const PROVIDERS = [['groq', 'Groq'], ['claude', 'Claude'], ['gemini', 'Gemini'], ['openai', 'GPT']];
 
@@ -150,8 +165,8 @@
       toggleCard('globe', '자동 번역', '영어·일본어 강의를 한국어로 옮겨 아래 줄에 붙입니다. 쓰는 AI 는 아래 기능별 AI 에서 고릅니다.', o.autoTranslate, 'autoTranslate'),
       toggleCard('sliders', '녹음할 때마다 묻기', '녹음 버튼을 누르면 소리 출처와 인식 언어를 먼저 고릅니다.', o.askBeforeRecord, 'askBeforeRecord'),
       toggleCard('pause', '조용하면 자동 일시정지', '말소리가 30초 동안 없으면 잠시 멈추고, 다시 들리면 같은 기록에 이어서 녹음합니다. 쉬는 동안은 녹음 파일에 넣지 않습니다.', o.autoPauseQuiet, 'autoPauseQuiet'),
-      // 맥 문구에서 손쉬운 사용 권한 대목만 Windows 에 맞게 (Windows 는 권한이 필요 없고, 관리자 권한으로 실행한 창은 옮기지 못한다)
-      toggleCard('split', '설명할 때 화면 나누기', '설명해줘를 누르면 보던 창을 왼쪽으로 줄이고 오른쪽에 설명 카드를 붙여 슬라이드를 가리지 않습니다. 카드를 닫으면 창이 원래대로 돌아옵니다. 전체 화면 창과 관리자 권한으로 실행한 창은 그대로 둡니다.', o.splitScreen, 'splitScreen'),
+      // 설명할 때 화면 나누기(1.2.1)는 1.3.0 에서 없앴다 (맥과 같다). 그 자리에 설명 표시 방식
+      markStyleCard(s),
       toggleCard('mic', '내 목소리도 함께', '프로그램 소리를 받을 때 마이크도 섞어서 받아 적습니다.', o.includeMic, 'includeMic', s.sourceId.startsWith('mic:')),
       loginCard(s),
       themeCard(s),

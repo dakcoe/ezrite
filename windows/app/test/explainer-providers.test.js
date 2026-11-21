@@ -18,7 +18,9 @@ const LINES = E.linesFromOcr(OCR);
 const unified = JSON.stringify({ summary: '파레토 효율 설명', marks: [{ id: 1, note: '조건' }], visuals: [], scenes: [] });
 const answerJSON = JSON.stringify({ answer: '왜냐하면', marks: [{ id: 1, note: '여기' }] });
 
-function rig({ provider = 'claude', model = 'claude-sonnet-5-5', ai = [], groqReplies = [], split = false, dock = null } = {}) {
+const D1 = { id: 1, bounds: { x: 0, y: 0, width: 100, height: 100 } };
+
+function rig({ provider = 'claude', model = 'claude-sonnet-5-5', ai = [], groqReplies = [], style = 'trail' } = {}) {
   const groqCalls = [];
   const aiCalls = [];
   const notices = [];
@@ -31,39 +33,58 @@ function rig({ provider = 'claude', model = 'claude-sonnet-5-5', ai = [], groqRe
     },
     getKey: () => 'k', sleep: async () => {}, lenientJSON: E.lenientJSON,
   });
+  const next = () => {
+    const r = ai.shift();
+    if (r instanceof Error) throw r;
+    if (r === undefined) throw new Error('AI 가 예상보다 많이 불림');
+    return r;
+  };
   const fakeAI = {
     complete: async (p, opts) => {
       aiCalls.push({ p, opts });
-      const r = ai.shift();
-      if (r instanceof Error) throw r;
-      if (r === undefined) throw new Error('AI 가 예상보다 많이 불림');
+      return next();
+    },
+    // 1.3.0 카드 질문: 받는 대로 (조각 셋으로 나눠 onText 에 지금까지 온 글 전체를 넘긴다)
+    stream: async (p, opts, onText) => {
+      aiCalls.push({ p, opts, stream: true });
+      const r = next();
+      const n = Math.ceil(r.length / 3);
+      for (let i = n; i < r.length + n; i += n) onText(r.slice(0, Math.min(i, r.length)));
       return r;
     },
   };
   const cards = [];
+  const overlays = [];
   const ex = new Explainer({
     groq, ai: fakeAI, onNotice: (m) => notices.push(m),
-    grab: async (opts) => ({ display: opts.display ?? 'D1', bitmap: { width: 100, height: 100, data: Buffer.alloc(40000) }, png: () => Buffer.from('png'), jpeg: (w) => Buffer.from(`jpg${w}`) }),
+    grab: async (opts) => ({ display: opts.display ?? D1, bitmap: { width: 100, height: 100, data: Buffer.alloc(40000) }, png: () => Buffer.from('png'), jpeg: (w) => Buffer.from(`jpg${w}`) }),
     ocr: async () => OCR,
-    context: () => ({ transcript: ['교환이 효율적이려면'], guide: '천천히', provider, model, split }),
-    dock,
-    createCard: () => {
-      const c = { renders: [], answers: [], shows: [] };
+    context: () => ({ transcript: ['교환이 효율적이려면'], guide: '천천히', provider, model, style }),
+    createCard: (hooks) => {
+      const c = { renders: [], answers: [], shows: [], places: [], restyles: [], hooks };
       c.show = (...a) => c.shows.push(a);
+      c.place = (...a) => c.places.push(a);
+      c.restyle = (st) => c.restyles.push(st);
       c.render = (p) => c.renders.push(p);
       c.answer = (p) => c.answers.push(p);
       c.devAsk = () => {};
+      c.partials = [];
+      c.partial = (t) => c.partials.push(t);
       c.close = () => {};
       cards.push(c);
       return c;
     },
-    createOverlay: () => ({ update() {}, hide() {}, show() {}, close() {} }),
+    createOverlay: (display, m) => {
+      const o = { models: [m], update(x) { o.models.push(x); }, hide() {}, show() {}, close() {} };
+      overlays.push(o);
+      return o;
+    },
     sleep: () => new Promise(() => {}),
   });
-  return { ex, groqCalls, aiCalls, notices, cards };
+  return { ex, groqCalls, aiCalls, notices, cards, overlays };
 }
 
-test('설명: 고른 서비스에 맥과 같은 프롬프트(GROQ_RULES 없음)·그림·JSON·3000 으로 한 번 묻는다', async () => {
+test('설명: 고른 서비스에 맥과 같은 프롬프트(GROQ_RULES 없음)·그림·JSON·8000 으로 한 번 묻는다', async () => {
   const { ex, aiCalls, groqCalls, cards } = rig({ ai: [unified] });
   await ex.run();
   assert.equal(groqCalls.length, 0);
@@ -72,7 +93,7 @@ test('설명: 고른 서비스에 맥과 같은 프롬프트(GROQ_RULES 없음)�
   assert.equal(p, 'claude');
   assert.deepEqual(opts, {
     model: 'claude-sonnet-5-5', prompt: G.unifiedPrompt(LINES, ['교환이 효율적이려면'], '천천히', true),
-    image: Buffer.from('jpg1280'), json: true, maxTokens: 3000, think: true,
+    image: Buffer.from('jpg1280'), json: true, maxTokens: 8000, think: true,
   });
   assert.ok(!opts.prompt.includes(G.GROQ_RULES.trim().slice(0, 30)));
   const last = cards[0].renders.at(-1);
@@ -142,7 +163,7 @@ async function explained(r) {
   r.groqCalls.length = 0;
 }
 
-test('질문: 생각 단계를 켠 채 한 번, 답을 읽으면 끝 (질문 프롬프트·그림·JSON·3000)', async () => {
+test('질문: 생각 단계를 켠 채 한 번, 답을 읽으면 끝 (질문 프롬프트·그림·JSON·8000, 받는 대로)', async () => {
   const r = rig({ provider: 'openai', model: 'gpt-6.1-sol', ai: [unified, answerJSON] });
   await explained(r);
   await r.ex.ask('왜?');
@@ -150,7 +171,7 @@ test('질문: 생각 단계를 켠 채 한 번, 답을 읽으면 끝 (질문 프
   const { opts } = r.aiCalls[0];
   assert.deepEqual(opts, {
     model: 'gpt-6.1-sol', prompt: G.questionPrompt('왜?', [], '파레토 효율 설명', LINES, ['교환이 효율적이려면'], '천천히', true),
-    image: Buffer.from('jpg1280'), json: true, maxTokens: 3000, think: true,
+    image: Buffer.from('jpg1280'), json: true, maxTokens: 8000, think: true,
   });
   assert.equal(r.cards[0].answers.at(-1).answer, '왜냐하면');
   assert.equal(r.groqCalls.length, 0);
@@ -193,37 +214,96 @@ test('1.2.1 질문: 다른 서비스가 실패해 Groq 로 대신 물을 때는 
   assert.ok(!sent.includes('"type":"anim"'));
 });
 
-// --- 1.2.1 설명할 때 화면 나누기 (맥 Explainer.run split · clear → WindowDock.restore) ---
+// --- 1.3.0 설명 표시 방식 · 카드 자리 (화면 나누기 대신, 맥과 같다) ---
 
-function fakeDock(result) {
-  const calls = [];
-  return { calls, dock: async () => { calls.push('dock'); return result; }, restore: async () => { calls.push('restore'); } };
-}
-
-test('화면 나누기: 켜져 있으면 찍기 전에 창을 줄이고, 그 화면을 찍어 카드를 오른쪽에 붙인다. 카드를 닫으면 되돌린다', async () => {
-  const dock = fakeDock('D2');
-  const r = rig({ ai: [unified], split: true, dock });
+test('1.3.0 카드: 찍은 화면에 뜬 뒤, 글자를 읽으면 화면 글자가 적은 자리로 옮겨 달라고 한다 (읽은 글자 줄과 그 화면)', async () => {
+  const r = rig({ ai: [unified] });
   await r.ex.run();
-  assert.deepEqual(dock.calls, ['dock']);
-  assert.deepEqual(r.cards[0].shows[0], ['D2', null, true], '줄인 화면에 붙인 카드');
-  await r.ex.clear();
-  assert.deepEqual(dock.calls, ['dock', 'restore']);
+  assert.deepEqual(r.cards[0].shows[0], [D1, null]);
+  assert.equal(r.cards[0].places.length, 1);
+  const [lines, display, popup] = r.cards[0].places[0];
+  assert.deepEqual(lines, LINES);
+  assert.equal(display, D1);
+  assert.equal(popup, null);
 });
 
-test('화면 나누기: 붙이지 못하면(전체 화면·실패) 예전처럼 마우스 화면에 떠 있는 카드', async () => {
-  for (const result of [null, Promise.reject(new Error('helper 없음'))]) {
-    const dock = { calls: [], dock: async () => { dock.calls.push('dock'); return result; }, restore: async () => { dock.calls.push('restore'); } };
-    const r = rig({ ai: [unified], split: true, dock });
+test('1.3.0 표시 방식: 카드·화면 표시에 방식이 가고, 지도용 축소 화면(560)과 다른 글자 상자가 함께 간다', async () => {
+  const r = rig({ ai: [unified], style: 'minimap' });
+  await r.ex.run();
+  const p = r.cards[0].renders.at(-1);
+  assert.equal(p.style, 'minimap');
+  assert.equal(p.map.img, `data:image/jpeg;base64,${Buffer.from('jpg560').toString('base64')}`);
+  assert.equal(p.map.aspect, 1);
+  const m = r.overlays[0].models[0];
+  assert.equal(m.style, 'minimap');
+  assert.deepEqual(m.others, LINES.map((l) => l.box));
+});
+
+test('1.3.0 꼬리표: 말풍선·여백 메모·판서일 때만 장면 꼬리표를 요청한다 (다른 서비스·Groq 모두)', async () => {
+  for (const [style, want] of [['pen', true], ['notes', true], ['trail', false], ['classic', false]]) {
+    const r = rig({ ai: [unified], style });
     await r.ex.run();
-    assert.deepEqual(r.cards[0].shows[0], ['D1', null, false]);
-    assert.equal(r.cards[0].renders.at(-1).summary, '파레토 효율 설명', '설명은 그대로');
+    assert.equal(r.aiCalls[0].opts.prompt.includes(G.TAG_GUIDE), want, style);
+    const g = rig({ provider: 'groq', model: '', groqReplies: [content(unified)], style });
+    await g.ex.run();
+    assert.equal(g.groqCalls[0].messages[0].content[0].text.includes(G.TAG_GUIDE), want, `groq ${style}`);
   }
 });
 
-test('화면 나누기: 꺼져 있으면 창을 건드리지 않는다 (닫을 때 되돌리기만 — 아무것도 안 줄였으면 할 일 없음)', async () => {
-  const dock = fakeDock('D2');
-  const r = rig({ ai: [unified], split: false, dock });
+test('1.3.0 카드에서 마우스를 올린 항목·카드 글 자리는 화면 표시로 (모르는 값은 버린다), 방식을 바꾸면 표시·카드 모두', async () => {
+  const r = rig({ ai: [unified] });
   await r.ex.run();
-  assert.deepEqual(dock.calls, []);
-  assert.deepEqual(r.cards[0].shows[0], ['D1', null, false]);
+  const o = r.overlays[0];
+  r.cards[0].hooks.onHover('m0');
+  assert.equal(o.models.at(-1).hover, 'm0');
+  r.cards[0].hooks.onHover('<script>');
+  assert.equal(o.models.at(-1).hover, null);
+  const n = o.models.length;
+  r.cards[0].hooks.onHover('');
+  assert.equal(o.models.length, n, '같으면 다시 그리지 않는다');
+  r.cards[0].hooks.onAnchors({ m0: { x: 40, y: 30 } });
+  assert.deepEqual(o.models.at(-1).anchors, { m0: { x: 40, y: 30 } });
+  r.ex.restyle('pen');
+  assert.equal(o.models.at(-1).style, 'pen');
+  assert.deepEqual(r.cards[0].restyles, ['pen']);
+  r.ex.restyle('???');
+  assert.equal(o.models.at(-1).style, 'trail');
+});
+
+// --- 1.3.0 카드 질문 (맥 ask: 받는 대로·줄 번호·깨진 JSON) ---
+
+test('1.3.0 질문: 답 글은 오는 대로 카드에 채우고(줄 번호는 그 줄 글자로), 다 받으면 답·짚은 곳으로 바꾼다', async () => {
+  const reply = JSON.stringify({ answer: '1번 줄을 보면 같아요', marks: [{ id: 1, note: '여기' }] });
+  const r = rig({ ai: [unified, reply] });
+  await explained(r);
+  await r.ex.ask('왜?');
+  assert.equal(r.aiCalls[0].stream, true);
+  assert.ok(r.cards[0].partials.length >= 1);
+  assert.ok(r.cards[0].partials.every((t) => !t.includes('1번 줄')), JSON.stringify(r.cards[0].partials));
+  assert.equal(r.cards[0].partials.at(-1), '‘MRS_A = MRS_B’을 보면 같아요');
+  assert.equal(r.cards[0].answers.at(-1).answer, '‘MRS_A = MRS_B’을 보면 같아요');
+  assert.deepEqual(r.cards[0].answers.at(-1).marks, [{ note: '여기', text: 'MRS_A = MRS_B' }]);
+});
+
+test('1.3.0 질문: 수식 역슬래시 하나(\le)로 깨진 JSON 은 고쳐 읽고, 그래도 깨졌지만 답 글이 닫혔으면 그 글로 끝낸다', async () => {
+  const lenient = String.raw`{"answer":"$0\le x$ 이에요","marks":[]}`;
+  const r1 = rig({ ai: [unified, lenient] });
+  await explained(r1);
+  await r1.ex.ask('왜?');
+  assert.equal(r1.aiCalls.length, 1, '다시 묻지 않는다');
+  assert.equal(r1.cards[0].answers.at(-1).answer, String.raw`$0\le x$ 이에요`);
+  const cut = '{"answer":"앞부분은 끝까지 왔어요","marks":[{"id":1,"note":"잘';
+  const r2 = rig({ ai: [unified, cut] });
+  await explained(r2);
+  await r2.ex.ask('왜?');
+  assert.equal(r2.aiCalls.length, 1);
+  assert.equal(r2.cards[0].answers.at(-1).answer, '앞부분은 끝까지 왔어요');
+  assert.deepEqual(r2.notices, []);
+});
+
+test('1.3.0 설명: 다른 서비스의 설명을 읽지 못해 생각을 끄고 다시 물을 때 카드에 "설명을 다시 만드는 중…"', async () => {
+  const r = rig({ ai: [JSON.stringify({ summary: '', marks: [], visuals: [], scenes: [] }), unified] });
+  await r.ex.run();
+  assert.ok(r.cards[0].renders.some((p) => p.loading === '설명을 다시 만드는 중…'));
+  assert.equal(r.cards[0].renders.at(-1).summary, '파레토 효율 설명');
 });

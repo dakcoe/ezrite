@@ -8,8 +8,8 @@ Claude 는 사용자 키로 실제로 불러 받은 응답(`response-claude-*.js
 | 파일 | 내용 |
 |---|---|
 | `request-<서비스>-translate.json` | 번역: json 아님, max 2000, Claude 는 thinking disabled |
-| `request-<서비스>-explain.json` | 화면 설명: 그림 + json, max 3000 |
-| `request-<서비스>-ask-retry-nothink.json` | 질문(두 번째 시도: 생각 단계 끔) |
+| `request-<서비스>-explain.json` | 화면 설명: 그림 + json, max 8000 (1.3.0, 전엔 3000) |
+| `request-<서비스>-ask-retry-nothink.json` | 질문(두 번째 시도: 생각 단계 끔). 1.3.0 부터 받는 대로 보여 주려고 `stream: true` (GPT 는 `stream_options.include_usage`), max 8000 — 맥 1.3.0 코드대로 Windows 쪽에서 고쳐 썼다 |
 | `request-<서비스>-check.json` | 키 저장 때 모델이 답하는지 확인 ("Say OK", max 16, thinking off) |
 | `response-claude-models.json` | 모델 목록 (키 확인 겸) |
 | `response-claude-{translate,explain,ask}-200.json` | 실제 응답 원문 |

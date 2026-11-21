@@ -47,7 +47,7 @@ function parseDevEnv(env) {
     capturable: ['1', 'true'].includes(norm(env.EZRITE_CAPTURABLE)),
     shotScroll: Number.isInteger(scroll) && scroll > 0 ? scroll : 0, // EZRITE_SHOT 전에 내용을 이만큼(px) 내린다
     updateJSON: updateJSON || null, // GitHub 대신 이 릴리스 JSON(글 또는 파일 경로)으로 새 버전 띠를 띄운다 (맥과 같다)
-    // 화면 나누기·가상 데스크톱 시험용: 이 pid 들의 창만 줄였다 되돌리고 기준 창으로 삼는다 (사용자의 다른 창은 건드리지 않게)
+    // 가상 데스크톱 시험용: 이 pid 들의 창만 기준 창으로 삼는다 (사용자의 다른 창은 건드리지 않게)
     dockOnly: dockOnly.length ? dockOnly : null,
     // 앱 안 업데이트 시험용 (1.2.4): [업데이트] 가 받지 않고 이 로컬 설치 파일(Ezrite-Setup-<버전>.exe)을 쓴다
     updateExe: updateExe || null,
