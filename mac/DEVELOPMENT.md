@@ -40,6 +40,7 @@ open -a "Ezrite"
 - 카드 자리: 창은 건드리지 않는다(창 너비만 줄이면 웹페이지 오른쪽이 잘려서 화면 나누기를 없앴다). 새로 뜬 카드는 글자를 읽은 뒤 화면 글자를 가장 적게 가리는 자리로 옮긴다(`ExplainCard.freeSpot`, 늘어날 높이 60% 기준, 같으면 오른쪽 위). 사용자가 끌어 옮기면 그 자리를 지킨다. 제목 막대 오른쪽 접기 버튼(`NSTitlebarAccessoryViewController`)은 지금 자막 두 줄만 남기고(explain.html `fold()`, `body.folded`), 펼치면 접기 전 높이로 돌린다. 새 설명이 오면 저절로 펼친다.
 - 움직이는 그림(anim) 배치: row·column·cycle·layers(층=열)·grid(cols 칸)·graph(자료 값 좌표의 곡선·점, set 으로 옮기면 미끄러진다).
 - 표시 방식(설정 "설명 표시 방식", `defaults` 키 `markStyle`, 기본 `trail`): `MarkStyle.swift` 가 13가지 목록·이름·설명. classic 만 예전 `MarksView.classic`(상자+번호+파란 경로)이고, 나머지는 `MarksRenderer.swift` 가 `TimelineView`+`Canvas` 로 그린다. 그리기가 끝나면(`settleTime`) 다시 그리기를 멈춘다. 카드(explain.html)도 같은 `style` 을 받아 목록 번호·색·지도·장면 목록을 바꾼다.
+- 설정의 표시 방식 미리보기(`MarkStylePreview.swift`): 가상 화면 760×400 에 가짜 슬라이드·카드 자리를 그리고 실제 `MarksView` 를 그 위에 돌린다. 3.4초마다 장면 → 네 장면 뒤 전체 보기. hover 방식은 장면 중간에 마우스를 올린 것처럼, leader 는 카드 자리에서 선. 폭에 맞춰 줄여 보인다.
 - 카드 ↔ 화면 표시 연결: 카드의 `data-ref` 에 마우스를 올리면 `hover` 메시지로 그 표시만 진하게(spotlight·highlighter·corners·hover·leader·trail). leader 는 카드 글 위치(`anchors`)를 받아 선을 긋는다. 메모·말풍선 자리는 다른 글자 줄(`others`)과 이미 놓은 메모를 피해 고른다.
 - 장면 꼬리표(`tag`, 2~4단어): bubble·notes·pen 일 때만 AI 에게 요청한다(`GroqClient.sceneTags`). 없으면 자막 첫 마디로 대신한다.
 - AI 가 화면 좌표를 직접 말하게 하면 빗나간다. 글자 인식으로 찾은 줄 번호만 고르게 한다.

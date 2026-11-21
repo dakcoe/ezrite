@@ -1014,10 +1014,24 @@ struct PickerRow: View {
 /// 설명해줘 화면 표시 방식 고르기. 묶음별 메뉴와 고른 방식의 한 줄 설명
 struct MarkStyleCard: View {
     @Binding var selection: String
+    @StateObject private var preview = MarkPreviewModel()
 
     private var current: MarkStyle { MarkStyle(rawValue: selection) ?? .fallback }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            // 고른 방식을 가짜 슬라이드 위에서 실제 표시 그대로 돌려 본다
+            MarkStylePreview(model: preview)
+        }
+        .padding(12)
+        .background(CardBackground())
+        .onAppear { preview.start(current) }
+        .onDisappear { preview.stop() }
+        .onChange(of: selection) { _ in preview.start(current) }
+    }
+
+    private var header: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "scribble.variable").font(.system(size: 14)).foregroundStyle(.blue)
                 .frame(width: 18).padding(.top, 1)
@@ -1037,8 +1051,6 @@ struct MarkStyleCard: View {
             .labelsHidden()
             .fixedSize()
         }
-        .padding(12)
-        .background(CardBackground())
     }
 
     static let groups: [String] = MarkStyle.allCases.reduce(into: [String]()) { if !$0.contains($1.group) { $0.append($1.group) } }
