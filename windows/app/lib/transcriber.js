@@ -14,6 +14,7 @@ const { randomUUID } = require('node:crypto');
 const Hallucination = require('./hallucination');
 const { encodeWav } = require('./wav');
 const { isLetterOrNumber, graphemes, trimWs } = require('./text');
+const log = require('./applog');
 
 const TRANSLATE_BATCH = 10;
 
@@ -140,12 +141,20 @@ class Transcriber extends EventEmitter {
 
   async send(samples, time, language) {
     this.setInflight(this._inflight + 1);
+    // 앱 기록 (1.3.2): 실패와 5초 넘게 걸린 것만 (매 문장 남기지 않는다). 받아 적은 글은 남기지 않는다
+    const t0 = Date.now();
+    const audio = `소리 ${(samples.length / 16000).toFixed(1)}초`;
     try {
       const raw = await this.groq.transcribe(encodeWav(samples), {
         language,
         prompt: this.lastText,
-        onFallback: (from, to) => this.emit('notice', `${from} 한도 초과 → ${to}로 전환`),
+        onFallback: (from, to) => {
+          log.warn('받아쓰기', `모델 한도 초과로 바꿈 — ${from} → ${to}`);
+          this.emit('notice', `${from} 한도 초과 → ${to}로 전환`);
+        },
       });
+      const took = Date.now() - t0;
+      if (took > 5000) log.warn('받아쓰기', `느림 — ${log.secs(took)} 걸림, ${audio}`);
       const text = sanitize(raw);
       if (!text || Hallucination.isRepeat(text, this.lastText)) return;
       this.lastText = text;
@@ -163,6 +172,7 @@ class Transcriber extends EventEmitter {
     } catch (e) {
       // 이 구간은 잃었다. 어디부터 다시 들어야 하는지 알 수 있게 자리를 남긴다
       const message = e?.message ?? String(e);
+      log.error('받아쓰기', `실패 — ${log.secs(Date.now() - t0)} 걸림, ${audio}: ${log.err(e)}`);
       this.emit('failure', message);
       this.addGap(gap.recognitionFailed(this.clock(), message));
     } finally {
@@ -191,6 +201,7 @@ class Transcriber extends EventEmitter {
       try {
         result = (await this.translateFn(lines, context)) ?? [];
       } catch (e) {
+        log.error('번역', `${lines.length}줄 실패: ${log.err(e)}`);
         this.emit('notice', e?.message ?? String(e));
       }
       this.translating = null;
@@ -257,7 +268,8 @@ class CaptureRestarter {
     this.restarts = 0;
   }
 
-  async run({ isActive, restart }) {
+  /** onAttempt(n, 오류|null): 시도마다 (앱 기록, 1.3.2) */
+  async run({ isActive, restart, onAttempt = () => {} }) {
     if (!isActive()) return null; // 일시정지로 멈춘 스트림은 다시 붙이지 않는다
     while (this.restarts < this.maxRestarts) {
       if (!isActive()) return null;
@@ -266,9 +278,10 @@ class CaptureRestarter {
       if (!isActive()) return null;
       try {
         await restart();
+        onAttempt(this.restarts, null);
         return true;
-      } catch {
-        // 다음 번에 다시
+      } catch (e) {
+        onAttempt(this.restarts, e); // 다음 번에 다시
       }
     }
     return false;

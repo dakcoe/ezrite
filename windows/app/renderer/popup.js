@@ -81,10 +81,9 @@
   // 새 버전 띠 (맥 UpdateBanner, 전체 창과 같은 것)
   const banner = updateBanner();
 
-  // 저장됨 띠는 새 버전 띠 아래 (맥 MenuPopover.full). 두 띠의 높이만큼 팝업을 키운다
+  // 저장됨 띠는 새 버전 띠 아래 (맥 MenuPopover.full). 두 띠는 내용 위에 겹쳐 뜬다 — 팝업 크기는 그대로 (1.3.2)
   const saved = savedBanner();
   const tops = h('div', { class: 'top-banners' }, banner.el, saved.el);
-  const fitBanners = () => requestAnimationFrame(() => window.ezrite.bannerHeight(tops.offsetHeight));
 
   const full = h('div', { class: 'full' }, tops, header.el, h('div', { class: 'divider' }), body, h('div', { class: 'divider' }), footer);
 
@@ -109,8 +108,8 @@
       mode = want;
     }
     header.update(s);
-    // 두 띠 중 하나라도 모양이 바뀌면 팝업 높이를 다시 맞춘다
-    if ([banner.update(s), saved.update(s)].some(Boolean)) fitBanners();
+    banner.update(s);
+    saved.update(s);
     live.update(s);
     // 게이지는 값이 바뀔 때만 다시 그린다 (마우스를 올려 둔 설명 글이 깜박이지 않게)
     const fk = JSON.stringify(s.footer);

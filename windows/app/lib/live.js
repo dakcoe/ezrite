@@ -20,6 +20,7 @@ const { CaptureRestarter, MESSAGES, gap, timestamp } = require('./transcriber');
 const { GroqClient } = require('./groq');
 const Usage = require('./usage');
 const { Budget } = require('./budget');
+const log = require('./applog');
 
 const SAMPLE_RATE = 16000;
 
@@ -75,6 +76,7 @@ class LiveSession extends EventEmitter {
   start(args) {
     if (this.state.listening) return false;
     if (!this.hasKey()) {
+      log.warn('녹음', '키 없음 — 시작하지 못함');
       this.set({ error: MESSAGES.noKey });
       return false;
     }
@@ -89,6 +91,7 @@ class LiveSession extends EventEmitter {
     try {
       this.open();
     } catch (e) {
+      log.error('녹음', `캡처 시작 실패: ${log.err(e)}`);
       this.set({ error: e?.message ?? String(e) });
       this.stop();
       return false;
@@ -96,10 +99,19 @@ class LiveSession extends EventEmitter {
     return true;
   }
 
+  /** 지금까지 녹음한 초 (쉰 동안은 빼고) */
+  recordedSeconds() {
+    const ran = this.state.startedAt == null ? 0 : (this.now() - this.state.startedAt) / 1000;
+    return this.state.recordedBefore + ran;
+  }
+
   /** 끝내기. 모으던 마지막 발화는 그대로 보낸다 (보낸 결과는 멈춘 뒤에도 줄로 붙는다) */
   stop() {
     if (!this.state.listening) return;
+    const secs = this.recordedSeconds();
     this.close();
+    const lines = this.transcriber.entries.filter((e) => e.kind === 'text').length;
+    log.info('녹음', `끝냄 — 녹음 ${secs.toFixed(1)}초, 줄 ${lines}개, 보내는 중 ${this.transcriber.inflight}개`);
     this.set({ listening: false, paused: false, quietPaused: false, startedAt: null, recordedBefore: 0 });
     this.emit('stop');
   }
@@ -109,6 +121,7 @@ class LiveSession extends EventEmitter {
     if (!this.state.listening || this.state.paused) return;
     const ran = this.state.startedAt == null ? 0 : (this.now() - this.state.startedAt) / 1000;
     this.pausedClock = timestamp(this.clock());
+    log.info('녹음', `일시정지 — 녹음 ${(this.state.recordedBefore + ran).toFixed(1)}초에서`);
     this.close();
     this.set({ paused: true, quietPaused: false, startedAt: null, recordedBefore: this.state.recordedBefore + ran });
   }
@@ -116,6 +129,7 @@ class LiveSession extends EventEmitter {
   /** 조용해서 쉬기 시작함(true) / 말이 다시 들려 이어 감(false). 맥 Transcriber.quietChanged */
   quietChanged(quiet) {
     if (!this.state.listening || this.state.paused || quiet === this.state.quietPaused) return;
+    log.info('녹음', quiet ? '자동 쉼 — 조용함' : '이어 감 — 말소리');
     if (quiet) {
       const ran = this.state.startedAt == null ? 0 : (this.now() - this.state.startedAt) / 1000;
       this.quietClock = timestamp(this.clock());
@@ -134,12 +148,14 @@ class LiveSession extends EventEmitter {
   resume(args) {
     if (!this.state.listening || !this.state.paused) return;
     if (args) this.args = args;
+    log.info('녹음', '이어서');
     this.restarter.reset();
     this.set({ paused: false, startedAt: this.now() });
     this.transcriber.addGap(gap.resumed(this.pausedClock, this.clock()));
     try {
       this.open();
     } catch (e) {
+      log.error('녹음', `이어서 캡처 시작 실패: ${log.err(e)}`);
       this.set({ error: e?.message ?? String(e) });
       this.stop();
     }
@@ -149,12 +165,14 @@ class LiveSession extends EventEmitter {
   switchSource(args, label, withMic = Boolean(args?.mixMic)) {
     if (!this.state.listening) return;
     this.args = args;
+    log.info('녹음', `출처 바꿈 — ${args?.pid ? '프로그램' : '마이크'}${withMic ? ' + 마이크' : ''}${this.state.paused ? ' (일시정지 중)' : ''}`);
     this.transcriber.addGap(gap.sourceChanged(this.clock(), label, withMic));
     if (this.state.paused) return;
     this.close();
     try {
       this.open();
     } catch (e) {
+      log.error('녹음', `출처 바꿔 캡처 시작 실패: ${log.err(e)}`);
       this.set({ error: e?.message ?? String(e) });
       this.stop();
     }
@@ -162,7 +180,9 @@ class LiveSession extends EventEmitter {
 
   /** 인식 언어는 발화를 보낼 때마다 읽으니 바로 다음 문장부터 바뀐다. 바꾼 자리만 남긴다 */
   languageChanged(label) {
-    if (this.state.listening) this.transcriber.languageChanged(label);
+    if (!this.state.listening) return;
+    log.info('녹음', `인식 언어 바꿈 — ${label}`);
+    this.transcriber.languageChanged(label);
   }
 
   open() {
@@ -191,9 +211,11 @@ class LiveSession extends EventEmitter {
   close() {
     const c = this.capture;
     if (!c) return;
+    const t0 = Date.now();
     c.handle?.stop();
     // 블록이 안 된 마지막 나머지도 record 로 파일에 쓴다 (쉬는 중이면 쓰지 않는다). 그래서 capture 를 비우기 전에
     c.vad.finish();
+    log.info('녹음', `캡처 멈춤 ${Date.now() - t0}ms`);
     this.capture = null;
     this.offset = c.vad.startOffset + c.vad.written / SAMPLE_RATE;
   }
@@ -202,13 +224,16 @@ class LiveSession extends EventEmitter {
   async lost(message) {
     this.close();
     this.quietChanged(false);
+    log.warn('녹음', `캡처 끊김: ${log.err(message)}`);
     this.transcriber.addGap(gap.disconnected(this.clock(), message));
     const ok = await this.restarter.run({
       isActive: () => this.state.listening && !this.state.paused && !this.capture,
       restart: async () => this.open(),
+      onAttempt: (n, e) => (e ? log.warn('녹음', `다시 연결 ${n}번째 시도 실패: ${log.err(e)}`) : log.info('녹음', `다시 연결 ${n}번째 시도 성공`)),
     });
     if (ok === true) this.transcriber.addGap(gap.reconnected(this.clock()));
     else if (ok === false) {
+      log.error('녹음', `다시 연결 포기 (${this.restarter.maxRestarts}번 실패)`);
       this.set({ error: MESSAGES.reconnectFailed });
       this.stop();
     }

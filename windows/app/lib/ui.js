@@ -7,7 +7,7 @@ const THEMES = ['light', 'dark'];
 
 /**
  * EZRITE_PREVIEW / THEME / SHOT / SHOT_DELAY / TEST_SCALE / TESTFILE / SPEED / FAKE_GROQ / EXPLAIN / CARD / ASK / CAPTURABLE / UPDATE_JSON / SHOT_SCROLL
- * / DOCK_ONLY / UPDATE_EXE / UPDATE_NOW.
+ * / DOCK_ONLY / UPDATE_EXE / UPDATE_NOW / SCRIPT.
  * 모르는 값은 없는 것으로 친다.
  * EZRITE_TEST_SCALE은 시험할 때만 화면 배율(100%·150% 등)을 흉내 낸다. 평소에는 Windows 배율을 그대로 쓴다
  */
@@ -52,7 +52,25 @@ function parseDevEnv(env) {
     // 앱 안 업데이트 시험용 (1.2.4): [업데이트] 가 받지 않고 이 로컬 설치 파일(Ezrite-Setup-<버전>.exe)을 쓴다
     updateExe: updateExe || null,
     updateNow: ['1', 'true'].includes(norm(env.EZRITE_UPDATE_NOW)), // 새 버전 띠가 뜨면 [업데이트] 를 한 번 누른다 (자동 시험용)
+    script: parseScript(env.EZRITE_SCRIPT), // 멈춤 시험 (1.3.2, 맥 EZRITE_SCRIPT=hang@8=5)
   };
+}
+
+/**
+ * EZRITE_SCRIPT 시험 동작 (맥과 같은 꼴 <동작>@<초>=<값>, 쉼표·공백으로 여럿). 모르는 동작은 버린다.
+ *   hang@8=5   켠 지 8초에 메인 프로세스를 5초 굳힌다 (맥은 화면 스레드. Windows 의 종료·녹음 흐름은 메인 프로세스에 있다)
+ *   uihang@8=5 켠 지 8초에 팝업 화면(renderer)을 5초 굳힌다
+ */
+function parseScript(v) {
+  const out = [];
+  for (const part of String(v ?? '').split(/[\s,;]+/)) {
+    const m = /^(hang|uihang)@(\d+(?:\.\d+)?)=(\d+(?:\.\d+)?)$/i.exec(part.trim());
+    if (!m) continue;
+    const at = Number(m[2]);
+    const secs = Number(m[3]);
+    if (secs > 0 && secs <= 60 && at <= 3600) out.push({ kind: m[1].toLowerCase(), at, secs });
+  }
+  return out;
 }
 
 /** Mica·Acrylic 창 바탕(backgroundMaterial)은 Windows 11 22H2(빌드 22621)부터 */
@@ -255,4 +273,5 @@ async function copyText(clip, text) {
 }
 
 module.exports = {
+  parseScript,
   copyText, levelTargets, GUIDE_SIZE, guideSize, supportsProcessLoopback, LOOPBACK_MIN_BUILD, LOOPBACK_UNSUPPORTED, sourceArgs, THEME_OPTIONS, themeSource, themeColors, titleBarOverlay, notPlayingMessage, mixArgs, helperCandidates, PREVIEWS, parseDevEnv, supportsMaterial, popupPosition, buildSources, captureArgsFor, keepSelected };

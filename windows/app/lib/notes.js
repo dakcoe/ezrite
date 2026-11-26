@@ -18,6 +18,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const log = require('./applog');
 
 const KEEP_DAYS = 30;
 // 탐색기가 폴더에 저절로 만드는 파일 (맥 .DS_Store 자리)
@@ -410,8 +411,9 @@ class Writer {
       } finally {
         fs.closeSync(fd);
       }
-    } catch {
+    } catch (e) {
       // 자동 저장이 실패해도 받아쓰기는 계속돼야 한다
+      log.error('기록 파일', `한 줄 저장 실패: ${log.err(e)}`);
       if (this.path && !exists(this.path)) this.path = null;
     }
   }
@@ -421,8 +423,8 @@ class Writer {
     if (!this.path) return;
     try {
       writeAtomic(this.path, `${render(entries)}\n`);
-    } catch {
-      // 다음 번 다시 쓰기에서 맞춰진다
+    } catch (e) {
+      log.warn('기록 파일', `번역 넣어 다시 쓰기 실패 (다음에 맞춰짐): ${log.err(e)}`);
     }
   }
 }

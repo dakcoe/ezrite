@@ -1,0 +1,3 @@
+/* 화면 번역 덮개: 창 전체가 투명하고, canvas 가 창을 꽉 채운다 (canvas 화소 = 찍은 그림 물리 픽셀) */
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+canvas { display: block; width: 100%; height: 100%; }

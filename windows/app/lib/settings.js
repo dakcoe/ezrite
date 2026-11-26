@@ -55,7 +55,8 @@ const DEFAULTS = Object.freeze({
   welcomed: false, // 처음 한 번 팝업과 사용 가이드를 보여줬나 (맥 welcomed)
   // autoPauseQuiet: 말소리가 30초 없으면 녹음을 저절로 쉬고, 다시 들리면 이어 간다 (1.1.5, 맥 autoPauseQuiet)
   // 설명할 때 화면 나누기(1.2.1 splitScreen)는 1.3.0 에서 없앴다 (맥과 같다). 예전 설정 파일의 값은 읽지 않는다
-  options: Object.freeze({ autoTranslate: true, askBeforeRecord: true, includeMic: false, autoPauseQuiet: true }),
+  // screenTranslate: 실험 기능 "화면 번역" 단추를 보인다 (1.3.2 예정, 기본 꺼짐, 맥과 같다)
+  options: Object.freeze({ autoTranslate: true, askBeforeRecord: true, includeMic: false, autoPauseQuiet: true, screenTranslate: false }),
   markStyle: MarkStyle.FALLBACK, // 설명 표시 방식 (1.3.0, 맥 markStyle). 모르는 값이면 발자취
   ai: AI_DEFAULTS,
 });

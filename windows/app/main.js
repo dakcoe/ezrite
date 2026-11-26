@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-  app, BrowserWindow, Tray, Menu, nativeImage, nativeTheme, ipcMain, screen, shell, dialog, clipboard, protocol,
+  app, BrowserWindow, Tray, Menu, nativeImage, nativeTheme, ipcMain, screen, shell, dialog, clipboard, protocol, globalShortcut,
 } = require('electron');
 const { Readable } = require('stream');
 const path = require('path');
@@ -11,9 +11,14 @@ const fs = require('fs');
 // 다른 앱 모듈을 부르기 전에 달아서, 불러오는 중의 오류도 창으로 뜨지 않게 한다
 const LOG_DIR = path.join(process.env.APPDATA || app.getPath('appData'), 'Ezrite', 'logs');
 const { appendLine } = require('./lib/crashlog');
+// 앱 기록 (1.3.2, 맥 ~/Library/Logs/Ezrite): %LOCALAPPDATA%\Ezrite\logs\ezrite-YYYY-MM-DD.log. 시험 중·EZRITE_NO_LOG=1 이면 쓰지 않는다 (lib/applog.js)
+const log = require('./lib/applog');
+const APP_LOG_DIR = path.join(process.env.LOCALAPPDATA || path.join(require('os').homedir(), 'AppData', 'Local'), 'Ezrite', 'logs');
+log.open({ dir: APP_LOG_DIR });
 require('./lib/crashlog').install({
   logDir: LOG_DIR,
   onError: (msg) => {
+    log.error('앱', `처리 안 된 오류: ${log.err(msg)}`);
     try {
       showNotice(`문제가 생겨 기록해 두었습니다: ${msg}`);
     } catch {
@@ -28,13 +33,13 @@ const os = require('os');
 const { parseDevEnv, supportsMaterial, popupPosition, buildSources, keepSelected, helperCandidates, mixArgs, notPlayingMessage, sourceArgs, supportsProcessLoopback, LOOPBACK_UNSUPPORTED, guideSize, levelTargets,
   themeSource, themeColors, titleBarOverlay, copyText } = require('./lib/ui');
 const { mixedSource } = require('./lib/mixer');
-const { flattenBGRA, hexColor } = require('./lib/png');
+const { flattenBGRA, hexColor, decodeBMP } = require('./lib/png');
 const sample = require('./lib/sample');
 const { KeyStore } = require('./lib/keystore');
 const { GroqClient } = require('./lib/groq');
 const AI = require('./lib/ai');
 const Providers = require('./lib/providers');
-const { translate: translateWith } = require('./lib/translation');
+const { translate: translateWith, translateScreen } = require('./lib/translation');
 const { Transcriber, languageCode, MESSAGES } = require('./lib/transcriber');
 const { LiveSession, usageFooter } = require('./lib/live');
 const { parseWav, wavFeed } = require('./lib/devfeed');
@@ -56,6 +61,10 @@ const { Explainer } = require('./lib/explainer');
 const ExplainUI = require('./explain-ui');
 const MarkStyle = require('./lib/markstyle');
 const { DesktopWatch } = require('./lib/desktop');
+const { PingWatch, watchMain, spin } = require('./lib/hangwatch');
+const { ScreenTranslate } = require('./lib/screentranslate');
+const TranslateUI = require('./translate-ui');
+const { windowAt, panelRect } = require('./lib/windowpick');
 
 // 녹음 듣기용 주소 ezrite-note://audio/<기록이름>.m4a 또는 /<기록 폴더>/<기록이름>.m4a.
 // 저장 폴더 안 이 앱 기록의 .m4a 만 내준다 (renderer 가 아무 파일이나 읽지 못하게, notes.audioFile)
@@ -133,6 +142,7 @@ const state = {
   openAtLogin: false, // 로그인할 때 자동 실행
   loginItemAvailable: app.isPackaged, // 개발 중(electron.exe)에는 바꾸지 않는다
   build: `${app.getVersion()} (Windows ${os.release()})`,
+  screenTx: { active: false, title: null, reason: null }, // 화면 번역 (실험 기능, 1.3.2 예정)
 };
 // 다음 실행 때도 그대로 둘 설정 (맥 UserDefaults 자리). 미리보기·스크린샷은 사용자 설정을 바꾸지 않는다
 const SETTINGS_FILE = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Ezrite', 'settings.json');
@@ -456,8 +466,17 @@ function runHelper(args, timeout = 10 * 60_000) {
 
 /** .pcm 을 .m4a 로. 실패하면 .pcm 을 남겨 두고 다음 실행 때 다시 한다 */
 function encodeLater(pcm) {
+  // 맥은 60초 조각을 합친다. Windows 는 .pcm 한 조각을 m4a 로 바꾼다 — 같은 자리라 "합침" 으로 남긴다 (10초 넘으면 WARN)
+  const t0 = Date.now();
   const job = finishAudio(pcm, { run: runHelper })
-    .catch((e) => showNotice(`녹음 소리를 m4a 로 바꾸지 못했습니다 — 다음 실행 때 다시 합니다 (${e.message})`))
+    .then((dest) => {
+      const ms = Date.now() - t0;
+      if (dest) log[ms > 10_000 ? 'warn' : 'info']('소리 파일', `조각 합침(m4a) ${log.secs(ms)}`);
+    })
+    .catch((e) => {
+      log.error('소리 파일', `합치기(m4a) 실패 — .pcm 남김: ${log.err(e)}`);
+      showNotice(`녹음 소리를 m4a 로 바꾸지 못했습니다 — 다음 실행 때 다시 합니다 (${e.message})`);
+    })
     .finally(() => {
       encoding.delete(job);
       reloadSessions();
@@ -474,6 +493,7 @@ session.on('start', () => {
     pcmFile = new PcmFile(writer.planned.replace(/\.txt$/, '.pcm'));
   } catch (e) {
     pcmFile = null;
+    log.error('소리 파일', `열기 실패: ${log.err(e)}`);
     showNotice(`녹음 소리를 저장할 수 없습니다: ${e.message}`);
   }
   setState({ liveSession: null });
@@ -486,7 +506,9 @@ session.on('stop', () => {
   const f = pcmFile;
   pcmFile = null;
   if (f) {
+    const t0 = Date.now();
     f.close();
+    log.info('소리 파일', `닫음 — 소리 ${f.seconds.toFixed(1)}초 (.pcm 한 조각), 닫기 ${Date.now() - t0}ms`);
     encodeLater(f.path);
   }
   reloadSessions();
@@ -511,7 +533,7 @@ let ocrN = 0;
 // 글자를 읽는 도중 앱이 강제로 꺼지면 화면 사진이 임시 폴더에 남는다. 켤 때 지운다
 try {
   for (const n of fs.readdirSync(os.tmpdir())) {
-    if (/^ezrite-ocr-\d+-\d+\.png$/.test(n)) fs.rmSync(path.join(os.tmpdir(), n), { force: true });
+    if (/^ezrite-(?:ocr-\d+-\d+\.png|grab-\d+-\d+\.bmp)$/.test(n)) fs.rmSync(path.join(os.tmpdir(), n), { force: true });
   }
 } catch {
   // 못 지워도 앱은 돈다
@@ -612,6 +634,158 @@ const explainer = new Explainer({
 });
 explainer.on('busy', (b) => setState({ explaining: b }));
 
+// ── 화면 번역 (실험 기능, 1.3.2 예정, 맥 ScreenTranslate): 고른 창만 찍기 → 글자 읽기 → Groq → 그 창 위 덮개 (lib/screentranslate.js) ──
+
+let grabN = 0;
+let enOcr = null; // 영어 글자 인식 팩이 있나 (처음 읽을 때 안다)
+let txOverlay = null;
+const txOverlayWin = () => {
+  if (!txOverlay || txOverlay.win.isDestroyed()) {
+    txOverlay = TranslateUI.createOverlay({
+      // 덮개는 팝업 아래 (덮개를 띄운 뒤 팝업을 다시 위로)
+      onShown: () => { if (popup && !popup.isDestroyed() && popup.isVisible()) popup.moveTop(); },
+    });
+  }
+  return txOverlay;
+};
+const screenTx = new ScreenTranslate({
+  // 그 창 하나만 BMP 로 찍는다 (가려져 있어도 그 창 내용). 글자를 읽은 뒤 지운다
+  grab: async (hwnd) => {
+    const file = path.join(os.tmpdir(), `ezrite-grab-${process.pid}-${grabN++}.bmp`);
+    const rect = JSON.parse(await runHelper(['grab', '--hwnd', String(hwnd), '--out', file], 15_000));
+    try {
+      return { rect, bitmap: decodeBMP(fs.readFileSync(file)), file };
+    } catch (e) {
+      fs.rmSync(file, { force: true });
+      throw e;
+    }
+  },
+  // 영어 글자 인식 팩이 있으면 그것으로 (번역할 글은 보통 영어). 한국어 팩으로 영어를 읽으면 0/o·5/s·1/l 이 자주 섞인다.
+  // 없으면 기본(한국어 → 사용자 언어) 으로 읽고 한 번 알린다
+  ocr: async (file) => {
+    try {
+      if (enOcr !== false) {
+        try {
+          const r = JSON.parse(await runHelper(['ocr', file, '--lang', 'en-US'], 30_000));
+          enOcr = true;
+          return r;
+        } catch {
+          enOcr = false;
+          log.info('화면 번역', '영어 글자 인식 팩 없음 — 기본 인식으로 읽음');
+          showNotice('영어 글자 인식 팩이 없어 영어를 잘못 읽을 수 있습니다 (Windows 설정 → 시간 및 언어 → 언어에 English 추가)');
+        }
+      }
+      return JSON.parse(await runHelper(['ocr', file], 30_000));
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+  },
+  // 설정의 번역 서비스로 (Groq 면 120b → qwen, 20b 는 영어를 그대로 돌려줘서 뺐다). 다른 서비스가 실패하면 Groq 로 (맥과 같다)
+  translate: (texts) => translateScreen(texts, {
+    provider: state.ai.translateProvider, model: state.ai.translateModel, groq, ai: aiClient, onNotice: showNotice,
+  }),
+  watch: (hwnd, onLine) => helperLines(['screen-watch', '--hwnd', String(hwnd), '--ms', '500'], (line) => {
+    let v;
+    try {
+      v = JSON.parse(line);
+    } catch {
+      return;
+    }
+    onLine(v);
+  }),
+  overlay: {
+    show: (rect, items, scale) => txOverlayWin().show(rect, items, scale),
+    move: (rect) => txOverlay?.move(rect),
+    hide: () => txOverlay?.hide(),
+    reveal: (key) => txOverlay?.reveal(key),
+  },
+  cursor: () => screen.dipToScreenPoint(screen.getCursorScreenPoint()),
+  scaleOf: (r) => screen.getDisplayMatching(screen.screenToDipRect(null, { x: r.x, y: r.y, width: r.w, height: r.h })).scaleFactor,
+  ownPid: process.pid,
+});
+screenTx.on('change', (st) => {
+  setState({ screenTx: st });
+  if (st.reason) showNotice(`화면 번역을 멈췄습니다 — ${st.reason}`);
+});
+screenTx.on('notice', (m) => showNotice(m));
+
+/** 번역할 수 있는 창 (이 앱 창은 빼고, 제목 있는 것). 맨 앞부터 */
+async function translatableWindows() {
+  const list = await listWindows();
+  return list.windows.filter((w) => w.pid !== process.pid && w.title).map((w) => ({ hwnd: String(w.hwnd), title: w.title }));
+}
+
+/**
+ * 마우스로 가리켜 번역할 창 고르기 (맥과 같다): 팝업을 닫고 화면마다 패널을 띄워 마우스 아래 창을 파랗게, 누르면 고름, Esc 면 취소.
+ * 같은 앱 창이 여럿이어도 헷갈리지 않는다 (제목 목록 대신)
+ */
+let picking = null;
+async function pickWindow() {
+  if (picking || !state.options.screenTranslate) return;
+  if (!hasKey()) {
+    showNotice(MESSAGES.noKey);
+    return;
+  }
+  if (popup && !popup.isDestroyed() && popup.isVisible()) popup.hide();
+  let list;
+  try {
+    list = (await listWindows()).windows.filter((w) => w.pid !== process.pid && w.title);
+  } catch (e) {
+    showNotice(`창 목록을 읽지 못했습니다: ${e.message}`);
+    return;
+  }
+  const panels = screen.getAllDisplays().map((d) => TranslateUI.createPicker(d));
+  let current = null;
+  const toDip = (r) => screen.screenToDipRect(null, r);
+  const tick = () => {
+    const hit = windowAt(list, screen.dipToScreenPoint(screen.getCursorScreenPoint()));
+    if (hit === current) return;
+    current = hit;
+    for (const p of panels) p.highlight(panelRect(hit, p.display, toDip));
+  };
+  const timer = setInterval(tick, 50);
+  // 고르는 동안만 Esc 를 전역 단축키로: 팝업을 닫은 뒤라 Windows 가 패널을 앞으로 못 내줄 수 있다 (포커스 없으면 키가 안 온다)
+  let escKey = false;
+  try {
+    escKey = globalShortcut.register('Escape', () => picking?.finish(false));
+  } catch {
+    escKey = false;
+  }
+  const cursorAt = screen.getCursorScreenPoint();
+  // Esc 를 받게 마우스가 있는 화면의 패널에 포커스
+  const home = panels.find((p) => {
+    const b = p.display.bounds;
+    return cursorAt.x >= b.x && cursorAt.x < b.x + b.width && cursorAt.y >= b.y && cursorAt.y < b.y + b.height;
+  }) ?? panels[0];
+  home?.win.webContents.once('did-finish-load', () => setTimeout(() => home.focus(), 50));
+  log.info('화면 번역', `창 고르기 — 창 ${list.length}개, 화면 ${panels.length}개`);
+  picking = {
+    finish(pick) {
+      clearInterval(timer);
+      if (escKey) globalShortcut.unregister('Escape');
+      for (const p of panels) p.close();
+      picking = null;
+      if (pick && current) startScreenTx(String(current.hwnd));
+      else log.info('화면 번역', '창 고르기 취소');
+    },
+    owns: (wc) => panels.some((p) => !p.win.isDestroyed() && p.win.webContents === wc),
+  };
+}
+
+async function startScreenTx(hwnd) {
+  if (!state.options.screenTranslate) return;
+  if (!hasKey()) {
+    showNotice(MESSAGES.noKey);
+    return;
+  }
+  const win = (await translatableWindows()).find((w) => w.hwnd === String(hwnd));
+  if (!win) {
+    showNotice('그 창을 찾지 못했습니다');
+    return;
+  }
+  screenTx.start({ hwnd: win.hwnd, title: win.title });
+}
+
 /** EZRITE_CARD: AI 없이 이 JSON 내용을 카드에 띄운다 (맥과 같다) */
 function demoCard(value) {
   try {
@@ -626,7 +800,10 @@ function demoCard(value) {
 async function recoverAndPrune() {
   const dir = notesDir();
   // 지운 것은 이름과 이유를 main.log 에 한 줄씩 (1.2.4, 맥 "Ezrite 정리: <이름> 지움 (<이유>)")
-  const logDeleted = (name, reason) => appendLine(LOG_DIR, notes.cleanupLine(name, reason));
+  const logDeleted = (name, reason) => {
+    appendLine(LOG_DIR, notes.cleanupLine(name, reason));
+    log.info('정리', `${name} 지움 (${reason})`);
+  };
   // 바꾸다 꺼진 반쪽 파일 (기록 폴더 안에도 생긴다)
   for (const folder of [dir, ...notes.subfolders(dir)]) {
     for (const n of fs.existsSync(folder) ? fs.readdirSync(folder) : []) {
@@ -635,11 +812,14 @@ async function recoverAndPrune() {
       logDeleted(n, '변환 임시 파일');
     }
   }
-  for (const pcm of notes.pendingAudio(dir, logDeleted)) {
+  const pending = notes.pendingAudio(dir, logDeleted);
+  if (pending.length) log.warn('소리 파일', `지난번에 못 합친 조각 ${pending.length}개 발견 — 지금 합친다`);
+  for (const pcm of pending) {
     try {
       await finishAudio(pcm, { run: runHelper, onDelete: logDeleted });
-    } catch {
+    } catch (e) {
       // .pcm 은 남는다. 다음 실행 때 다시
+      log.error('소리 파일', `지난 조각 합치기 실패: ${log.err(e)}`);
     }
   }
   try {
@@ -836,10 +1016,23 @@ async function startRecord() {
   const args = currentArgs();
   if (!args) {
     const src = state.sources.find((s) => s.id === state.sourceId);
+    log.warn('녹음', src?.kind === 'app' ? '시작 못 함 — 고른 프로그램이 소리를 내지 않음' : '시작 못 함 — 출처 없음');
     setState({ error: src?.kind === 'app' ? notPlayingMessage(src.label) : '소리 출처를 먼저 고르세요 (설정 → 소리 출처)' });
     return;
   }
-  session.start(args);
+  if (session.start(args)) {
+    const kind = dev.demoScript ? '시연 대본' : args.testfile ? '시험 파일' : args.pid ? '프로그램' : '마이크';
+    const o = state.options;
+    log.info('녹음', `시작 — 출처 ${kind}, 마이크 섞기 ${args.mixMic ? 'on' : 'off'}, 언어 ${state.language}, 자동 번역 ${o.autoTranslate ? 'on' : 'off'}, 조용하면 쉬기 ${o.autoPauseQuiet ? 'on' : 'off'}`);
+  }
+}
+
+/** 단추를 누른 곳 (앱 기록) */
+function pressedIn(e) {
+  const w = e ? BrowserWindow.fromWebContents(e.sender) : null;
+  if (w && w === popup) return state.compact ? '작은 창' : '팝업';
+  if (w && w === mainWin) return '전체 창';
+  return '앱';
 }
 
 function stopRecord() {
@@ -1016,6 +1209,7 @@ function applyPatch(patch) {
   // 녹음 중에 끄면 쉬던 것을 바로 이어 가고, 켜면 그때부터 30초를 센다
   if (next.options && next.options.autoPauseQuiet !== quietBefore) session.quietSettingChanged();
   if (typeof next.compact === 'boolean') resizePopup();
+  if (next.options && !next.options.screenTranslate && screenTx.active) screenTx.stop();
 }
 
 // ── 트레이 아이콘 ──
@@ -1118,9 +1312,9 @@ function roundCorners(win) {
   execFile(exe, ['corner', '--hwnd', hwnd], { windowsHide: true, timeout: 5000 }, () => {});
 }
 
-let bannerHeight = 0; // 팝업 위 "새 버전" 띠 높이 (renderer 가 잰다). 그만큼 팝업이 커진다 (맥 UpdateBanner)
+// 새 버전·저장됨 띠는 내용 위에 겹쳐 뜬다 (1.3.2, 맥과 같다). 띠가 생겨도 팝업 크기는 그대로
 function popupSize() {
-  return state.compact ? COMPACT : { width: POPUP.width, height: POPUP.height + bannerHeight };
+  return state.compact ? COMPACT : POPUP;
 }
 
 function placePopup() {
@@ -1401,9 +1595,20 @@ function registerIpc() {
   ipcMain.handle('state:get', () => state);
   ipcMain.handle('state:set', (_e, patch) => applyPatch(patch || {}));
   ipcMain.handle('sources:refresh', () => refreshSources());
-  ipcMain.handle('record:start', () => startRecord());
-  ipcMain.handle('record:stop', () => stopRecord());
-  ipcMain.handle('record:pause', () => togglePause());
+  ipcMain.handle('record:start', (e) => {
+    log.info('녹음', `시작 누름 (${pressedIn(e)})`);
+    return startRecord();
+  });
+  ipcMain.handle('record:stop', (e) => {
+    log.info('녹음', `끝내기 누름 (${pressedIn(e)})`);
+    return stopRecord();
+  });
+  ipcMain.handle('record:pause', (e) => {
+    log.info('녹음', `${state.paused ? '다시 시작' : '일시정지'} 누름 (${pressedIn(e)})`);
+    return togglePause();
+  });
+  // 화면 멈춤 감시: preload 가 ping 에 바로 답한다 (lib/hangwatch.js)
+  ipcMain.on('ez:pong', (e, n) => pingWatch?.pong(e.sender.id, n));
   // 창이 화면에 그려지는지 (levelTargets 가 본다)
   ipcMain.on('window:shown', (e, v) => {
     const w = BrowserWindow.fromWebContents(e.sender);
@@ -1447,13 +1652,13 @@ function registerIpc() {
   ipcMain.handle('notes:choose', () => chooseNotesFolder());
   ipcMain.handle('notes:default', () => setNotesFolder(''));
   ipcMain.handle('explain:run', () => { explainer.run(); });
-  ipcMain.handle('popup:banner', (e, h) => {
-    if (BrowserWindow.fromWebContents(e.sender) !== popup || !Number.isFinite(h)) return;
-    const next = Math.max(0, Math.min(200, Math.ceil(h)));
-    if (next === bannerHeight) return;
-    bannerHeight = next;
-    resizePopup();
-  });
+  // 화면 번역 (실험 기능): 창 목록은 제목·핸들만 (내용은 보내지 않는다)
+  ipcMain.handle('screentx:windows', () => (state.options.screenTranslate ? translatableWindows().catch(() => []) : []));
+  ipcMain.handle('screentx:start', (_e, hwnd) => (/^\d{1,20}$/.test(String(hwnd)) ? startScreenTx(String(hwnd)) : undefined));
+  ipcMain.handle('screentx:stop', () => screenTx.stop());
+  ipcMain.handle('screentx:pick', () => pickWindow());
+  ipcMain.on('pick:click', (e) => { if (picking?.owns(e.sender)) picking.finish(true); });
+  ipcMain.on('pick:cancel', (e) => { if (picking?.owns(e.sender)) picking.finish(false); });
   // 새 버전: [받기] 는 lib/updater.js 가 확인한 GitHub 주소만 연다
   ipcMain.handle('update:download', () => {
     const url = updater.available?.download;
@@ -1474,7 +1679,8 @@ function registerIpc() {
     if (onboardingWin && !onboardingWin.isDestroyed()) onboardingWin.close();
     welcome();
   });
-  ipcMain.handle('app:quit', () => {
+  ipcMain.handle('app:quit', (e) => {
+    log.info('앱', `종료 누름 (${pressedIn(e)})`);
     app.isQuitting = true;
     app.quit();
   });
@@ -1492,6 +1698,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => showPopup());
 
   app.whenReady().then(async () => {
+    startAppLog();
     Menu.setApplicationMenu(null);
     protocol.handle('ezrite-note', serveAudio);
     registerIpc();
@@ -1510,7 +1717,7 @@ if (!app.requestSingleInstanceLock()) {
         { label: '창 열기', click: () => showMain() },
         { label: '처음 설정 안내', click: () => showOnboarding() },
         { type: 'separator' },
-        { label: '종료', click: () => { app.isQuitting = true; app.quit(); } },
+        { label: '종료', click: () => { log.info('앱', '종료 누름 (트레이 메뉴)'); app.isQuitting = true; app.quit(); } },
       ]));
     });
 
@@ -1545,23 +1752,127 @@ if (!app.requestSingleInstanceLock()) {
     }
     // 맥 EZRITE_EXPLAIN=<초>: 그 시간 뒤에 "설명해줘"를 한 번 누른다
     if (dev.explainAfter != null) setTimeout(() => explainer.run(), dev.explainAfter * 1000);
+    runScript();
   });
+}
+
+// ── 앱 기록 · 멈춤 감시 (1.3.2, 맥 AppLog·HangWatch) ──
+
+let pingWatch = null;
+const GB = (b) => (b / 1024 ** 3).toFixed(1);
+
+/** 앱 창 이름 (기록용) */
+function windowName(wc) {
+  const named = [[popup, state.compact ? '작은 창' : '팝업'], [mainWin, '전체 창'], [onboardingWin, '처음 안내'], [guideWin, '사용 가이드'],
+    [explainer.card?.win, '설명 카드'], [explainer.overlay?.win, '화면 표시']];
+  const hit = named.find(([w]) => w && !w.isDestroyed() && w.webContents === wc);
+  return hit ? hit[1] : '창';
+}
+
+/** 멈춘 화면의 hang-시각.txt: 어느 창·얼마나·그 프로세스 CPU·메모리 (Windows 는 화면 스택을 뜰 수 없다, lib/hangwatch.js) */
+function uiHangFile(t, ms) {
+  try {
+    const pid = t.win.webContents.getOSProcessId();
+    const m = app.getAppMetrics().find((x) => x.pid === pid);
+    const name = require('./lib/applog').hangName(new Date());
+    fs.writeFileSync(path.join(log.dir, name), [
+      `Ezrite 멈춤 (화면: ${t.name})`,
+      `시각: ${new Date(Date.now() - ms).toISOString()} 부터 ${(ms / 1000).toFixed(1)}초째 응답 없음`,
+      `Ezrite ${app.getVersion()}, Windows ${os.release()}, 화면 프로세스 pid ${pid}`,
+      m ? `CPU ${m.cpu.percentCPUUsage.toFixed(1)}%, 메모리 ${Math.round(m.memory.workingSetSize / 1024)}MB` : '프로세스 정보 없음',
+      '',
+      '화면 스택: Windows 에서는 뜰 수 없다 (Chromium 은 페이지가 Document-Policy 헤더로 허락해야 주는데 앱 화면은 file:// 이라 헤더가 없다)',
+      '',
+    ].join('\n'));
+    log.info('앱', `멈춘 화면 정보 → ${name}`);
+  } catch (e) {
+    log.warn('앱', `멈춘 화면 정보를 남기지 못함: ${log.err(e)}`);
+  }
+}
+
+function startAppLog() {
+  if (!log.on) return;
+  log.info('앱', `시작 — 버전 ${app.getVersion()} (${app.isPackaged ? '설치본' : '개발'}), Electron ${process.versions.electron}, Windows ${os.release()} ${os.arch()}, `
+    + `메모리 ${GB(os.totalmem())}GB (여유 ${GB(os.freemem())}GB), pid ${process.pid}, 기록 ${log.dir}`);
+  // 메인 프로세스 멈춤: worker 스레드가 지켜보고 스택을 뜬다
+  watchMain({ dir: log.dir, info: `Ezrite ${app.getVersion()}, Windows ${os.release()}` });
+  // 화면 멈춤: 1초마다 창마다 ping
+  pingWatch = new PingWatch({
+    onHang: (t, ms) => {
+      log.warn('앱', `화면(${t.name})이 ${Math.round(ms / 1000)}초째 응답 없음`);
+      uiHangFile(t, ms);
+    },
+    onRecover: (t, ms) => log.warn('앱', `화면(${t.name}) 풀림 — ${(ms / 1000).toFixed(1)}초 동안 멈춰 있었음`),
+  });
+  const targets = () => [popup, mainWin, onboardingWin, explainer.card?.win]
+    .filter((w) => w && !w.isDestroyed() && !w.webContents.isLoading() && !w.webContents.isCrashed())
+    .map((w) => ({ id: w.webContents.id, name: windowName(w.webContents), win: w, send: (n) => w.webContents.send('ez:ping', n) }));
+  setInterval(() => pingWatch.tick(targets()), 1000).unref?.();
+  // Chromium 자신의 판단 (보통 더 늦다), 프로세스가 꺼진 것
+  app.on('browser-window-created', (_e, w) => {
+    w.on('unresponsive', () => log.warn('앱', `창(${windowName(w.webContents)}) 응답 없음 (Chromium)`));
+    w.on('responsive', () => log.warn('앱', `창(${windowName(w.webContents)}) 다시 응답 (Chromium)`));
+  });
+  app.on('render-process-gone', (_e, wc, d) => log.error('앱', `화면 프로세스 꺼짐 (${windowName(wc)}) — ${d.reason}, 종료 코드 ${d.exitCode}`));
+  app.on('child-process-gone', (_e, d) => log[d.reason === 'clean-exit' ? 'info' : 'error']('앱',
+    `보조 프로세스 꺼짐 — ${d.type}${d.name ? ` (${d.name})` : ''}, ${d.reason}, 종료 코드 ${d.exitCode}`));
+  // 시스템 (Electron powerMonitor). 사용자 전환은 Windows 에서 화면 잠금으로 온다. 발열은 macOS 만 알린다
+  const { powerMonitor } = require('electron');
+  const sys = {
+    suspend: '잠자기', resume: '깨어남', 'lock-screen': '화면 잠금', 'unlock-screen': '화면 잠금 풀림', shutdown: '끄기/로그아웃',
+    'on-ac': '전원 연결', 'on-battery': '배터리로 돎',
+  };
+  for (const [ev, text] of Object.entries(sys)) powerMonitor.on(ev, () => log.info('시스템', text));
+  powerMonitor.on('thermal-state-change', (d) => log.warn('시스템', `발열 상태 ${d?.state ?? d}`));
+  powerMonitor.on('speed-limit-change', (d) => log.warn('시스템', `CPU 속도 제한 ${d?.limit ?? d}%`));
+  screen.on('display-added', () => log.info('시스템', `화면 연결 — 이제 ${screen.getAllDisplays().length}개`));
+  screen.on('display-removed', () => log.info('시스템', `화면 빠짐 — 이제 ${screen.getAllDisplays().length}개`));
+}
+
+/** EZRITE_SCRIPT 멈춤 시험 (맥 hang@8=5): 켠 지 at 초에 메인 프로세스(hang)나 팝업 화면(uihang)을 secs 초 굳힌다 */
+function runScript() {
+  for (const step of dev.script) {
+    setTimeout(() => {
+      log.info('앱', `시험 ${step.kind}@${step.at}=${step.secs} — ${step.kind === 'hang' ? '메인 프로세스를' : '팝업 화면을'} ${step.secs}초 굳힘`);
+      if (step.kind === 'hang') spin(step.secs * 1000);
+      else if (popup && !popup.isDestroyed()) {
+        popup.webContents.executeJavaScript(`(function ezriteHangTest() { const end = Date.now() + ${step.secs * 1000}; while (Date.now() < end) { /* 굳힘 */ } })(); 0`).catch(() => {});
+      }
+    }, step.at * 1000);
+  }
 }
 
 // 끝낼 때: 녹음을 마무리하고, m4a 로 바꾸는 일이 끝날 때까지(최대 30초) 기다린다.
 // 그래도 못 끝내면 .pcm 이 남아 다음 실행 때 바꾼다
 let quitting = false;
+let quitAt = null; // 종료를 시작한 때 (앱 기록: 단계별 걸린 시간)
 app.on('before-quit', (e) => {
+  if (quitAt == null) {
+    quitAt = Date.now();
+    const rec = state.listening ? (state.paused ? '일시정지 중' : state.quietPaused ? '조용해서 쉬는 중' : '녹음 중') : '녹음 안 함';
+    log.info('앱', `종료 시작 — ${rec}, 소리 합치는 중 ${encoding.size}개`);
+  }
   app.isQuitting = true;
+  const t0 = Date.now();
   session.stop();
   explainer.clear();
+  screenTx.stop();
+  if (!quitting) log.info('앱', `녹음 정리 ${Date.now() - t0}ms`);
   const waits = [...encoding];
   if (quitting || waits.length === 0) return;
   e.preventDefault();
   quitting = true;
-  const timeout = new Promise((r) => setTimeout(r, 30_000));
-  Promise.race([Promise.allSettled(waits), timeout]).then(() => app.quit());
+  log.info('앱', `소리 합치기 기다림 — ${waits.length}개 (최대 30초)`);
+  const w0 = Date.now();
+  const timeout = new Promise((r) => setTimeout(() => r('timeout'), 30_000));
+  Promise.race([Promise.allSettled(waits), timeout]).then((r) => {
+    if (r === 'timeout') log.warn('앱', `소리 합치기 30초 넘김 — .pcm 을 남기고 끝낸다 (다음 실행 때 합친다)`);
+    else log.info('앱', `소리 합치기 끝 ${log.secs(Date.now() - w0)}`);
+    app.quit();
+  });
 });
+// 마지막 줄. 기록은 한 줄씩 바로 쓰므로 비울 버퍼가 없다 (lib/applog.js)
+app.on('will-quit', () => log.info('앱', `기록 닫음 — 종료 시작부터 ${quitAt == null ? 0 : Date.now() - quitAt}ms`));
 app.on('window-all-closed', () => {
   // 트레이에 남아 있으므로 종료하지 않는다
 });

@@ -1,0 +1,24 @@
+<!doctype html>
+<meta charset="utf-8">
+<!-- 화면 번역 그림 시험 (scripts/translate-image.js): 덮은 그림과 상자 그림을 canvas 로 그린다 -->
+<script src="../renderer/translate/paint.js"></script>
+<script>
+  async function render({ src, items, scale, boxes }) {
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    const draw = (fn) => {
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const r = fn(ctx);
+      return [c.toDataURL('image/png'), r];
+    };
+    await document.fonts.ready;
+    const [covered, done] = draw((ctx) => EzPaint.paint(ctx, items, scale));
+    const [box] = draw((ctx) => EzPaint.boxes(ctx, boxes));
+    return { covered, boxes: box, done };
+  }
+</script>

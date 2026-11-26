@@ -23,6 +23,7 @@ test('EZRITE_PREVIEW·EZRITE_THEME·EZRITE_SHOT을 읽는다', () => {
     dockOnly: null,
     updateExe: null,
     updateNow: false,
+    script: [],
   });
 });
 
@@ -53,7 +54,7 @@ test('Mica·Acrylic은 Windows 11 22H2(빌드 22621) 이상에서만', () => {
 test('값이 없으면 미리보기 없음, 테마는 system', () => {
   assert.deepEqual(parseDevEnv({}), {
     preview: null, theme: 'system', shot: null, testScale: null, capturePid: null, demoScript: null, testFile: null, fakeGroq: false, speed: 1, shotDelay: 1200,
-    explainAfter: null, card: null, ask: null, capturable: false, updateJSON: null, shotScroll: 0, dockOnly: null, updateExe: null, updateNow: false,
+    explainAfter: null, card: null, ask: null, capturable: false, updateJSON: null, shotScroll: 0, dockOnly: null, updateExe: null, updateNow: false, script: [],
   });
 });
 

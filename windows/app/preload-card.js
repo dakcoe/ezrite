@@ -4,6 +4,9 @@
 // 같은 이름으로 만들어 main 에 전한다 (내용 높이·장면 번호·질문, 1.3.0 마우스 올린 항목·글 자리·접기·질문 칸 누름·앞으로). 그 밖의 것은 내주지 않는다
 const { contextBridge, ipcRenderer } = require('electron');
 
+// 멈춤 감시 (1.3.2): 메인의 ping 에 바로 답한다 (lib/hangwatch.js)
+ipcRenderer.on('ez:ping', (_e, n) => ipcRenderer.send('ez:pong', n));
+
 const relay = (name) => ({ postMessage: (v) => ipcRenderer.send(`card:${name}`, v) });
 
 contextBridge.exposeInMainWorld('webkit', {

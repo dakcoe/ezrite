@@ -180,6 +180,10 @@
       loginCard(s),
       themeCard(s),
 
+      // 실험 기능 (1.3.2 예정, 맥과 같다): 켜야 팝업·창 위에 단추가 보인다
+      label('실험 기능'),
+      toggleCard('languages', '화면 번역', '고른 창의 글자를 읽어 한국어 번역을 원래 자리에 덮어 보여 줍니다. 마우스를 올리면 원문이 보이고, 스크롤해 새 글이 나오면 그것만 옮깁니다. Groq 로 옮깁니다.', o.screenTranslate, 'screenTranslate'),
+
       label('저장 위치'),
       h('div', { class: 'card' },
         h('div', { class: 'row' }, h('span', { class: 'ico', html: icon('folder', 15) }),

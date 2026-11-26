@@ -10,12 +10,12 @@ use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
 use windows::Win32::UI::HiDpi::{SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2};
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetClassNameW, GetForegroundWindow, GetWindow, GetWindowLongW, GetWindowPlacement, GetWindowRect,
-    GetWindowTextLengthW, GetWindowThreadProcessId, IsIconic, IsWindowVisible, IsZoomed, SetWindowPlacement, SetWindowPos,
+    GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible, IsZoomed, SetWindowPlacement, SetWindowPos,
     ShowWindowAsync, GWL_EXSTYLE, GW_OWNER, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER,
     SW_SHOWMAXIMIZED, SW_SHOWNOACTIVATE, WINDOWPLACEMENT, WPF_ASYNCWINDOWPLACEMENT, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
 };
 
-fn dpi_aware() {
+pub(crate) fn dpi_aware() {
     // SAFETY: 프로세스 전역 설정을 한 번 바꿀 뿐이다. 이미 정해져 있으면 오류를 돌려주고 그대로 둔다
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -68,8 +68,17 @@ fn describe(h: HWND) -> Option<Win> {
         GetWindowThreadProcessId(h, Some(&mut pid));
         let max = IsZoomed(h).as_bool();
         let normal = if max { placement(h).map(|p| rect4(p.rcNormalPosition)) } else { None };
-        Some(Win { hwnd: handle(h), pid, x: r.left, y: r.top, w, h: ht, max, normal })
+        // 제목 (화면 번역: 번역할 창 고르기 목록)
+        let mut tbuf = [0u16; 256];
+        let tn = GetWindowTextW(h, &mut tbuf).max(0) as usize;
+        let title = String::from_utf16_lossy(&tbuf[..tn]);
+        Some(Win { hwnd: handle(h), pid, x: r.left, y: r.top, w, h: ht, max, normal, title })
     }
+}
+
+/// 화면 번역(win_grab)도 같은 기준으로 "앞에 있는 창" 을 센다
+pub(crate) fn describe_window(h: HWND) -> Option<Win> {
+    describe(h)
 }
 
 fn rect4(r: RECT) -> [i32; 4] {

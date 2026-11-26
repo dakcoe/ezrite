@@ -170,6 +170,8 @@ html.material .caption { background: var(--popup-bg); }
   background: var(--fill-3);
 }
 .round.rec { background: var(--blue); color: #fff; }
+/* 화면 번역 중 (실험 기능) */
+.round.tx-btn.on { background: color-mix(in srgb, var(--blue) 22%, transparent); color: var(--blue); }
 .round.rec.on { background: rgba(236, 75, 63, 0.9); }
 .gear { width: 26px; height: 28px; display: grid; place-items: center; color: var(--secondary); flex: none; }
 .window .gear { width: 30px; height: 34px; }
@@ -511,11 +513,29 @@ textarea {
   animation: ez-spin .8s linear infinite; }
 @keyframes ez-spin { to { transform: rotate(360deg); } }
 
-/* 팝업·전체 창 맨 위 "새 버전" 띠 (맥 UpdateBanner: 파란 8% 바탕) */
-.update-banner { flex: none; padding: 10px 14px; background: rgba(47, 123, 246, 0.08); display: flex; flex-direction: column; gap: 6px; }
+/* 띠는 창 안에서 내용 위에 겹쳐 뜬다 (1.3.2, 맥과 같다): 창 높이를 바꾸지 않고 위 8·좌우 8, 두 띠면 사이 6.
+   떠 있는 카드: 반투명 재질(흐린 뒤 화면) + 색 10%, 반지름 10, 글자색 8% 테두리, 검정 18% 그림자 아래 2 */
+.full, #root { position: relative; }
+.top-banners {
+  position: absolute; top: 8px; left: 8px; right: 8px; z-index: 30;
+  display: flex; flex-direction: column; gap: 6px;
+  pointer-events: none; /* 띠 사이·옆 빈자리는 아래 내용을 누른다 */
+}
+.update-banner, .saved-banner {
+  pointer-events: auto;
+  --tint: rgba(47, 123, 246, 0.10);
+  background: linear-gradient(var(--tint), var(--tint)), color-mix(in srgb, var(--popup-bg) 95%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  backdrop-filter: blur(20px) saturate(1.6);
+  border: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
+  border-radius: 10px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.18);
+}
+/* "새 버전" 띠 (맥 UpdateBanner: 파랑) */
+.update-banner { padding: 9px 12px; display: flex; flex-direction: column; gap: 6px; }
 .update-banner.hidden { display: none; }
-/* 녹음 기록 저장됨 띠 (맥 SavedBanner: 초록 8%) */
-.saved-banner { flex: none; padding: 9px 14px; background: rgba(52, 199, 89, 0.08); display: flex; flex-direction: column; gap: 4px; }
+/* 녹음 기록 저장됨 띠 (맥 SavedBanner: 초록) */
+.saved-banner { --tint: rgba(52, 199, 89, 0.10); padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; }
 .saved-banner.hidden { display: none; }
 .saved-banner .top { display: flex; align-items: center; gap: 6px; }
 .saved-banner .sb-icon { color: var(--green); display: flex; }
@@ -528,11 +548,12 @@ textarea {
 .saved-banner .sb-place:hover { color: var(--text); }
 .saved-banner .sb-folder { display: flex; flex: none; }
 .saved-banner .sb-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.top-banners { flex: none; display: flex; flex-direction: column; }
-.update-banner .top { display: flex; align-items: center; gap: 6px; }
-.update-banner .ub-icon { color: var(--blue); display: flex; }
-.update-banner .ub-title { font-size: 12.5px; font-weight: 600; }
-.update-banner .ub-now { font-size: 11px; }
+.update-banner .top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.update-banner .ub-icon { color: var(--blue); display: flex; flex: none; }
+/* 제목은 한 줄 (1.3.2, 줄바꿈 금지): 좁으면 "지금 …" 이 먼저 줄고 제목은 … 로 */
+.update-banner .ub-title { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.update-banner .ub-now { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 100 auto; }
+.update-banner .top .btn { flex: none; white-space: nowrap; }
 .update-banner .spacer { flex: 1; }
 .update-banner .btn { height: 22px; }
 /* 1.2.4 앱 안 업데이트: 오류는 주황 한 줄 + 오른쪽 [브라우저로 받기] (맥과 같다) */

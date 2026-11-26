@@ -1,4 +1,5 @@
 'use strict';
+const log = require('./applog');
 
 // 새 버전 알림 (맥 Updater.swift 이식). 켤 때와 6시간마다 GitHub 의 최신 릴리스를 물어보고, 앱보다 높으면
 // 팝업과 전체 창 맨 위에 띠를 띄운다. 설치는 사용자가 [받기]로 설치 파일(.exe)을 받아 직접 한다.
@@ -124,15 +125,18 @@ class Updater {
         headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Ezrite' },
         signal: AbortSignal.timeout(20_000),
       });
-      // 404(비공개 저장소·릴리스 없음)·한도 초과 등은 알리지 않는다
+      // 404(비공개 저장소·릴리스 없음)·한도 초과 등은 알리지 않는다 (앱 기록에만)
       if (res.status === 200) r = release(await res.text());
-    } catch {
+      else log.warn('업데이트', `확인 실패 — HTTP ${res.status}`);
+    } catch (e) {
       // 네트워크 오류도 조용히
+      log.warn('업데이트', `확인 실패 — ${log.err(e)}`);
     }
     this.checking = false;
     if (r) {
       this.checkedAt = Date.now();
       this.available = this.shouldShow(r.version, this.current) ? r : null;
+      log.info('업데이트', `확인 — 최신 ${r.version}, 지금 ${this.current}, 띠 ${this.available ? '보임' : '안 보임'}`);
     }
     this.changed();
   }

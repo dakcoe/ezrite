@@ -2,6 +2,9 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
+// 멈춤 감시 (1.3.2): 메인이 1초마다 보내는 ping 에 바로 답한다. 화면 JS 가 굳으면 답이 밀린다 (lib/hangwatch.js)
+ipcRenderer.on('ez:ping', (_e, n) => ipcRenderer.send('ez:pong', n));
+
 contextBridge.exposeInMainWorld('ezrite', {
   /** Windows 11 Mica·Acrylic 바탕을 쓰는지 (main.js additionalArguments) */
   material: process.argv.includes('--ezrite-material'),
@@ -33,8 +36,14 @@ contextBridge.exposeInMainWorld('ezrite', {
     skip: () => ipcRenderer.invoke('update:skip'),
     check: () => ipcRenderer.invoke('update:check'),
   },
-  /** 팝업 위 "새 버전" 띠 높이 (그만큼 팝업이 커진다) */
-  bannerHeight: (h) => ipcRenderer.invoke('popup:banner', h),
+  /** 화면 번역 (실험 기능): 창 목록(제목·핸들, 시험용), 시작, 멈춤, 가리켜 고르기 */
+  screenTx: {
+    windows: () => ipcRenderer.invoke('screentx:windows'),
+    start: (hwnd) => ipcRenderer.invoke('screentx:start', hwnd),
+    stop: () => ipcRenderer.invoke('screentx:stop'),
+    /** 마우스로 가리켜 고르기 (화면마다 패널) */
+    pick: () => ipcRenderer.invoke('screentx:pick'),
+  },
   openGuide: () => ipcRenderer.invoke('window:guide'),
   openIssue: () => ipcRenderer.invoke('open:issue'),
   openNotices: () => ipcRenderer.invoke('open:notices'),

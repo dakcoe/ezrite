@@ -13,10 +13,19 @@ use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
 use crate::ocr_box::{attempts, ocr_order, scale, shrink_factor, union, Attempt, BoxF, OcrChoice};
 
 #[derive(Serialize)]
+struct WordOut {
+    text: String,
+    #[serde(flatten)]
+    rect: BoxF,
+}
+
+#[derive(Serialize)]
 struct LineOut {
     text: String,
     #[serde(flatten)]
     rect: BoxF,
+    /// 낱말별 글자와 상자 (화면 번역: 줄 합치기·첫 글자 놓침 보정에 쓴다)
+    words: Vec<WordOut>,
 }
 
 #[derive(Serialize)]
@@ -89,14 +98,16 @@ fn recognize(decoder: &BitmapDecoder, engine: &OcrEngine, width: u32, height: u3
 
     let mut lines = Vec::new();
     for line in result.Lines()? {
-        let words: Vec<BoxF> = line
-            .Words()?
-            .into_iter()
-            .filter_map(|w| w.BoundingRect().ok())
-            .map(|r| BoxF { x: r.X, y: r.Y, w: r.Width, h: r.Height })
-            .collect();
-        let Some(rect) = union(&words) else { continue };
-        lines.push(LineOut { text: line.Text()?.to_string(), rect: scale(rect, factor) });
+        let mut words = Vec::new();
+        for w in line.Words()? {
+            let Ok(r) = w.BoundingRect() else { continue };
+            let rect = BoxF { x: r.X, y: r.Y, w: r.Width, h: r.Height };
+            words.push(WordOut { text: w.Text().map(|t| t.to_string()).unwrap_or_default(), rect });
+        }
+        let boxes: Vec<BoxF> = words.iter().map(|w| w.rect).collect();
+        let Some(rect) = union(&boxes) else { continue };
+        let words = words.into_iter().map(|w| WordOut { text: w.text, rect: scale(w.rect, factor) }).collect();
+        lines.push(LineOut { text: line.Text()?.to_string(), rect: scale(rect, factor), words });
     }
     Ok(lines)
 }

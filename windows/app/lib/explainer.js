@@ -19,6 +19,7 @@ const E = require('./explain');
 const G = require('./groq-explain');
 const AI = require('./ai');
 const MarkStyle = require('./markstyle');
+const log = require('./applog');
 
 const LOADING_READ = '화면을 읽는 중…';
 const LOADING_MAKE = '설명을 만드는 중…';
@@ -29,6 +30,12 @@ const JPEG_WIDTH = 1280; // 이미지 토큰은 크기와 상관없이 한 장�
 const MAP_WIDTH = 560; // 카드 속 지도에 넣는 축소 화면 (1.3.0, 맥과 같다)
 const WATCH_MS = 400;
 const WATCH_HIDDEN_MS = 600;
+
+/** 다른 AI 답을 못 읽었을 때 남길 모양: 생각 on/off, 자 수, } 로 끝나는가 (글 내용은 남기지 않는다) */
+function shape(text, think) {
+  const t = String(text ?? '').trim();
+  return `생각 ${think ? 'on' : 'off'}, ${t.length}자, } 로 끝남 ${t.endsWith('}') ? '예' : '아니오'}`;
+}
 
 class Explainer extends EventEmitter {
   // ai: Claude·Gemini·GPT 호출 (lib/ai.js AIClient). context() 의 provider·model 이 Groq 가 아니면 그쪽에 묻는다
@@ -94,6 +101,7 @@ class Explainer extends EventEmitter {
   async run() {
     if (this.busy) return;
     this.setBusy(true);
+    const t0 = Date.now();
     try {
       this.hideMarks();
       const card = this.ensureCard();
@@ -101,6 +109,7 @@ class Explainer extends EventEmitter {
       this.explanation = '';
       const { transcript, guide, provider, model, style } = this.context();
       this.style = MarkStyle.normalize(style);
+      log.info('설명', `시작 — 제공자 ${this.usesOther(provider, model) ? provider : 'groq'}, 모델 ${this.usesOther(provider, model) ? model : 'groq 기본'}, 최근 문장 ${transcript.length}개`);
       // 말풍선·여백 메모·판서만 장면 꼬리표를 받는다 (출력 토큰 절약, 맥 sceneTags)
       const tags = MarkStyle.wantsTags(this.style);
       try {
@@ -110,7 +119,10 @@ class Explainer extends EventEmitter {
         this.followDesktop(shot.display);
         card.show(shot.display, this.popupFrame());
         card.render({ loading: LOADING_READ });
+        const r0 = Date.now();
         const lines = await this.lines(shot.png());
+        const size = shot.bitmap ?? {};
+        log.info('설명', `화면 ${size.width}x${size.height}, 글자 줄 ${lines.length}개, 글자 읽기 ${Date.now() - r0}ms, 표시 방식 ${this.style}`);
         if (this.card !== card) return;
         // 글자를 읽었으면 카드를 화면 글자가 가장 적게 가려지는 자리로 (1.3.0, 사용자가 끌어 옮겼으면 그대로)
         card.place(lines, shot.display, this.popupFrame());
@@ -133,34 +145,44 @@ class Explainer extends EventEmitter {
                 text = t;
                 break;
               }
+              log.warn('설명', `다른 AI 답 못 읽음 — ${shape(t, think)}`);
               if (think) card.render({ loading: LOADING_REMAKE });
             }
             if (text != null) {
               this.present(card, lines, shot, text, { data: text }, hint);
               return;
             }
+            log.warn('설명', `${AI.LABEL[provider]} 답 못 읽음 → Groq`);
             this.onNotice(`${AI.LABEL[provider]} 설명을 읽지 못함 → Groq 로 대신했습니다`);
           } catch (e) {
             if (!AI.fallsBack(e)) throw e;
+            log.warn('설명', `${AI.LABEL[provider]} 실패 → Groq: ${log.err(e)}`);
             this.onNotice(`${AI.LABEL[provider]} 설명 실패 → Groq 로 대신했습니다`);
           }
         }
 
         // qwen 한 번으로. 실패하거나 빈 답이면 두 모델에 나눠 묻는다
-        const data = await G.explainUnified(this.groq, args).catch(() => null);
+        let why = '빈 답';
+        const data = await G.explainUnified(this.groq, args).catch((e) => {
+          why = log.err(e);
+          return null;
+        });
         if (data != null && (E.marks(data, lines).length || E.visuals(data).summary)) {
           this.present(card, lines, shot, data, { data }, hint);
           return;
         }
+        log.warn('설명', `Groq 한 번에 묻기 실패 → 나눠 묻기 (${why})`);
         const [picked, visuals] = await Promise.all([
           G.explainMarks(this.groq, args).catch(() => null), // 표시가 실패해도 설명 카드는 보여준다
           G.explainVisuals(this.groq, args).then((d) => ({ data: d }), (error) => ({ error })),
         ]);
         this.present(card, lines, shot, picked, visuals, hint);
       } catch (e) {
+        log.error('설명', `실패: ${log.err(e)}`);
         if (this.card === card) card.render({ error: e.message });
       }
     } finally {
+      log.info('설명', `끝 — ${log.secs(Date.now() - t0)}`);
       this.setBusy(false);
     }
   }
@@ -233,12 +255,15 @@ class Explainer extends EventEmitter {
     if (!card) return;
     // 기다리는 사이 카드를 닫았으면 답이 와도 아무것도 띄우지 않는다 (1.2.3)
     const closed = () => this.card !== card;
+    const t0 = Date.now();
     try {
       const shot = await this.grab({ display: this.display, full: true });
       if (closed()) return;
       this.followDesktop(shot.display); // 질문한 그때 화면이 기준
       const lines = await this.lines(shot.png());
       const { transcript, guide, provider, model } = this.context();
+      const other = this.usesOther(provider, model);
+      log.info('질문', `시작 — 제공자 ${other ? provider : 'groq'}, 모델 ${other ? model : 'groq 기본'}, 질문 ${String(question).length}자, 앞 대화 ${this.history.length}개`);
       // Groq 로 묻거나 대신할 때는 움직이는 그림 안내를 뺀 가벼운 질문 (한도에 덜 걸리게, 맥 1.2.1)
       const prompt = (rich) => G.questionPrompt(question, this.history, this.explanation, lines, transcript, guide, rich);
       const jpeg = shot.jpeg(JPEG_WIDTH);
@@ -254,11 +279,14 @@ class Explainer extends EventEmitter {
             });
             a = this.readAnswer(text, lines);
             if (a) break;
+            log.warn('질문', `못 읽음 — ${shape(text, think)}`);
           } catch (e) {
             if (!AI.fallsBack(e)) throw e;
+            log.warn('질문', `${AI.LABEL[provider]} 실패: ${log.err(e)}`);
             break;
           }
         }
+        if (!a) log.warn('질문', `${AI.LABEL[provider]} 실패 → Groq`);
         if (!a) this.onNotice(`${AI.LABEL[provider]} 답변 실패 → Groq 로 대신했습니다`);
       }
       if (!a) {
@@ -274,7 +302,9 @@ class Explainer extends EventEmitter {
       this.hideMarks();
       if (a.model) this.showMarks(shot, { ...a.model, others: lines.map((l) => l.box) });
       card.answer(a.payload);
+      log.info('질문', `끝 — ${log.secs(Date.now() - t0)}`);
     } catch (e) {
+      log.error('질문', `실패: ${log.err(e)}`);
       if (!closed()) card.answer({ error: e.message });
     }
   }
@@ -295,6 +325,7 @@ class Explainer extends EventEmitter {
       const closed = E.closedAnswer(text);
       if (closed != null) data = JSON.stringify({ answer: closed });
       if (closed != null) a = E.answerPresentation(data, lines, opts);
+      if (a) log.warn('질문', 'JSON 깨졌지만 답 글만 씀');
     }
     return a;
   }

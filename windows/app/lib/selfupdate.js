@@ -14,6 +14,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const log = require('./applog');
 const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { trusted, isNewer } = require('./updater');
@@ -86,6 +87,7 @@ class SelfUpdate {
   }
 
   fail(kind, detail) {
+    log.warn('업데이트', `설치 실패 — ${kind}: ${log.err(detail)}`);
     this.set({ phase: null, percent: null, error: MESSAGES[kind] ?? MESSAGES.download, detail: String(detail ?? ''), waiting: null });
   }
 
@@ -96,9 +98,11 @@ class SelfUpdate {
   async install(installer) {
     if (this.state.phase) return; // 이미 받는 중·설치 중
     if (this.busy()) {
+      log.info('업데이트', '설치 누름 — 녹음 중이라 기다림');
       this.set({ waiting: WAIT_RECORDING, error: null, detail: null });
       return;
     }
+    log.info('업데이트', `설치 시작 — ${this.localExe ? '로컬 설치 파일' : installer?.name ?? '설치 파일 없음'}`);
     this.set({ phase: 'downloading', percent: 0, error: null, detail: null, waiting: null });
     let file;
     try {
@@ -109,6 +113,7 @@ class SelfUpdate {
     }
     this.ready = file;
     if (this.busy()) {
+      log.info('업데이트', '받은 뒤 녹음 중이라 설치를 미룸');
       this.set({ phase: null, percent: null, waiting: WAIT_RECORDING });
       return;
     }
@@ -120,6 +125,7 @@ class SelfUpdate {
       this.fail('start', e.message);
       return;
     }
+    log.info('업데이트', `바꿔 끼우기 — 설치기 실행(${path.basename(file)}), 앱을 닫는다`);
     this.quit();
   }
 

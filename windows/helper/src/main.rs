@@ -10,6 +10,8 @@
 //!   ezrite-audio windows
 //!   ezrite-audio place --json <[{"hwnd","x","y","w","h"}]>
 //!   ezrite-audio desktop-watch --hwnd <창 핸들,창 핸들,…>
+//!   ezrite-audio grab --hwnd <창 핸들> --out <.bmp>
+//!   ezrite-audio screen-watch --hwnd <창 핸들> --ms <간격>
 //!
 //! ocr은 글자와 줄 상자(원래 이미지 픽셀 좌표)를 JSON 한 줄로 출력한다.
 //! capture는 16kHz mono s16le PCM을 stdout으로 계속 흘린다. 멈추려면 프로세스를 끝낸다.
@@ -17,6 +19,7 @@
 //! corner는 테두리 없는 창(팝업·작은 창)에 Windows 11 둥근 모서리(DWMWCP_ROUND)를 켠다.
 //! windows·place는 설명할 때 화면 나누기(1.2.1): 보이는 최상위 창 목록(물리 픽셀)과 창 자리·크기 바꾸기.
 //! desktop-watch는 설명한 화면(기준 창)의 가상 데스크톱이 지금 보이는지 바뀔 때마다 JSON 한 줄로 알린다 (1.2.2).
+//! grab·screen-watch는 화면 번역(실험 기능): 고른 창 하나만 찍기(가려져도 그 창 내용)와 바뀜·자리·앞 창 지켜보기.
 //! 오류는 stderr에 한 줄로 쓰고 종료 코드 1로 끝난다.
 
 mod convert;
@@ -25,6 +28,7 @@ mod ocr_box;
 mod tree;
 mod dock;
 mod desk;
+mod grab;
 
 #[cfg(windows)]
 mod win_desk;
@@ -38,6 +42,8 @@ mod win_dwm;
 mod win_encode;
 #[cfg(windows)]
 mod win_windows;
+#[cfg(windows)]
+mod win_grab;
 
 use std::process::ExitCode;
 
@@ -52,6 +58,8 @@ enum Command {
     Windows,
     Place(String),
     DesktopWatch(String),
+    Grab { hwnd: u64, out: String },
+    ScreenWatch { hwnd: u64, ms: u64 },
 }
 
 fn parse_args(args: &[String]) -> Result<Command, String> {
@@ -82,6 +90,16 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
         [cmd] if cmd == "windows" => Ok(Command::Windows),
         [cmd, flag, json] if cmd == "place" && flag == "--json" && !json.is_empty() => Ok(Command::Place(json.clone())),
         [cmd, flag, list] if cmd == "desktop-watch" && flag == "--hwnd" => desk::parse_hwnds(list).map(|_| Command::DesktopWatch(list.clone())),
+        [cmd, f1, h, f2, out] if cmd == "grab" && f1 == "--hwnd" && f2 == "--out" && !out.is_empty() => h
+            .parse::<u64>()
+            .ok()
+            .filter(|&h| h > 0)
+            .map(|hwnd| Command::Grab { hwnd, out: out.clone() })
+            .ok_or_else(|| "grab --hwnd 값이 올바르지 않습니다".to_string()),
+        [cmd, f1, h, f2, ms] if cmd == "screen-watch" && f1 == "--hwnd" && f2 == "--ms" => match (h.parse::<u64>(), ms.parse::<u64>()) {
+            (Ok(hwnd), Ok(ms)) if hwnd > 0 && (100..=10_000).contains(&ms) => Ok(Command::ScreenWatch { hwnd, ms }),
+            _ => Err("screen-watch --hwnd·--ms 값이 올바르지 않습니다 (간격 100~10000)".to_string()),
+        },
         _ => Err(
             "사용법: ezrite-audio list | capture --pid <N> | capture --mic <id> | ocr <이미지> [--lang <태그>] | corner --hwnd <N> | encode --in <pcm> --out <m4a> | windows | place --json <목록> | desktop-watch --hwnd <N,…>"
                 .into(),
@@ -125,6 +143,8 @@ fn run(cmd: Command) -> Result<(), String> {
         Command::Windows => win_windows::list_windows().map_err(|e| format!("windows 실패: {e}")),
         Command::Place(json) => win_windows::place(&json).map_err(|e| format!("place 실패: {e}")),
         Command::DesktopWatch(list) => win_desk::watch(&list).map_err(|e| format!("desktop-watch 실패: {e}")),
+        Command::Grab { hwnd, out } => win_grab::grab(hwnd, &out).map_err(|e| format!("grab 실패: {e}")),
+        Command::ScreenWatch { hwnd, ms } => win_grab::watch(hwnd, ms).map_err(|e| format!("screen-watch 실패: {e}")),
     }
 }
 
@@ -173,6 +193,10 @@ mod tests {
     #[test]
     fn desktop_watch_인자를_읽는다() {
         assert_eq!(parse_args(&a(&["desktop-watch", "--hwnd", "5,6"])), Ok(Command::DesktopWatch("5,6".into())));
+        assert_eq!(parse_args(&a(&["grab", "--hwnd", "77", "--out", "a.bmp"])), Ok(Command::Grab { hwnd: 77, out: "a.bmp".into() }));
+        assert!(parse_args(&a(&["grab", "--hwnd", "0", "--out", "a.bmp"])).is_err());
+        assert_eq!(parse_args(&a(&["screen-watch", "--hwnd", "77", "--ms", "500"])), Ok(Command::ScreenWatch { hwnd: 77, ms: 500 }));
+        assert!(parse_args(&a(&["screen-watch", "--hwnd", "77", "--ms", "5"])).is_err());
         assert!(parse_args(&a(&["desktop-watch", "--hwnd", ""])).is_err());
         assert!(parse_args(&a(&["desktop-watch", "--hwnd", "0"])).is_err());
         assert!(parse_args(&a(&["desktop-watch"])).is_err());

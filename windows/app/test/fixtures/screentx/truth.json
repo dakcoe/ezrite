@@ -1,0 +1,333 @@
+{
+ "slide": [
+  {
+   "size": 40,
+   "kind": null,
+   "text": "Gradient Descent in Practice",
+   "box": {
+    "x": 120,
+    "y": 96,
+    "w": 1560,
+    "h": 106
+   }
+  },
+  {
+   "size": 26,
+   "kind": null,
+   "text": "Compute the gradient of the loss",
+   "box": {
+    "x": 260,
+    "y": 258,
+    "w": 1420,
+    "h": 67.5
+   }
+  },
+  {
+   "size": 26,
+   "kind": null,
+   "text": "Update every weight with a small learning rate so that the loss keeps going down",
+   "box": {
+    "x": 260,
+    "y": 353.5,
+    "w": 1420,
+    "h": 135
+   }
+  },
+  {
+   "size": 26,
+   "kind": null,
+   "text": "Repeat until the validation error stops improving",
+   "box": {
+    "x": 260,
+    "y": 517,
+    "w": 1420,
+    "h": 67.5
+   }
+  },
+  {
+   "size": 18,
+   "kind": null,
+   "text": "Figure 2. Loss curve over 50 epochs",
+   "box": {
+    "x": 120,
+    "y": 1082,
+    "w": 561.5,
+    "h": 48
+   }
+  }
+ ],
+ "web": [
+  {
+   "size": 30,
+   "kind": null,
+   "text": "Why Attention Changed Everything",
+   "box": {
+    "x": 140,
+    "y": 80,
+    "w": 1520,
+    "h": 68
+   }
+  },
+  {
+   "size": 19,
+   "kind": null,
+   "text": "Before transformers, sequence models read one word at a time and struggled to remember what came long before.",
+   "box": {
+    "x": 140,
+    "y": 188,
+    "w": 1520,
+    "h": 112
+   }
+  },
+  {
+   "size": 19,
+   "kind": null,
+   "text": "Attention lets every position look at every other position, so distant words can influence each other directly.",
+   "box": {
+    "x": 140,
+    "y": 336,
+    "w": 1520,
+    "h": 112
+   }
+  },
+  {
+   "size": 19,
+   "kind": null,
+   "text": "This simple idea made training faster and models far more capable.",
+   "box": {
+    "x": 140,
+    "y": 484,
+    "w": 1520,
+    "h": 56
+   }
+  }
+ ],
+ "dark": [
+  {
+   "size": 24,
+   "kind": null,
+   "text": "Privacy and Security",
+   "box": {
+    "x": 96,
+    "y": 72,
+    "w": 1608,
+    "h": 64
+   }
+  },
+  {
+   "size": 16,
+   "kind": null,
+   "text": "Location services",
+   "box": {
+    "x": 96,
+    "y": 212,
+    "w": 448.5,
+    "h": 43
+   }
+  },
+  {
+   "size": 13,
+   "kind": null,
+   "text": "Allow apps to use your precise location",
+   "box": {
+    "x": 96,
+    "y": 263,
+    "w": 448.5,
+    "h": 35
+   }
+  },
+  {
+   "size": 14,
+   "kind": null,
+   "text": "Manage",
+   "box": {
+    "x": 1539.5,
+    "y": 222.5,
+    "w": 164.5,
+    "h": 65
+   }
+  },
+  {
+   "size": 16,
+   "kind": null,
+   "text": "Camera access",
+   "box": {
+    "x": 96,
+    "y": 356,
+    "w": 450,
+    "h": 43
+   }
+  },
+  {
+   "size": 13,
+   "kind": null,
+   "text": "Choose which apps can use the camera",
+   "box": {
+    "x": 96,
+    "y": 407,
+    "w": 450,
+    "h": 35
+   }
+  },
+  {
+   "size": 14,
+   "kind": null,
+   "text": "Change",
+   "box": {
+    "x": 1545.5,
+    "y": 366.5,
+    "w": 158.5,
+    "h": 65
+   }
+  },
+  {
+   "size": 16,
+   "kind": null,
+   "text": "Diagnostic data",
+   "box": {
+    "x": 96,
+    "y": 500,
+    "w": 623.5,
+    "h": 43
+   }
+  },
+  {
+   "size": 13,
+   "kind": null,
+   "text": "Send optional usage data to help improve the product",
+   "box": {
+    "x": 96,
+    "y": 551,
+    "w": 623.5,
+    "h": 35
+   }
+  },
+  {
+   "size": 14,
+   "kind": null,
+   "text": "Settings",
+   "box": {
+    "x": 1540.5,
+    "y": 510.5,
+    "w": 163.5,
+    "h": 65
+   }
+  }
+ ],
+ "code": [
+  {
+   "size": 15,
+   "kind": null,
+   "text": "The function below trains the model for a fixed number of steps and returns the final loss.",
+   "box": {
+    "x": 80,
+    "y": 60,
+    "w": 1640,
+    "h": 40
+   }
+  },
+  {
+   "size": 14,
+   "kind": null,
+   "text": "# Train with plain gradient descent\ndef train(model, data, steps=100, lr=0.01):\n    # loop over the data and update the weights\n    for step in range(steps):\n        loss = model.loss(data)\n        model.update(-lr * model.grad(loss))\n    return loss",
+   "box": {
+    "x": 80,
+    "y": 132,
+    "w": 1640,
+    "h": 294
+   }
+  }
+ ],
+ "browser": [
+  {
+   "size": 13,
+   "kind": null,
+   "text": "Attention Is All You Need",
+   "box": {
+    "x": 24,
+    "y": 16,
+    "w": 343.5,
+    "h": 59
+   }
+  },
+  {
+   "size": 14,
+   "kind": null,
+   "text": "https://example.com/papers/attention",
+   "box": {
+    "x": 24,
+    "y": 88,
+    "w": 1753,
+    "h": 57
+   }
+  },
+  {
+   "size": 18,
+   "kind": null,
+   "text": "The transformer replaces recurrence with attention, so every position can be processed at the same time.",
+   "box": {
+    "x": 140,
+    "y": 270,
+    "w": 1521,
+    "h": 108
+   }
+  },
+  {
+   "size": 15,
+   "kind": null,
+   "text": "Figure 3. (a) training loss; (b) validation loss over 20 epochs.",
+   "box": {
+    "x": 220,
+    "y": 840,
+    "w": 786,
+    "h": 40
+   }
+  }
+ ],
+ "mixed": [
+  {
+   "size": 20,
+   "kind": "korean",
+   "text": "이 문단은 이미 한국어라서 번역하지 않아도 됩니다.",
+   "box": {
+    "x": 112,
+    "y": 88,
+    "w": 1576,
+    "h": 60
+   }
+  },
+  {
+   "size": 20,
+   "kind": null,
+   "text": "Overfitting happens when a model memorizes the training data.",
+   "box": {
+    "x": 112,
+    "y": 188,
+    "w": 1576,
+    "h": 60
+   }
+  },
+  {
+   "size": 20,
+   "kind": null,
+   "text": "Regularization and early stopping are two common ways to prevent it.",
+   "box": {
+    "x": 112,
+    "y": 288,
+    "w": 1576,
+    "h": 60
+   }
+  },
+  {
+   "size": 11,
+   "kind": null,
+   "text": "Source: Deep Learning, Goodfellow et al., 2016",
+   "box": {
+    "x": 112,
+    "y": 1042,
+    "w": 451.5,
+    "h": 60
+   }
+  }
+ ]
+}

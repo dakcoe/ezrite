@@ -66,6 +66,25 @@
     return b;
   }
 
+  /**
+   * 화면 번역 단추 (실험 기능, 1.3.2 예정): 설정에서 켜야 보인다. 누르면 마우스로 번역할 창을 가리켜 고르고, 번역 중에 누르면 멈춘다
+   */
+  const TX_HELP = '화면 번역 (실험 기능): 고른 창의 글자를 읽어 한국어 번역을 그 자리에 덮어 보여 줍니다';
+  function translateButton(cls, size) {
+    const b = h('button', { class: `${cls} tx-btn hidden`, title: TX_HELP, 'aria-label': '화면 번역', html: icon('languages', size) });
+    b.addEventListener('click', () => {
+      if (current?.screenTx?.active) window.ezrite.screenTx.stop();
+      else window.ezrite.screenTx.pick(); // 화면마다 패널: 마우스 아래 창을 파랗게, 누르면 고름, Esc 취소 (맥과 같다)
+    });
+    b.update = (s) => {
+      const on = Boolean(s.screenTx?.active);
+      b.classList.toggle('hidden', !s.options?.screenTranslate);
+      b.classList.toggle('on', on);
+      b.title = on ? `화면 번역 중: ${s.screenTx.title} — 누르면 멈춥니다` : TX_HELP;
+    };
+    return b;
+  }
+
   function statusHeader(place, extra) {
     const dot = h('span', { class: 'dot' });
     const line1Text = h('span');
@@ -73,6 +92,7 @@
     const wave = h('div', { class: 'wave hidden' }, [0, 1, 2, 3, 4].map(() => h('i')));
     waves.add(wave);
     const explain = explainButton('round', 15);
+    const translate = translateButton('round', 15);
     const pause = h('button', { class: 'round hidden', onclick: () => window.ezrite.togglePause() });
     const rec = h('button', { class: 'round rec' });
     rec.addEventListener('click', () => {
@@ -83,12 +103,13 @@
     });
     const el = h('div', { class: `status${place === 'popup' ? ' drag' : ''}` },
       h('div', { class: 'text' }, h('div', { class: 'line1' }, dot, line1Text), line2),
-      wave, explain, pause, rec, extra);
+      wave, translate, explain, pause, rec, extra);
 
     let timer = null;
     function update(s) {
       const recording = s.listening && !s.paused;
       explain.update(s);
+      translate.update(s);
       dot.className = `dot${s.paused || s.quietPaused ? ' paused' : s.listening ? ' rec' : ''}`;
       clearInterval(timer);
       const paint = () => {

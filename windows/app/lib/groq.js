@@ -19,6 +19,8 @@ const { suffix, trimWs, trimWsNl, parseDoubleStrict } = require('./text');
 const WHISPER_MODELS = Object.freeze(['whisper-large-v3', 'whisper-large-v3-turbo']);
 const CHAT_MODELS = Object.freeze(['openai/gpt-oss-120b', 'openai/gpt-oss-20b']); // qwen 은 번역 중간에 중국어가 섞여서 뺐다
 const VISION_MODEL = 'qwen/qwen3.8-27b';
+// 화면 번역(실험 기능)만: 20b 는 긴 문맥에서 묶음 대부분을 영어 그대로 돌려줬다 (맥 실측 5번 중 4번). 120b 가 분당 토큰 한도에 걸리면 qwen 으로
+const SCREEN_MODELS = Object.freeze(['openai/gpt-oss-120b', VISION_MODEL]);
 const REASONING_MODEL = 'openai/gpt-oss-120b';
 const TRANSCRIBE_URL = 'https://api.groq.com/openai/v1/audio/transcriptions';
 const CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions';
@@ -267,14 +269,15 @@ class GroqClient {
   // --- 번역 ---
 
   /** 여러 줄을 한 번에 옮긴다. 120b 가 막히면(429) 20b 로. 돌려받은 배열은 입력과 같은 길이, 못 찾은 줄은 null */
-  async translate(lines, context = []) {
+  /** prompt·models: 화면 번역은 강의용과 다른 지시와 모델 목록을 쓴다 (lib/screentx.js SCREEN_PROMPT, SCREEN_MODELS) */
+  async translate(lines, context = [], { prompt = TRANSLATE_PROMPT, models = CHAT_MODELS } = {}) {
     const key = this.requireKey();
     const input = translationInput(lines, context);
     let lastError = new GroqError('번역에 실패했습니다');
-    for (const model of CHAT_MODELS) {
+    for (const model of models) {
       for (let attempt = 1; attempt <= RETRIES; attempt++) {
         try {
-          return parseTranslation(await this.chatOnce(model, key, input), lines.length, { context: context.length > 0 });
+          return parseTranslation(await this.chatOnce(model, key, input, prompt), lines.length, { context: context.length > 0 });
         } catch (e) {
           if (e instanceof RateLimitedError) {
             lastError = new GroqError('번역 한도 초과');
@@ -289,12 +292,13 @@ class GroqClient {
     throw lastError;
   }
 
-  chatOnce(model, key, input) {
+  chatOnce(model, key, input, prompt = TRANSLATE_PROMPT) {
     return this.chat({
       model,
-      messages: [{ role: 'system', content: TRANSLATE_PROMPT }, { role: 'user', content: input }],
+      messages: [{ role: 'system', content: prompt }, { role: 'user', content: input }],
       temperature: 0.2,
-      reasoning_effort: 'low', // gpt-oss 는 추론 모델이다. 번역엔 길게 생각할 필요가 없다
+      // gpt-oss 는 추론 모델이다. 번역엔 길게 생각할 필요가 없다. qwen 은 low 를 받지 않아 none
+      reasoning_effort: model === VISION_MODEL ? 'none' : 'low',
     }, key);
   }
 
@@ -350,10 +354,10 @@ class GroqClient {
 }
 
 Object.assign(GroqClient, {
-  WHISPER_MODELS, CHAT_MODELS, VISION_MODEL, REASONING_MODEL, TRANSCRIBE_URL, CHAT_URL, RETRIES, TRANSLATE_PROMPT,
+  WHISPER_MODELS, CHAT_MODELS, SCREEN_MODELS, VISION_MODEL, REASONING_MODEL, TRANSCRIBE_URL, CHAT_URL, RETRIES, TRANSLATE_PROMPT,
   translationInput, parseTranslation,
 });
 
 module.exports = {
-  GroqClient, GroqError, RateLimitedError, TransientError, MESSAGES, translationInput, parseTranslation, redact,
+  GroqClient, GroqError, RateLimitedError, TransientError, MESSAGES, translationInput, parseTranslation, redact, SCREEN_MODELS,
 };

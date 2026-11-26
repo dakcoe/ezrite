@@ -17,6 +17,9 @@ pub struct Win {
     pub max: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub normal: Option<[i32; 4]>,
+    /// 창 제목 (화면 번역의 창 고르기). 빈 제목은 싣지 않는다
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub title: String,
 }
 
 /// `windows` 출력: 맨 앞 창과 창 목록(겹침 순서대로, 맨 앞부터)
@@ -101,8 +104,8 @@ mod tests {
         let l = Listing {
             foreground: 5,
             windows: vec![
-                Win { hwnd: 5, pid: 9, x: -7, y: 0, w: 100, h: 50, max: true, normal: Some([1, 2, 3, 4]) },
-                Win { hwnd: 6, pid: 9, x: 0, y: 0, w: 10, h: 10, max: false, normal: None },
+                Win { hwnd: 5, pid: 9, x: -7, y: 0, w: 100, h: 50, max: true, normal: Some([1, 2, 3, 4]), title: String::new() },
+                Win { hwnd: 6, pid: 9, x: 0, y: 0, w: 10, h: 10, max: false, normal: None, title: String::new() },
             ],
         };
         assert_eq!(
