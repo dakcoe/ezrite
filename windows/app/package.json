@@ -34,10 +34,7 @@
       "output": "../dist"
     },
     "files": [
-      "main.js",
-      "explain-ui.js",
-      "preload.js",
-      "preload-card.js",
+      "*.js",
       "package.json",
       "lib/**/*",
       "renderer/**/*",

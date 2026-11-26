@@ -139,7 +139,15 @@ npm run dist           # helper release 빌드 → 오픈소스 고지 → elect
 1. 버전을 맥판과 맞춰 올린다: `app/package.json`·`app/package-lock.json`·루트 `package.json`·`helper/Cargo.toml`(·`Cargo.lock`).
    앱이 보이는 버전과 설치 파일 이름이 `app/package.json` 에서 나온다.
 2. `npm test` · `npm run lint` · `npm run dist`
-3. `v<버전>` 릴리스에 `dist\Ezrite-Setup-<버전>.exe` 를 올린다. 바뀐 점은 릴리스 본문에 쓴다 (앞 세 줄이 팝업 "새 버전" 띠에 보인다).
+3. **올리기 전 설치본 실행 확인 (꼭, 빠뜨리면 올리지 않는다).** 시험·개발 실행은 소스 폴더에서 돌아 설치본에 빠진 파일을 못 잡는다
+   (1.3.2 는 `build.files` 에 새 파일 3개가 빠져 설치본이 켜지자마자 죽은 채로 올라갔다).
+   1. `%APPDATA%\Ezrite` 를 통째로 복사해 두고(기록 파일 이름 목록까지), 시험이 끝나면 대조한다
+   2. 실제 설치 프로그램 `dist\Ezrite-Setup-<버전>.exe` 로 설치한다
+   3. 시작 메뉴·바로가기로 앱을 켠다 (터미널에서 띄우지 않는다 — 사용자와 같은 길)
+   4. 창·트레이 아이콘이 뜨는 것을 스크린샷으로 직접 확인하고, `%LOCALAPPDATA%\Ezrite\logs` 최신 기록에 `ERR` 가 없는지 본다
+   5. 바로 전 정식 버전을 깔고 그 위에 새 설치 파일로 덮어 설치(업데이트 길)해서 3·4 를 다시 한다
+   사용자 화면을 쓰므로 매번 사용자에게 먼저 묻는다.
+4. `v<버전>` 릴리스에 `dist\Ezrite-Setup-<버전>.exe` 를 올린다. 바뀐 점은 릴리스 본문에 쓴다 (앞 세 줄이 팝업 "새 버전" 띠에 보인다).
    시험판도 prerelease 로 표시하지 않는다 (`releases/latest` 가 prerelease 를 건너뛴다).
 
 앱은 켤 때와 6시간마다 `https://api.github.com/repos/<저장소>/releases/latest` 를 보고, 앱보다 높은 버전이면 팝업 위에 띠를 띄운다.
