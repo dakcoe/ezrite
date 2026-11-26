@@ -192,6 +192,8 @@ enum APIKey {
 /// 120b 가 막히면(429) 20b 로 넘긴다. qwen 은 번역 중간에 중국어가 섞여서 뺐다.
 extension GroqClient {
     static let chatModels = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+    /// 화면 번역: 20b 는 긴 문맥을 주면 묶음 대부분을 영어 그대로 돌려준다. 120b 가 분당 한도에 걸리면 qwen 으로
+    static let screenModels = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b"]
     private static let chatURL = URL(string: "https://api.groq.com/openai/v1/chat/completions")!
     // 매 요청마다 입력 토큰으로 세지므로 짧게 둔다
     static let translatePrompt = """
@@ -201,6 +203,24 @@ extension GroqClient {
         Never output the Previous line; "1." is the first numbered line.
         """
 
+    /// 화면 번역: 창에서 읽은 글자 줄. 받아쓰기와 달리 고쳐 쓰지 않는다
+    static let screenTranslatePrompt = """
+        You translate text read from a screen (web page, document, slide, app) into natural, fluent Korean for a student. \
+        Each numbered item is one paragraph, heading, list item, menu entry, or label, taken from the screen by OCR, \
+        listed in reading order. Use all the items together (and the other on-screen text below, if any) to understand \
+        the topic and what each item refers to, and translate with that \
+        context: choose the meaning that fits the subject, keep technical terms consistent across all items (use the \
+        standard Korean term; inside sentences you may add the English in parentheses the first time it appears, but never in \
+        titles, headings, menu entries, or labels), and write complete, \
+        natural Korean sentences rather than word-by-word. Short labels and headings stay short. Fix obvious OCR mistakes \
+        silently. Keep code, commands, file names, URLs, numbers, math symbols, and person or product names as they are. \
+        Translate only the words of each item itself: never add, complete, or explain anything from the context or from \
+        other items, even if the item looks like a cut-off fragment (then translate just that fragment into Korean). \
+        Book titles, section headings, menu entries, and button labels are ordinary words: translate them too. \
+        Output an item unchanged only if it is already Korean or is purely code, a URL, a number, or a name. \
+        Output only "N. translation", one line per number, for every number, in order. No notes.
+        """
+
     /// 앞줄(문장이 이어질 때 참고, 옮기지 않음) + 번호 붙인 옮길 줄
     static func translationInput(_ lines: [String], context: [String]) -> String {
         let numbered = lines.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
@@ -208,14 +228,15 @@ extension GroqClient {
     }
 
     /// 여러 줄을 한 번에 옮긴다. 돌려받은 배열은 입력과 같은 길이이고, 응답에서 못 찾은 줄은 nil.
-    func translate(_ lines: [String], context: [String] = []) async throws -> [String?] {
+    func translate(_ lines: [String], context: [String] = [], prompt: String = translatePrompt,
+                   models: [String] = chatModels) async throws -> [String?] {
         guard let key = APIKey.groq() else { throw Failure("Groq API 키가 없습니다. 설정에서 키를 입력하세요.") }
         let input = Self.translationInput(lines, context: context)
         var lastError = Failure("번역에 실패했습니다")
-        for model in Self.chatModels {
+        for model in models {
             for attempt in 1...Self.retries {
                 do {
-                    return Self.parse(try await chatOnce(model: model, key: key, input: input), count: lines.count)
+                    return Self.parse(try await chatOnce(model: model, key: key, input: input, prompt: prompt), count: lines.count)
                 } catch is RateLimited {
                     lastError = Failure("번역 한도 초과")
                     break                                   // 다음 모델로
@@ -243,12 +264,13 @@ extension GroqClient {
         return (1...max(count, 1)).prefix(count).map { found[$0 + shift] }
     }
 
-    private func chatOnce(model: String, key: String, input: String) async throws -> String {
+    private func chatOnce(model: String, key: String, input: String, prompt: String) async throws -> String {
         try await chat([
             "model": model,
-            "messages": [["role": "system", "content": Self.translatePrompt], ["role": "user", "content": input]],
+            "messages": [["role": "system", "content": prompt], ["role": "user", "content": input]],
             "temperature": 0.2,
-            "reasoning_effort": "low",                  // gpt-oss 는 추론 모델이다. 번역엔 길게 생각할 필요가 없다
+            // gpt-oss 는 추론 모델이다. 번역엔 길게 생각할 필요가 없다. qwen 은 low 를 안 받고 none(생각 끔)을 받는다
+            "reasoning_effort": model.hasPrefix("qwen") ? "none" : "low",
         ], key: key)
     }
 

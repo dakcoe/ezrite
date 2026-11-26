@@ -24,7 +24,7 @@ enum LoginItem {
         do {
             if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
         } catch {
-            NSLog("Ezrite login item: \(error)")
+            Log.error("로그인 항목", "\(error)")
         }
         let v = current
         if on && SMAppService.mainApp.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }

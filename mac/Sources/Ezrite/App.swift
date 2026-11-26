@@ -16,6 +16,7 @@ final class AppState: ObservableObject {
     @Published var usage: [String: Usage] = [:]     // 모델 이름 → 오늘 남은 요청 수
     @Published var budget = Budget.load()           // 하루 토큰·음성 시간 (앱이 직접 센다)
     @Published var explaining = false          // "설명해줘" 진행 중
+    @Published var screenTranslating = false   // 실험: 화면 번역이 창 하나를 지켜보는 중
     @Published var paused = false              // 세션은 열려 있고 듣기만 멈춘 상태
     @Published var sessionCost = 0.0           // 앱을 켠 뒤 유료 AI 에 쓴 돈 (달러, 저장하지 않는다)
     @Published var costUnknown = false         // 요금을 모르는 모델(GPT·Gemini)도 썼다
@@ -141,6 +142,10 @@ final class AppState: ObservableObject {
     @Published var autoPauseQuiet: Bool = defaults.object(forKey: "autoPauseQuiet") as? Bool ?? true {
         didSet { Self.defaults.set(autoPauseQuiet, forKey: "autoPauseQuiet") }
     }
+    /// 실험 기능: 화면 번역 버튼을 보인다
+    @Published var screenTranslateOn: Bool = defaults.bool(forKey: "screenTranslateOn") {
+        didSet { Self.defaults.set(screenTranslateOn, forKey: "screenTranslateOn") }
+    }
     /// 설명해줘 화면 표시 방식 (MarkStyle). 바꾸면 떠 있는 표시도 바로 바뀐다
     @Published var markStyle: String = defaults.string(forKey: "markStyle") ?? MarkStyle.fallback.rawValue {
         didSet { Self.defaults.set(markStyle, forKey: "markStyle") }
@@ -208,6 +213,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let updater = Updater()               // 창을 닫았다 열어도 보던 화면이 남는다
     private var transcriber: Transcriber!
     private var explainer: Explainer!
+    private var screenTranslator: ScreenTranslator!
     private var styleSink: AnyCancellable?
     private var statusBar: StatusBar!
     private(set) var retx: Retranscriber!
@@ -218,6 +224,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var bag: Set<AnyCancellable> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let env = ProcessInfo.processInfo.environment
+        if let input = env["EZRITE_TRANSLATE_IMAGE"] {                                                  // 개발용: 그림 파일로 화면 번역 시험
+            Task {
+                await ScreenTranslate.devRun(input: input, output: env["EZRITE_TRANSLATE_OUT"] ?? "/tmp/ezrite-translate",
+                                             fake: env["EZRITE_TRANSLATE_FAKE"] != nil)
+                exit(0)
+            }
+            return
+        }
+        Log.start()
         Theme.apply(state.theme)
         AppDelegate.shared = self
         // 팝업·설명 카드는 앱을 앞으로 가져오지 않는 창이라 눌러도 앞으로 나오지 않는다. 누른 창을 같은 층 맨 앞으로
@@ -238,6 +254,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         retx = MainActor.assumeIsolated { Retranscriber() }
+        screenTranslator = MainActor.assumeIsolated { ScreenTranslator(state: state) }
+        state.$screenTranslateOn.dropFirst().filter { !$0 }
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.screenTranslator.stop("실험 기능 끔") } }
+            .store(in: &bag)
+        if let app = ProcessInfo.processInfo.environment["EZRITE_TRANSLATE"] {                           // 개발용: 고르기 없이 그 앱 창
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                guard let w = ScreenTranslate.windows().first(where: {
+                    $0.app.localizedCaseInsensitiveContains(app)
+                        || NSRunningApplication(processIdentifier: $0.pid)?.bundleIdentifier?.localizedCaseInsensitiveContains(app) == true
+                }) else {
+                    return Log.warn("개발", "EZRITE_TRANSLATE: \(app) 창 없음")
+                }
+                MainActor.assumeIsolated { self?.screenTranslator.start(w) }
+            }
+        }
         // 한 번만 잇는다. 뷰 body 안에서 구독하면 그릴 때마다 다시 구독·대입해 화면이 멈춘다
         retx.$running.assign(to: &popover.$retxRunning)
         updater.busy = { [weak self] in
@@ -321,9 +352,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        MainActor.assumeIsolated { transcriber.stop() }
+        Log.info("앱", "종료 시작 (녹음 중 \(state.listening), 일시정지 \(state.paused))")
+        Log.timed("앱", "종료: 녹음 정리") { MainActor.assumeIsolated { transcriber.stop() } }
         // 녹음 조각을 하나로 합치는 중이면 끝날 때까지 기다린다 (2시간 녹음도 10초 안쪽). 못 기다려도 다음 실행 때 합친다
-        Notes.AudioRecorder.waitForMerges()
+        Log.timed("앱", "종료: 녹음 합치기 기다림") { Notes.AudioRecorder.waitForMerges() }
+        Log.flush()
     }
 
     /// ● 버튼: 녹음 중이면 끝내고, 아니면 (묻기가 켜져 있으면) 소리 출처·언어 고르는 칸을 먼저 띄운다
@@ -335,6 +368,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         state.choosing = false
+        Log.info("녹음", "\(state.listening ? "끝내기" : "시작") 누름 (\(place))")
         MainActor.assumeIsolated { transcriber.toggle() }
     }
 
@@ -342,7 +376,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func explain() {
         let recent = state.entries.filter { $0.kind == .text }.suffix(12).map(\.original)
         state.explaining = true
+        Log.info("설명", "설명해줘 시작 (\(state.explainProvider), \(state.explainModel), 최근 문장 \(recent.count)개)")
         Task { @MainActor in
+            let t0 = Date()
+            defer { Log.info("설명", String(format: "설명해줘 끝 %.1f초", Date().timeIntervalSince(t0))) }
             await explainer.run(transcript: Array(recent), provider: state.explainProvider, model: state.explainModel,
                                 onNotice: { [weak self] in self?.state.notice = $0 })
             state.explaining = false
@@ -368,13 +405,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case "start": if state.choosing { toggleListening(from: state.choosingPlace) }
                 case "explain": explain()
                 case "stop": if state.listening { toggleListening() }
+                case "pause": togglePause()
+                case "hang": Thread.sleep(forTimeInterval: Double(value) ?? 5)   // 멈춤 기록(HangWatch) 시험
                 default: break
                 }
             }
         }
     }
 
+    /// 실험: 화면 번역 켜기(창 고르기)·끄기
+    func toggleScreenTranslate() {
+        statusBar.hide()
+        MainActor.assumeIsolated { screenTranslator.toggle() }
+    }
+
     func togglePause() {
+        Log.info("녹음", state.paused ? "다시 시작 누름" : "일시정지 누름")
         MainActor.assumeIsolated { transcriber.togglePause() }
     }
 

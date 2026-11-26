@@ -160,10 +160,12 @@ final class Transcriber {
         state.error = nil
         guard APIKey.groq() != nil else {
             state.error = "Groq API 키가 없습니다. 설정에서 키를 입력하세요."
+            Log.warn("녹음", "시작 못 함: Groq 키 없음")
             return
         }
         let source = state.selectedSource
         guard await micAllowed() else { return }
+        Log.info("녹음", "시작 — 출처 \(source.label), 마이크 섞기 \(state.includeMic), 언어 \(state.language), 자동 번역 \(state.autoTranslate), 조용하면 쉬기 \(state.autoPauseQuiet)")
 
         state.entries = []
         state.liveSession = nil
@@ -188,6 +190,7 @@ final class Transcriber {
         do {
             try await startCapture(source: source, mixMic: source != .mic && state.includeMic)
         } catch {
+            Log.error("녹음", "캡처 시작 실패: \(error)")
             state.error = error.localizedDescription
             stop()
         }
@@ -195,13 +198,15 @@ final class Transcriber {
 
     func stop() {
         guard state.listening else { return }
+        let length = state.recordedBefore + (state.startedAt.map { Date().timeIntervalSince($0) } ?? 0)
+        Log.info("녹음", String(format: "끝냄 — 녹음 %.0f초, 받아 적은 줄 %d개, 보내는 중 %d개", length, state.entries.count, state.inflight))
         state.listening = false
         state.paused = false
         state.quietPaused = false
         state.startedAt = nil
         state.recordedBefore = 0
-        stopCapture()
-        recorder?.close()           // 여기서 m4a 가 마무리된다. 앱 종료 때도 이 길로 온다
+        Log.timed("녹음", "캡처 멈춤") { stopCapture() }
+        Log.timed("녹음", "소리 파일 닫기") { recorder?.close() }           // 여기서 m4a 가 마무리된다. 앱 종료 때도 이 길로 온다
         recorder = nil
         state.savedSession = writer.url  // 받아 적은 글이 있을 때만 (없으면 기록이 남지 않는다)
         if let activity { ProcessInfo.processInfo.endActivity(activity) }
@@ -212,6 +217,7 @@ final class Transcriber {
         let wantsMic = (state.selectedSource == .mic || state.includeMic) && DevFeed.file == nil
         if wantsMic, !(await MicCapture.requestPermission()) {
             state.error = "마이크 권한이 필요합니다. 시스템 설정 → 개인정보 보호 및 보안 → 마이크에서 Ezrite 를 허용하세요."
+            Log.warn("녹음", "마이크 권한 없음")
             return false
         }
         return true
@@ -222,6 +228,7 @@ final class Transcriber {
     func switchSource() async {
         guard state.listening else { return }
         let source = state.selectedSource
+        Log.info("녹음", "출처 바꿈 → \(source.label), 마이크 섞기 \(state.includeMic), 일시정지 중 \(state.paused)")
         addGap("── \(Notes.timestamp()) 소리 출처 → \(source.label)" + (state.includeMic && source != .mic ? " + 마이크" : ""))
         guard !state.paused else { return }
         stopCapture()
@@ -229,6 +236,7 @@ final class Transcriber {
         do {
             try await startCapture(source: source, mixMic: source != .mic && state.includeMic)
         } catch {
+            Log.error("녹음", "출처 바꾼 뒤 캡처 시작 실패: \(error)")
             state.error = error.localizedDescription
             stop()
         }
@@ -237,12 +245,14 @@ final class Transcriber {
     /// 인식 언어는 발화를 보낼 때마다 읽으니 바로 다음 문장부터 바뀐다. 바꾼 자리만 남긴다
     func languageChanged() {
         guard state.listening else { return }
+        Log.info("녹음", "인식 언어 바꿈 → \(state.language)")
         addGap("── \(Notes.timestamp()) 인식 언어 → \(state.language)")
     }
 
     /// 말소리가 30초 없어 저절로 쉬거나(파일에 쓰지 않음, 시계 멈춤) 말이 다시 들려 이어 간다
     private func quietChanged(_ quiet: Bool) {
         guard state.listening, !state.paused else { return }
+        Log.info("녹음", quiet ? "말소리 없어 자동 쉼" : "말소리 들려 자동으로 이어 감")
         if quiet {
             state.quietPaused = true
             state.recordedBefore += state.startedAt.map { Date().timeIntervalSince($0) } ?? 0
@@ -258,16 +268,18 @@ final class Transcriber {
     /// 듣기만 멈춘다. 받아쓰기 파일과 소리 파일은 열어 둔 채라 이어 하면 같은 세션에 이어 쓴다
     func pause() {
         guard state.listening, !state.paused else { return }
+        Log.info("녹음", "일시정지")
         state.paused = true
         state.quietPaused = false
         state.recordedBefore += state.startedAt.map { Date().timeIntervalSince($0) } ?? 0
         state.startedAt = nil
         pausedClock = Notes.timestamp()
-        stopCapture()
+        Log.timed("녹음", "일시정지: 캡처 멈춤") { stopCapture() }
     }
 
     func resume() async {
         guard state.listening, state.paused else { return }
+        Log.info("녹음", "이어서 녹음")
         state.paused = false
         state.startedAt = Date()
         restarts = 0
@@ -276,6 +288,7 @@ final class Transcriber {
             let source = state.selectedSource
             try await startCapture(source: source, mixMic: source != .mic && state.includeMic)
         } catch {
+            Log.error("녹음", "이어서 녹음 캡처 시작 실패: \(error)")
             state.error = error.localizedDescription
             stop()
         }
@@ -341,6 +354,7 @@ final class Transcriber {
     /// 조용히 멈추지 않게 다시 붙이고, 끊긴 자리를 기록에 남긴다.
     private func reconnect(after error: Error) async {
         guard state.listening, !state.paused else { return }   // 일시정지로 멈춘 스트림은 다시 붙이지 않는다
+        Log.warn("녹음", "소리 캡처 끊김: \(error)")
         addGap("── \(Notes.timestamp()) 소리가 끊겼습니다 (\(error.localizedDescription))")
         let source = state.selectedSource
         while state.listening && restarts < Self.maxRestarts {
@@ -351,12 +365,15 @@ final class Transcriber {
             mic?.stop()
             do {
                 try await startCapture(source: source, mixMic: source != .mic && state.includeMic)
+                Log.info("녹음", "다시 연결됨 (\(restarts)번째 시도)")
                 addGap("── \(Notes.timestamp()) 다시 연결됨")
                 return
             } catch {
+                Log.warn("녹음", "다시 연결 \(restarts)번째 실패: \(error)")
                 continue
             }
         }
+        Log.error("녹음", "다시 연결 포기 (\(restarts)번 시도)")
         state.error = "소리 캡처를 다시 붙이지 못했습니다. 받아쓰기를 다시 시작하세요."
         stop()
     }
@@ -374,12 +391,17 @@ final class Transcriber {
     private func send(_ samples: [Float], time: ClosedRange<Double>, language: String) async {
         state.inflight += 1
         defer { state.inflight -= 1 }
+        let t0 = Date(), audio = time.upperBound - time.lowerBound
         do {
             let raw = try await groq.transcribe(
                 wav: WAV.encode(samples), language: language, prompt: lastText,
                 onFallback: { [weak self] old, new in
+                    Log.warn("받아쓰기", "\(old) 한도 초과 → \(new)")
                     Task { @MainActor in self?.state.notice = "\(old) 한도 초과 → \(new)로 전환" }
                 })
+            let took = Date().timeIntervalSince(t0)
+            // 느린 것만 남긴다 (매 문장 남기면 기록이 너무 길다). 글 내용은 남기지 않는다
+            if took > 5 { Log.warn("받아쓰기", String(format: "느림 %.1f초 (소리 %.1f초, 대기 %d개)", took, audio, state.inflight)) }
             let text = Notes.sanitize(raw)
             guard !text.isEmpty, !Hallucination.isRepeat(text, previous: lastText) else { return }
             lastText = text
@@ -398,6 +420,7 @@ final class Transcriber {
             }
         } catch {
             // 이 구간은 잃었다. 어디부터 다시 들어야 하는지 알 수 있게 자리를 남긴다
+            Log.error("받아쓰기", String(format: "실패 %.1f초 걸림 (소리 %.1f초): %@", Date().timeIntervalSince(t0), audio, String(describing: error)))
             state.error = error.localizedDescription
             addGap("── \(Notes.timestamp()) 인식 실패: \(error.localizedDescription)")
         }
@@ -426,6 +449,7 @@ final class Transcriber {
                 result = try await self?.translate(lines, context: context) ?? []
             } catch {
                 result = []
+                Log.error("번역", "\(lines.count)줄 실패: \(error)")
                 self?.state.notice = error.localizedDescription
             }
             guard let self else { return }
@@ -454,17 +478,26 @@ final class Transcriber {
 @MainActor
 enum Translation {
     /// context: 바로 앞 한 줄. 문장이 줄을 넘어 이어질 때 자연스럽게 옮기도록 참고로만 준다
-    static func run(_ lines: [String], context: [String], state: AppState, groq: GroqClient) async throws -> [String?] {
+    static func run(_ lines: [String], context: [String], state: AppState, groq: GroqClient,
+                    prompt: String = GroqClient.translatePrompt, models: [String] = GroqClient.chatModels) async throws -> [String?] {
         let p = state.translateProvider, model = state.translateModel
-        guard p != .groq, !model.isEmpty else { return try await groq.translate(lines, context: context) }
-        let input = GroqClient.translationInput(lines, context: context)
+        guard p != .groq, !model.isEmpty else { return try await groq.translate(lines, context: context, prompt: prompt, models: models) }
         do {
-            let out = try await AI.complete(p, model: model, prompt: GroqClient.translatePrompt + "\n\n" + input,
-                                            json: false, maxTokens: 2000, think: false)
-            return GroqClient.parse(out, count: lines.count)
+            return try await other(p, model: model, lines, context: context, prompt: prompt)
         } catch let e as AI.Failure where AI.shouldFallback(status: e.status) {
             state.notice = "\(p.label) 번역 실패 → Groq 로 대신했습니다"
-            return try await groq.translate(lines, context: context)
+            return try await groq.translate(lines, context: context, prompt: prompt, models: models)
         }
+    }
+
+    /// Groq 가 아닌 서비스로 한 번 옮긴다 (대신하기 없음). 화면 번역은 한 번에 40 문단이라 답이 길다
+    static func other(_ p: Provider, model: String, _ lines: [String], context: [String], prompt: String) async throws -> [String?] {
+        // Groq 와 달리 지시·참고 글·옮길 목록이 한 메시지로 간다. 경계를 밝히지 않으면 참고 글의 "1 Getting started" 같은
+        // 줄과 섞여 "옮길 항목은 1번뿐" 이라고 답한다 (Haiku 5.5)
+        let input = GroqClient.translationInput(lines, context: context)
+        let head = "Items to translate — all \(lines.count) of them, numbered 1 to \(lines.count):"
+        let out = try await AI.complete(p, model: model, prompt: prompt + "\n\n" + head + "\n" + input,
+                                        json: false, maxTokens: max(2000, lines.count * 200), think: false)
+        return GroqClient.parse(out, count: lines.count)
     }
 }

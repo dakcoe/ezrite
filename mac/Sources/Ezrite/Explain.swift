@@ -41,7 +41,7 @@ enum ScreenGrab {
 }
 
 /// macOS 13: 한 장 찍기(SCScreenshotManager)가 없어서 화면 스트림을 잠깐 열고 첫 화면 한 장만 받는다
-private final class OneFrame: NSObject, SCStreamOutput {
+final class OneFrame: NSObject, SCStreamOutput {
     private var done: CheckedContinuation<CGImage, Error>?
     private var stream: SCStream?
 
@@ -55,6 +55,8 @@ private final class OneFrame: NSObject, SCStreamOutput {
                 try stream.addStreamOutput(me, type: .screen, sampleHandlerQueue: .global())
                 stream.startCapture { error in if let error { me.finish(.failure(error)) } }
             } catch { me.finish(.failure(error)) }
+            // 그림이 있는 틀이 끝내 안 오면(가려진 창 등) 기다리지 않는다
+            DispatchQueue.global().asyncAfter(deadline: .now() + 3) { me.finish(.failure(Explain.Failure("화면을 찍지 못했습니다"))) }
         }
     }
 

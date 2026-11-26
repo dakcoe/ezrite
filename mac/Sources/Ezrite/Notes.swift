@@ -161,7 +161,10 @@ enum Notes {
         private func openPart() -> Bool {
             let part = Notes.partURL(url, parts.count + 1)
             guard let f = try? AVAudioFile(forWriting: part, settings: Self.settings,
-                                           commonFormat: .pcmFormatFloat32, interleaved: false) else { return false }
+                                           commonFormat: .pcmFormatFloat32, interleaved: false) else {
+                Log.error("소리 파일", "조각을 열지 못함: \(part.lastPathComponent)")
+                return false
+            }
             file = f
             parts.append(part)
             partWritten = 0
@@ -197,6 +200,7 @@ enum Notes {
             file = nil
             let parts = self.parts, url = self.url
             self.parts = []
+            Log.info("소리 파일", String(format: "닫음 — %.0f초, 조각 %d개 → 뒤에서 합치기", Double(written) / sampleRate, parts.count))
             Self.mergeQueue.async { Notes.mergeAndClean(parts, into: url) }
         }
 
@@ -211,12 +215,13 @@ enum Notes {
     static func mergeAndClean(_ parts: [URL], into dest: URL) {
         let tmp = dest.deletingLastPathComponent().appendingPathComponent(".merging-" + dest.lastPathComponent)
         do {
-            try merge(parts, into: tmp)
+            try Log.timed("소리 파일", "조각 \(parts.count)개 합침 → \(dest.lastPathComponent)", slow: 10) { try merge(parts, into: tmp) }
             try? FileManager.default.removeItem(at: dest)
             try FileManager.default.moveItem(at: tmp, to: dest)
             for p in parts { try? FileManager.default.removeItem(at: p) }
             DispatchQueue.main.async { NotificationCenter.default.post(name: audioMergedNote, object: dest) }
         } catch {
+            Log.error("소리 파일", "합치기 실패 (조각은 남겨 둠, 다음 실행 때 다시): \(error)")
             try? FileManager.default.removeItem(at: tmp)
         }
     }
@@ -264,6 +269,7 @@ enum Notes {
             let parts = files.sorted().map { dir.appendingPathComponent($0) }
             let dest = dir.appendingPathComponent(base + ".m4a")
             guard !FileManager.default.fileExists(atPath: dest.path) else { continue }
+            Log.warn("소리 파일", "지난번에 합치지 못한 조각 \(parts.count)개 발견 → \(dest.lastPathComponent) 로 합침")
             mergeAndClean(parts, into: dest)
         }
     }
@@ -285,6 +291,7 @@ enum Notes {
                 try h.synchronize()
             } catch {
                 // 자동 저장이 실패해도 받아쓰기는 계속돼야 한다
+                Log.error("기록 파일", "한 줄 저장 실패: \(error)")
             }
         }
 
@@ -401,7 +408,7 @@ enum Notes {
         recoverParts(in: dir)
         // 지운 이름을 남긴다 (나중에 "무엇이 지워졌나" 에 답할 수 있게). Windows recoverAndPrune 과 같다
         let remove = { (u: URL, why: String) in
-            if (try? FileManager.default.removeItem(at: u)) != nil { NSLog("Ezrite 정리: %@ 지움 (%@)", u.lastPathComponent, why) }
+            if (try? FileManager.default.removeItem(at: u)) != nil { Log.info("정리", "\(u.lastPathComponent) 지움 (\(why))") }
         }
         // 글 없이 소리만 남은 기록 폴더는 폴더째 지운다
         for sub in subfolders(dir) where !FileManager.default.fileExists(atPath: sub.appendingPathComponent(sub.lastPathComponent + ".txt").path) {

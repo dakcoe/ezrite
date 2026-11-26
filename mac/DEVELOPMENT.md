@@ -46,12 +46,34 @@ open -a "Ezrite"
 - AI 가 화면 좌표를 직접 말하게 하면 빗나간다. 글자 인식으로 찾은 줄 번호만 고르게 한다.
 - 그림 형식은 과목을 가리지 않는 steps · table · card(KaTeX) · mermaid · anim 다섯 가지. anim 은 물체(items)를 id 로 정의하고 단계(frames)마다 나타나기·강조·잇기·자리 바꾸기·글 바꾸기만 지시하는 움직이는 그림이다. 자리는 explain.html 이 layout(row·column·cycle)으로 계산한다 — AI 에게 좌표를 맡기지 않는다. mermaid·KaTeX 는 `Resources/web` 에 넣어 두어 인터넷 없이 그린다.
 
+## 화면 번역 (실험 기능, 설정 "실험 기능" 을 켜야 팝업에 단추가 보인다)
+
+- 흐름: 창 고르기(화면마다 전체 화면 패널, 마우스 아래 창 파랗게, 클릭 고름·Esc·오른쪽 클릭 취소. 메뉴바 앱은 앞으로 못 나와 키를 못 받으므로 Esc 는 고르는 동안만 `RegisterEventHotKey` 로 잡는다) → 그 창만 찍기(ScreenCaptureKit, 13 은 `OneFrame`) → Vision 글자 인식 → 줄 합치기 → 문단 묶기(칸 구분, 문서 흐름 규칙) → 문단 단위 번역 → 클릭 통과 투명 창에 원래 자리를 덮어 그림. 코드는 `ScreenTranslate.swift`(창·찍기·반복), `ScreenTranslateLayout.swift`(묶기·색·크기·그리기).
+- 기억: 공백 정규화한 문단 글 → 번역. 스크롤해도 같은 문단은 다시 보내지 않는다. 0.5초마다 절반 해상도로 바뀜을 보고, 멈추면 다시 읽는다. 마우스를 올린 문단은 원문.
+- 잘린 문단: 창 위·아래 끝, 또는 도구막대 같은 가로 경계(`Pixels.crossLines`)에 줄 높이 0.5배 안쪽으로 붙은 문단은 다 보일 때까지 보내지 않는다. 반쯤 가려진 줄은 글자 인식이 아예 못 읽으므로, 바로 위·아래 경계와 문단 사이(2.5배 안)에 다른 줄 없이 글자색 화소가 있어도 잘린 것으로 본다(`cutBlocks`). 잘린 조각을 보내면 모델이 앞뒤를 채워 넣는다.
+- 모델: `GroqClient.screenModels` = gpt-oss-120b → qwen3.8-27b. 20b 는 긴 문맥에서 묶음 대부분을 영어 그대로 돌려줘서 뺐다. 그래도 절반 넘게 원문 그대로면 다시 묻고, 또 그러면 실패로 쳐서 기억하지 않는다(`ScreenTranslate.checked`). 무료 키는 모델마다 분당 8000 토큰이라 문맥에서 이번에 보내는 문단은 뺀다.
+- 기록에는 개수·시간만 남긴다 (화면 글·번역 글 금지).
+
 ## 데이터 위치 (`~/Library/Application Support/Ezrite/`)
 
 | 파일 | 내용 |
 |---|---|
 | `groq_key` | Groq API 키 (권한 0600). 없으면 옛 앱 `settings.json` 에서 한 번 옮겨 온다 |
 | `notes/autosave/*.txt` | 받아쓰기 자동 저장. 옛 앱과 같은 폴더·형식 (번역은 네 칸 들여쓰기, `── ` 은 끊김 표시). 30일 지나면 실행 시 삭제 |
+
+## 앱 기록 (`~/Library/Logs/Ezrite/`)
+
+사용자가 겪은 문제를 나중에 되짚는 자료. 재현이 안 되는 버그는 먼저 여기를 본다.
+
+| 파일 | 내용 |
+|---|---|
+| `ezrite-날짜.log` | 시작(버전·OS)·종료(단계별 시간), 녹음 시작·일시정지·이어서·끝(길이·줄 수)·출처 바꿈·자동 쉼·끊김·다시 연결, 받아쓰기 실패·5초 넘게 느린 것, 번역 실패, 소리 파일 닫기·합치기(시간·실패), 설명해줘·질문(시간·실패·Groq 대신), 업데이트 확인·설치 실패, Mac 잠자기·깨기·화면 잠금·발열. 줄 끝 `(main)` 은 화면 스레드 |
+| `hang-시각.txt` | 화면(메인 스레드)이 3초 넘게 멈추면 그 순간 모든 스레드를 `/usr/bin/sample` 로 2초 뜬 것. 멈춘 줄이 `파일.swift:줄` 로 나온다. 로그에는 "멈춤 … 풀림 N초" 가 남는다 |
+
+- 14일 지나면 실행할 때 지운다. 받아 적은 글·질문 글·AI 답 글·API 키는 남기지 않는다 (길이만)
+- 같은 내용이 시스템 로그에도 간다: `/usr/bin/log show --predicate 'subsystem == "com.dakcoe.ezrite"' --last 1h`
+- 앱 번들(`com.dakcoe.ezrite`)로 돌 때만 파일에 쓴다. 테스트는 쓰지 않는다. `EZRITE_NO_LOG=1` 이면 앱도 쓰지 않는다
+- 멈춤 기록 시험: `EZRITE_SCRIPT=hang@8=5` (8초에 화면을 5초 멈춤)
 
 API 키를 키체인에 두지 않는 이유: 자체 서명 앱은 빌드마다 키체인이 다른 앱으로 보고 로그인 암호를 다시 묻는다.
 
@@ -66,9 +88,11 @@ API 키를 키체인에 두지 않는 이유: 자체 서명 앱은 빌드마다 
 | `EZRITE_UPDATE_JSON=<json>` | GitHub 대신 그 릴리스 JSON 으로 새 버전 띠를 띄운다 (모양 확인용) |
 | `EZRITE_UPDATE_ZIP=<zip>` | `EZRITE_UPDATE_JSON` 과 함께. [업데이트] 가 이 zip 으로 바꿔 끼운다 (버전을 올려 같은 인증서로 다시 서명한 앱) |
 | `EZRITE_ASK=<질문>` | `EZRITE_EXPLAIN` 설명이 뜬 6초 뒤 질문 칸에 그 질문을 넣고 묻는다 |
-| `EZRITE_SCRIPT=pop@1;choose@3;source@5=Google Chrome;start@7;explain@40;stop@60` | 정해 둔 시각(초)에 팝업 열기·녹음 말풍선·소리 출처·시작·설명해줘·끝내기를 한다. 홍보 영상 녹화용(`promo/`). `EZRITE_TESTFILE` 소리를 흘려 넣고, 이때는 바로 시작하지 않는다 |
+| `EZRITE_SCRIPT=pop@1;choose@3;source@5=Google Chrome;start@7;explain@40;pause@50;stop@60` | 정해 둔 시각(초)에 팝업 열기·녹음 말풍선·소리 출처·시작·설명해줘·일시정지(다시 누르면 이어서)·끝내기를 한다. 홍보 영상 녹화용(`promo/`). `EZRITE_TESTFILE` 소리를 흘려 넣고, 이때는 바로 시작하지 않는다 |
 | `EZRITE_DEMO=<json>` | AI 없이 지금 화면을 찍어 글자 인식만 하고, JSON(`{summary, marks, path, scenes}`)의 글자를 인식한 줄에 맞춰 표시 방식을 띄운다. `"scene": 3` 은 시작 장면, `"all"` 은 전체 보기. `open -a Ezrite --env EZRITE_DEMO=...` 로도 먹는다. 방식은 `defaults write com.dakcoe.ezrite markStyle -string pen` |
 | `EZRITE_SPEED=2` | 위 파일을 2배속으로 흘린다 |
+| `EZRITE_TRANSLATE=<앱 이름 또는 번들 id>` | 창 고르기 없이 그 앱의 맨 앞 창으로 화면 번역을 시작한다. 그 창 글자가 Groq 로 전송된다 |
+| `EZRITE_TRANSLATE_IMAGE=<png 또는 폴더>` | 앱을 띄우지 않고 그림(2배 해상도)마다 읽기·번역을 하고 끝낸다. 덮은 그림과 상자 그림(빨강 조각·초록 줄·파랑 문단)을 `EZRITE_TRANSLATE_OUT`(기본 `/tmp/ezrite-translate`)에 남기고 문단별 통계를 출력한다. `EZRITE_TRANSLATE_FAKE=1` 이면 AI 없이 "번역:" 만 붙인다. 기록을 더럽히지 않게 `EZRITE_NO_LOG=1` 과 같이 쓴다 |
 | `EZRITE_PREVIEW=mini\|live\|history\|record\|settings\|onboarding` | onboarding 은 처음 쓰는 사람 안내 창. record 는 가장 최근 기록을 연 화면. mini 는 메뉴바 팝업을 연다. 나머지는 전체 창을 그 탭으로 연다 |
 
 이 변수들은 실행 파일을 직접 실행할 때만 먹는다: `EZRITE_TESTFILE=... "/Applications/Ezrite.app/Contents/MacOS/Ezrite"`

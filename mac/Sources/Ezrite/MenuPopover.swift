@@ -53,8 +53,6 @@ struct MenuPopover: View {
 
     private var full: some View {
         VStack(spacing: 0) {
-            UpdateBanner()
-            SavedBanner()
             StatusHeader {
                 Button {
                     AppDelegate.shared?.popover.page = .settings
@@ -71,12 +69,37 @@ struct MenuPopover: View {
             }
             .background(WindowDragArea())               // 위쪽 줄 빈 곳을 잡고 끌어 옮긴다
             Divider().opacity(0.4)
-            LivePage().frame(height: 260)
+            LivePage().frame(maxWidth: .infinity).frame(height: 260)
+                .overlay(alignment: .top) { Banners() }        // 창을 늘리지 않고 안에 띄운다
             Divider().opacity(0.4)
             UsageFooter()
         }
         .frame(width: 340)
         .onAppear { state.refreshSources() }
+    }
+}
+
+/// 새 버전·저장됨 알림. 창 크기를 바꾸지 않고 내용 위쪽에 떠 있는 카드로 보인다
+struct Banners: View {
+    var body: some View {
+        VStack(spacing: 6) {
+            UpdateBanner()
+            SavedBanner()
+        }
+        .padding(.horizontal, 8).padding(.top, 8)
+    }
+}
+
+/// 알림 카드 바탕: 옅은 색 + 반투명 재질 + 그림자 (아래 글이 비쳐도 읽히게)
+private struct FloatingCard: ViewModifier {
+    let tint: Color
+    func body(content: Content) -> some View {
+        content
+            .background(tint.opacity(0.10))
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.primary.opacity(0.08)))
+            .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
     }
 }
 
@@ -89,7 +112,7 @@ struct UpdateBanner: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.down.circle.fill").foregroundStyle(.blue)
-                    Text("새 버전 \(r.version)").font(.system(size: 12.5, weight: .semibold))
+                    Text("새 버전 \(r.version)").font(.system(size: 12.5, weight: .semibold)).lineLimit(1).fixedSize()
                     Text("지금 \(Updater.current)").font(.system(size: 11)).foregroundStyle(.secondary)
                     Spacer()
                     if updater.installing { ProgressView().controlSize(.small) }
@@ -111,7 +134,7 @@ struct UpdateBanner: View {
                 }
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
-            .background(Color.blue.opacity(0.08))
+            .modifier(FloatingCard(tint: .blue))
         }
     }
 }
@@ -151,7 +174,7 @@ struct SavedBanner: View {
                 .buttonStyle(.plain).help("Finder 에서 보기 — " + (url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath)
             }
             .padding(.horizontal, 14).padding(.vertical, 9)
-            .background(Color.green.opacity(0.08))
+            .modifier(FloatingCard(tint: .green))
         }
     }
 
@@ -346,6 +369,15 @@ struct CompactPopover: View {
             .buttonStyle(.plain)
             .disabled(state.explaining)
             .help("AI 질문하기")
+            if state.screenTranslateOn {
+                Button { AppDelegate.shared?.toggleScreenTranslate() } label: {
+                    Image(systemName: "translate").font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(state.screenTranslating ? Color.blue : Color.secondary)
+                        .frame(width: 22, height: 22).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(state.screenTranslating ? "화면 번역 끄기" : "화면 번역 (실험): 창을 골라 번역을 덮습니다")
+            }
             Button { state.compact = false } label: {
                 Image(systemName: "rectangle.expand.vertical").font(.system(size: 12)).foregroundStyle(.secondary)
                     .frame(width: 22, height: 22).contentShape(Rectangle())
@@ -366,8 +398,6 @@ struct MainView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            UpdateBanner()
-            SavedBanner()
             StatusHeader(place: "window") {
                 Button { model.page = model.page == .settings ? .live : .settings } label: {
                     Image(systemName: "gearshape")
@@ -381,6 +411,7 @@ struct MainView: View {
             }
             Divider().opacity(0.4)
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .top) { Banners() }
             Divider().opacity(0.4)
             tabs
         }
@@ -466,6 +497,16 @@ struct StatusHeader<Extra: View>: View {
             .buttonStyle(.plain)
             .disabled(state.explaining)
             .help("AI 질문하기")
+            if state.screenTranslateOn {
+                Button { AppDelegate.shared?.toggleScreenTranslate() } label: {
+                    Image(systemName: "translate").font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(state.screenTranslating ? Color.white : Color.primary)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(state.screenTranslating ? Color.blue : Color.primary.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+                .help(state.screenTranslating ? "화면 번역 끄기" : "화면 번역 (실험): 창을 골라 번역을 덮습니다")
+            }
             if state.listening {
                 // 일시정지: 세션은 그대로 두고 듣기만 멈춘다. 다시 누르면 같은 기록에 이어 쓴다
                 Button { AppDelegate.shared?.togglePause() } label: {
@@ -641,6 +682,11 @@ private struct SettingsPage: View {
                            isOn: Binding(get: { state.loginItem.isOn }, set: { state.loginItem = LoginItem.set($0) }))
                     .disabled(Self.fromInstaller)
                     .onAppear { state.loginItem = LoginItem.current }
+
+                SectionLabel("실험 기능")
+                ToggleCard(icon: "translate", title: "화면 번역",
+                           detail: "팝업에 번역 버튼이 생깁니다. 누르고 창을 고르면 그 창의 글자를 한국어로 옮겨 원래 자리에 덮습니다. 스크롤하거나 내용이 바뀌면 새 줄만 다시 옮기고, 줄에 마우스를 올리면 원문이 보입니다. 켜 둔 동안 고른 창의 글자가 번역 AI 로 계속 전송됩니다.",
+                           isOn: $state.screenTranslateOn)
 
                 SectionLabel("저장 위치")
                 Card {

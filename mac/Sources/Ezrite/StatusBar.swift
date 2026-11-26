@@ -50,10 +50,10 @@ final class StatusBar: NSObject {
             UserDefaults.standard.set(NSStringFromPoint(self.panel.frame.origin), forKey: Self.originKey)
         }
 
-        // 새 버전 띠·저장됨 띠가 나타나고 사라질 때, 작은 창에서 새 문장·번역이 올 때 팝업 높이를 맞춘다 (위쪽 가장자리는 그대로)
-        Publishers.Merge4(updater.$available.map { _ in () }, state.$compact.map { _ in () },
-                          state.$entries.filter { [weak state] _ in state?.compact == true }.map { _ in () },
-                          state.$savedSession.map { _ in () })
+        // 작은 창으로 바꿀 때, 작은 창에서 새 문장·번역이 올 때 팝업 높이를 맞춘다 (위쪽 가장자리는 그대로).
+        // 새 버전·저장됨 알림은 창 안에 떠서 높이를 바꾸지 않는다
+        Publishers.Merge(state.$compact.map { _ in () },
+                         state.$entries.filter { [weak state] _ in state?.compact == true }.map { _ in () })
             .receive(on: DispatchQueue.main).sink { [weak self, weak host] _ in
             DispatchQueue.main.async {
                 guard let self, let host else { return }

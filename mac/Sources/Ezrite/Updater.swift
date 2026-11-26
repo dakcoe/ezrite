@@ -64,14 +64,17 @@ final class Updater: ObservableObject {
         var req = URLRequest(url: url, timeoutInterval: 20)
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         checking = true
-        URLSession.shared.dataTask(with: req) { [weak self] data, resp, _ in
-            let r = (resp as? HTTPURLResponse)?.statusCode == 200 ? data.flatMap(Self.release(from:)) : nil
+        URLSession.shared.dataTask(with: req) { [weak self] data, resp, err in
+            let code = (resp as? HTTPURLResponse)?.statusCode
+            let r = code == 200 ? data.flatMap(Self.release(from:)) : nil
+            if r == nil { Log.warn("업데이트", "확인 실패 (HTTP \(code.map(String.init) ?? "-"))\(err.map { ": \($0.localizedDescription)" } ?? "")") }
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.checking = false
                 guard let r else { return }
                 self.checkedAt = Date()
                 self.available = self.shouldShow(r.version, current: Self.current) ? r : nil
+                Log.info("업데이트", "확인: 최신 \(r.version), 지금 \(Self.current), 띠 \(self.available != nil ? "보임" : "안 보임")")
             }
         }.resume()
     }
@@ -92,7 +95,11 @@ final class Updater: ObservableObject {
         guard let r = available, let zip = r.zip, canInstall else { return download() }
         guard !busy() else { installError = "녹음이 끝나면 업데이트할 수 있어요"; return }
         installing = true; installError = nil
-        let fail: (String) -> Void = { msg in DispatchQueue.main.async { self.installing = false; self.installError = msg } }
+        Log.info("업데이트", "설치 시작 → \(r.version)")
+        let fail: (String) -> Void = { msg in
+            Log.error("업데이트", "설치 실패: \(msg)")
+            DispatchQueue.main.async { self.installing = false; self.installError = msg }
+        }
         let work = Self.work
         let unpack: (URL) -> Void = { file in
             try? FileManager.default.removeItem(at: work.appendingPathComponent("app"))
@@ -134,7 +141,11 @@ final class Updater: ObservableObject {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
         p.arguments = ["-c", script, "sh", dest, app.path, old]
-        do { try p.run() } catch { installing = false; installError = "업데이트를 시작하지 못했어요"; return }
+        do { try p.run() } catch {
+            Log.error("업데이트", "바꿔 끼우기 시작 실패: \(error)")
+            installing = false; installError = "업데이트를 시작하지 못했어요"; return
+        }
+        Log.info("업데이트", "앱을 끝내고 새 버전으로 바꿔 끼움")
         NSApp.terminate(nil)
     }
 

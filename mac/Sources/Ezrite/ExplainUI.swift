@@ -41,7 +41,10 @@ final class Explainer: ObservableObject {
             screen = shot.screen
             card.show(on: shot.screen, avoid: AppDelegate.shared?.popupFrame)
             card.render(["loading": "화면을 읽는 중…"])
+            let t0 = Date()
             let lines = await Task.detached { Explain.readText(shot.image) }.value
+            Log.info("설명", String(format: "화면 %.0f×%.0f, 글자 줄 %d개 (%.1f초), 표시 방식 %@", shot.screen.frame.width, shot.screen.frame.height,
+                                  lines.count, Date().timeIntervalSince(t0), style.rawValue))
             card.place(avoiding: lines.map(\.box), on: shot.screen, popup: AppDelegate.shared?.popupFrame)
             card.render(["loading": "설명을 만드는 중…"])
             let jpeg = Self.jpeg(shot.image, maxWidth: 1280)   // 이미지 토큰은 크기와 상관없이 한 장에 약 1,800 (640·1024·1280 실측 같음)
@@ -58,11 +61,12 @@ final class Explainer: ObservableObject {
                         if !Explain.visuals(from: data).summary.isEmpty {
                             return present(card: card, lines: lines, shot: shot, marks: data, visuals: .success(data))
                         }
-                        NSLog("Ezrite 설명을 읽지 못함 (think=%d): %@", think ? 1 : 0, String(text.suffix(300)))
+                        Log.warn("설명", "\(provider.label) 답을 읽지 못함 (생각 \(think), \(text.count)자, 끝이 } 인가 \(text.hasSuffix("}")))")
                         if think { card.render(["loading": "설명을 다시 만드는 중…"]) }
                     }
                     onNotice("\(provider.label) 설명을 읽지 못함 → Groq 로 대신했습니다")
                 } catch let e as AI.Failure where AI.shouldFallback(status: e.status) {
+                    Log.warn("설명", "\(provider.label) 실패 → Groq: \(e.localizedDescription)")
                     onNotice("\(provider.label) 설명 실패 → Groq 로 대신했습니다")
                 }
             }
@@ -71,13 +75,18 @@ final class Explainer: ObservableObject {
                !Explain.marks(from: data, lines: lines).isEmpty || !Explain.visuals(from: data).summary.isEmpty {
                 return present(card: card, lines: lines, shot: shot, marks: data, visuals: .success(data))
             }
+            Log.warn("설명", "Groq 한 번에 묻기 실패 → 두 모델에 나눠 묻기")
             async let marksData = groq.explainMarks(jpeg: jpeg, lines: lines, transcript: transcript)
             async let visualsData = groq.explainVisuals(lines: lines, transcript: transcript)
             let picked = try? await marksData        // 표시가 실패해도 설명 카드는 보여준다
             let visuals: Result<Data, Error>
-            do { visuals = .success(try await visualsData) } catch { visuals = .failure(error) }
+            do { visuals = .success(try await visualsData) } catch {
+                Log.error("설명", "Groq 설명 실패: \(error)")
+                visuals = .failure(error)
+            }
             present(card: card, lines: lines, shot: shot, marks: picked, visuals: visuals)
         } catch {
+            Log.error("설명", "실패: \(error)")
             card.render(["error": error.localizedDescription])
         }
     }
@@ -141,6 +150,9 @@ final class Explainer: ObservableObject {
     /// 답이 짚은 곳으로 화면 표시를 바꾼다. 실패하면(키 오류 제외) Groq 로 대신한다
     func ask(_ question: String) async {
         guard let card, let ctx = context?() else { return }
+        Log.info("질문", "시작 (\(ctx.provider), \(ctx.model), 질문 \(question.count)자, 앞 대화 \(history.count)개)")
+        let t0 = Date()
+        defer { Log.info("질문", String(format: "끝 %.1f초", Date().timeIntervalSince(t0))) }
         do {
             let shot = try await ScreenGrab.capture(on: screen)
             let lines = await Task.detached { Explain.readText(shot.image) }.value
@@ -171,11 +183,12 @@ final class Explainer: ObservableObject {
                         // 그래도 못 읽었지만 답 글은 끝까지 받았으면 그 글로 끝낸다 (다시 물으면 보던 답이 지워지고 처음부터 다시 채워진다)
                         if Explain.answer(from: data!) == nil, let a = Explain.closedAnswer(text),
                            let d = try? JSONSerialization.data(withJSONObject: ["answer": a]) {
-                            NSLog("Ezrite 질문 JSON 은 깨졌지만 답 글만 씀 (%d자): … %@", text.count, String(text.suffix(300)))
+                            Log.warn("질문", "JSON 은 깨졌지만 답 글만 씀 (\(text.count)자)")
                             data = d
                         }
-                        if Explain.answer(from: data!) == nil { NSLog("Ezrite 질문 답을 읽지 못함 (%d자): %@ … %@", text.count, String(text.prefix(200)), String(text.suffix(200))) }
+                        if Explain.answer(from: data!) == nil { Log.warn("질문", "\(ctx.provider.label) 답을 읽지 못함 (생각 \(think), \(text.count)자, 끝이 } 인가 \(text.hasSuffix("}")))") }
                     } catch let e as AI.Failure where AI.shouldFallback(status: e.status) {
+                        Log.warn("질문", "\(ctx.provider.label) 실패 → Groq: \(e.localizedDescription)")
                         break
                     }
                 }
@@ -188,6 +201,7 @@ final class Explainer: ObservableObject {
                 data = try await groq.answer(ask(false), jpeg: Self.jpeg(shot.image, maxWidth: 1280), lines: lines, transcript: ctx.transcript)
             }
             guard let data, let text = Explain.answer(from: data) else {
+                Log.error("질문", "답을 읽지 못함 (Groq 까지)")
                 return card.answer(["error": "답을 읽지 못했습니다. 다시 물어봐 주세요."])
             }
             guard self.card === card else { return }      // 답을 기다리는 사이 카드를 닫았다
@@ -202,6 +216,7 @@ final class Explainer: ObservableObject {
             card.answer(["answer": text, "marks": marks.map { ["note": $0.note, "text": $0.line.text] }, "style": style.rawValue,
                          "visuals": Explain.visuals(from: data).visuals])
         } catch {
+            Log.error("질문", "실패: \(error)")
             card.answer(["error": error.localizedDescription])
         }
     }
@@ -244,7 +259,7 @@ final class Explainer: ObservableObject {
     /// {"summary", "marks":[{"text","note"}], "path":{"texts":[…],"note"}, "scenes":[{"say","focus":[글자],"arrow":{"from","to"},"tag"}]}
     func demoScreen(_ url: URL) async {
         guard let raw = FileManager.default.contents(atPath: url.path),
-              var obj = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any] else { NSLog("Ezrite 데모 JSON 을 읽지 못함"); return }
+              var obj = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any] else { Log.error("개발", "데모 JSON 을 읽지 못함"); return }
         hideMarks()
         let card = self.card ?? ExplainCard { [weak self] in self?.clear() }
         self.card = card
